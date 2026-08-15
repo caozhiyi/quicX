@@ -78,6 +78,17 @@ public:
         packet_lost_cb_ = nullptr;
     }
 
+    // Bind the owning connection's lifetime guard. The connection calls this
+    // once it is safely owned by a shared_ptr (e.g. on first OnPacketSend), so
+    // the PTO / retransmit timers can keep the connection alive during their
+    // callbacks and be skipped once the connection is destroyed. The previous
+    // dummy shared_ptr<int> guard never expired, allowing the callbacks to run
+    // into a half-destructed connection (TSan vptr race).
+    void Bind(std::weak_ptr<void> self) {
+        conn_self_ = self;
+        life_token_ = self;
+    }
+
     uint32_t GetRtt() { return rtt_calculator_.GetSmoothedRtt(); }
     uint32_t GetPTO(uint32_t max_ack_delay) { return rtt_calculator_.GetPT0Interval(max_ack_delay); }
     RttCalculator& GetRttCalculator() { return rtt_calculator_; }
@@ -245,10 +256,14 @@ private:
     uint32_t max_ack_delay_ = 0;
     uint32_t ack_delay_exponent_ = 0;
     std::shared_ptr<common::ITimerScheduler> scheduler_;
-    // Guards every callback registered from here: it expires with `*this`, so a
-    // firing that races with destruction is skipped rather than dereferencing a
-    // dead SendControl. All our callbacks capture a raw `this`.
-    std::shared_ptr<int> life_token_ = std::make_shared<int>(0);
+    // Guards every callback registered from here. It is a weak_ptr to the owning
+    // connection: EventLoop::FireSlot skips the callback once the connection is
+    // destroyed (see if_timer_scheduler.h). The previous dummy shared_ptr<int>
+    // never expired, so the guard was inert and callbacks could run into a
+    // half-destructed connection (TSan vptr race). All our callbacks capture a
+    // raw `this`, so the connection must stay alive for their duration.
+    std::weak_ptr<void> life_token_;
+    std::weak_ptr<void> conn_self_;
 
     // RFC 9002: PTO timer for detecting persistent timeouts
     common::Timer pto_timer_;

@@ -35,7 +35,7 @@ protected:
         server_config.quic_config_.cert_pem_ = cert_pem_;
         server_config.quic_config_.key_pem_ = key_pem_;
         server_config.quic_config_.config_.worker_thread_num_ = 4;
-        server_config.quic_config_.config_.log_level_ = quicx::LogLevel::kError;
+        server_config.quic_config_.config_.log_level_ = quicx::LogLevel::kDebug;
 
         ASSERT_TRUE(server_->Init(server_config));
 
@@ -121,6 +121,7 @@ TEST_F(StressTest, HighConcurrency) {
 
     auto start = std::chrono::steady_clock::now();
 
+
     for (int i = 0; i < num_clients; ++i) {
         threads.emplace_back([&, i]() {
             auto client = quicx::IClient::Create();
@@ -128,7 +129,8 @@ TEST_F(StressTest, HighConcurrency) {
             quicx::Http3ClientConfig config;
             config.quic_config_.verify_peer_ = false;
             config.quic_config_.config_.worker_thread_num_ = 1;
-            config.quic_config_.config_.log_level_ = quicx::LogLevel::kError;
+            config.quic_config_.config_.log_path_ = "./logs/" + std::to_string(i) + "/";
+            config.quic_config_.config_.log_level_ = quicx::LogLevel::kDebug;
 
             if (!client->Init(config)) {
                 return;
@@ -197,7 +199,7 @@ TEST_F(StressTest, SustainedLoad) {
             quicx::Http3ClientConfig config;
             config.quic_config_.verify_peer_ = false;
             config.quic_config_.config_.worker_thread_num_ = 1;
-            config.quic_config_.config_.log_level_ = quicx::LogLevel::kError;
+            config.quic_config_.config_.log_level_ = quicx::LogLevel::kDebug;
 
             if (!client->Init(config)) {
                 return;

@@ -384,7 +384,7 @@ TEST_F(LossyTransferTest, DISABLED_TwentyPercentLoss5MB) {
 // All these tests are DISABLED by default because each runs for tens of
 // seconds and is meant to be invoked manually (or by a dedicated CI lane)
 // when hunting stalls:
-//   ./bin/lossy_transfer_test --gtest_also_run_disabled_tests \
+//   ./bin/lossy_transfer_test --gtest_also_run_disabled_tests
 //       --gtest_filter='*SimMirror*'
 
 // 1 Mbps bottleneck + 5 ms delay, NO synthetic loss. If this stalls, the bug

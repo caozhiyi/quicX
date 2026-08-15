@@ -41,7 +41,7 @@ enum class ThreadMode : uint8_t {
  * @brief Runtime knobs shared by clients and servers.
  */
 struct QuicConfig {
-    ThreadMode thread_mode_ = ThreadMode::kSingleThread;  //!< Threading strategy.
+    ThreadMode thread_mode_ = ThreadMode::kMultiThread;   //!< Threading strategy.
     uint16_t worker_thread_num_ = 2;                      //!< Number of worker threads when in multi-thread mode.
     LogLevel log_level_ = LogLevel::kNull;                //!< Minimum log level emitted by the stack.
     std::string log_path_ = "./logs";                     //!< Log path.

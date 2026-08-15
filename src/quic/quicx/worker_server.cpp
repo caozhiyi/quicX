@@ -1,8 +1,14 @@
-#include <quicx/common/metrics.h>
-#include <quicx/common/metrics_std.h>
+#include <openssl/rand.h>
+#include <algorithm>
+#include <cstring>
+#include <vector>
+
 #include "common/buffer/buffer_chunk.h"
 #include "common/log/log.h"
 #include "common/log/log_context.h"
+
+#include <quicx/common/metrics.h>
+#include <quicx/common/metrics_std.h>
 
 #include "quic/common/version.h"
 #include "quic/config.h"
@@ -10,6 +16,7 @@
 #include "quic/connection/connection_id_generator.h"
 #include "quic/connection/connection_server.h"
 #include "quic/connection/error.h"
+#include "quic/connection/stateless_reset_token_generator.h"
 #include "quic/crypto/retry_crypto.h"
 #include "quic/crypto/type.h"
 #include "quic/packet/init_packet.h"
@@ -26,6 +33,8 @@ ServerWorker::ServerWorker(const QuicServerConfig& config, std::shared_ptr<TLSCt
     std::shared_ptr<common::IEventLoop> event_loop):
     Worker(config.config_, ctx, sender, params, connection_handler, event_loop),
     server_alpn_(config.alpn_),
+    max_connections_per_worker_(config.max_connections_per_worker_),
+    max_connections_per_ip_(config.max_connections_per_ip_),
     retry_policy_(config.retry_policy_),
     selective_config_(config.selective_retry_config_),
     retry_token_lifetime_(config.retry_token_lifetime_) {
@@ -57,6 +66,8 @@ void ServerWorker::Shutdown() {
     // safe to invoke EventLoop::RemoveTimer / AddTimer from this thread
     // because AssertInLoopThread() would abort.
     //
+    ip_conn_count_.clear();
+    conn_source_ip_.clear();
     // We just drop the bookkeeping containers; each handshake timer's
     // captured shared_ptr<ServerConnection> is released via ~unordered_map,
     // and ConnectionRateMonitor's owned timer-id becomes irrelevant once
@@ -157,6 +168,18 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
         return true;
     }
 
+    // RFC 9000 §10.3: a short-header packet for a connection ID we know nothing
+    // about cannot be an attempt to open a connection (those are long-header
+    // Initials). It is almost always a peer still talking to a connection this
+    // server lost across a restart. Answer with a Stateless Reset so the peer
+    // tears down immediately instead of retransmitting until its idle timeout.
+    auto* first_header = packet_info.packets_[0]->GetHeader();
+    if (first_header != nullptr && first_header->GetHeaderType() == PacketHeaderType::kShortHeader) {
+        SendStatelessReset(packet_info.net_packet_->GetAddress(), packet_info.net_packet_->GetSocket(),
+            packet_info.cid_, packet_info.datagram_size_);
+        return false;
+    }
+
     // check init packet
     // Pass the original UDP datagram size for RFC 9000 §14.1 minimum size check
     // datagram_size_ is saved by MsgParser::ParsePacket() before DecodePackets consumes the buffer
@@ -182,6 +205,15 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
 
     // Record this connection attempt for rate monitoring
     const auto& client_addr = packet_info.net_packet_->GetAddress();
+
+    // Concurrency admission, checked before any per-connection state is allocated.
+    // Silently dropping is deliberate: replying would both cost bytes to a possibly
+    // spoofed address and confirm the server is up.
+    if (!CanAcceptNewConnection(client_addr)) {
+        LOG_WARN("reject new connection from %s: concurrency limit", client_addr.AsString().c_str());
+        return false;
+    }
+
     if (rate_monitor_) {
         rate_monitor_->RecordNewConnection();
     }
@@ -281,6 +313,11 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
     new_conn->AddTransportParam(server_params);
     connecting_set_.insert(new_conn);
 
+    // Count the connection against the caps only once it actually exists; released
+    // in HandleConnectionClose().
+    conn_source_ip_[new_conn.get()] = client_addr.GetIp();
+    OnConnectionAdmitted(client_addr);
+
     // Register Initial DCID to connection map so subsequent packets can be routed
     conn_map_[dst_cid.Hash()] = new_conn;
 
@@ -289,6 +326,15 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
         "conn_map=%zu connecting_set=%zu peer=%s",
         dst_cid.Hash(), src_cid.Hash(), (void*)new_conn.get(), retry_was_used ? 1 : 0, conn_map_.size(),
         connecting_set_.size(), packet_info.net_packet_->GetAddress().AsString().c_str());
+
+    // RFC 9000 §8.1: the connection starts under the 3x budget by construction,
+    // because an Initial may carry a spoofed source address and would otherwise
+    // elicit the full certificate chain at an attacker's victim. Echoing a valid
+    // Retry token is itself proof of address ownership (§8.1.2), so that is the
+    // one case where the budget is lifted up front.
+    if (retry_was_used) {
+        new_conn->MarkAddressValidated();
+    }
 
     // add remote connection id
     new_conn->AddRemoteConnectionId(src_cid);
@@ -352,7 +398,10 @@ bool ServerWorker::SendRetryPacket(const common::Address& addr, int32_t socket, 
 
     // Generate a new server connection ID for this Retry
     uint8_t new_scid_data[kRetryCidLength];
-    ConnectionIDGenerator::Instance().Generator(new_scid_data, kRetryCidLength);
+    if (!ConnectionIDGenerator::Instance().Generator(new_scid_data, kRetryCidLength)) {
+        LOG_ERROR("Failed to generate Retry connection id");
+        return false;
+    }
     ConnectionID new_scid(new_scid_data, kRetryCidLength);
 
     // Generate Retry token
@@ -459,7 +508,106 @@ void ServerWorker::SendVersionNegotiatePacket(const common::Address& addr, int32
     LOG_DEBUG("send version negotiate packet. packet size:%d", buffer->GetDataLength());
 }
 
+bool ServerWorker::SendStatelessReset(
+    const common::Address& addr, int32_t socket, const ConnectionID& dcid, uint32_t triggering_packet_size) {
+    // RFC 9000 §10.3 layout:
+    //   0b01xxxxxx (short-header form, fixed bit set, rest random)
+    //   unpredictable bytes
+    //   stateless reset token (16 bytes, always the last 16)
+    //
+    // §10.3: "An endpoint MUST NOT send a Stateless Reset that is three times or
+    // more larger than the packet it receives" and it must be smaller than the
+    // triggering packet, otherwise two endpoints can bounce resets off each other
+    // forever. A datagram too small to hold a plausible packet is not worth
+    // answering at all.
+    constexpr uint32_t kMinResetSize = 21;  // 5 unpredictable bytes minimum + 16 token
+    constexpr uint32_t kPreferredResetSize = 42;
+
+    if (triggering_packet_size <= kMinResetSize) {
+        LOG_DEBUG("skip stateless reset: triggering packet too small (%u bytes)", triggering_packet_size);
+        return false;
+    }
+
+    uint32_t reset_size = std::min(kPreferredResetSize, triggering_packet_size - 1);
+    if (reset_size < kMinResetSize) {
+        reset_size = kMinResetSize;
+    }
+
+    uint8_t reset_token[StatelessResetTokenGenerator::kTokenLength];
+    if (!StatelessResetTokenGenerator::Instance().Generate(dcid.GetID(), dcid.GetLength(), reset_token)) {
+        LOG_ERROR("failed to derive stateless reset token");
+        return false;
+    }
+
+    std::vector<uint8_t> datagram(reset_size);
+    // Fill everything before the token with random bytes so the packet is
+    // indistinguishable from an ordinary encrypted 1-RTT packet; an observer that
+    // could recognise resets could use them to probe which CIDs are live.
+    const uint32_t random_len = reset_size - StatelessResetTokenGenerator::kTokenLength;
+    if (RAND_bytes(datagram.data(), static_cast<int>(random_len)) != 1) {
+        LOG_ERROR("CSPRNG failed while building a stateless reset");
+        return false;
+    }
+    // Force short-header form (high bit clear) with the fixed bit set.
+    datagram[0] = static_cast<uint8_t>((datagram[0] & 0x3f) | 0x40);
+    memcpy(datagram.data() + random_len, reset_token, StatelessResetTokenGenerator::kTokenLength);
+
+    std::shared_ptr<NetPacket> net_packet = GlobalResource::Instance().GetThreadLocalPacketAllocator()->Malloc();
+    auto buffer = net_packet->GetData();
+    if (buffer->Write(datagram.data(), reset_size) != reset_size) {
+        LOG_ERROR("failed to write stateless reset into the send buffer");
+        return false;
+    }
+
+    net_packet->SetAddress(addr);
+    net_packet->SetSocket(socket);
+    sender_->Send(net_packet);
+
+    LOG_DEBUG("sent stateless reset. dcid_len:%u, size:%u", dcid.GetLength(), reset_size);
+    return true;
+}
+
+bool ServerWorker::CanAcceptNewConnection(const common::Address& client_addr) const {
+    if (max_connections_per_worker_ != 0 && conn_source_ip_.size() >= max_connections_per_worker_) {
+        LOG_WARN("connection limit reached for worker: %zu/%u", conn_source_ip_.size(), max_connections_per_worker_);
+        return false;
+    }
+
+    if (max_connections_per_ip_ != 0) {
+        auto it = ip_conn_count_.find(client_addr.GetIp());
+        if (it != ip_conn_count_.end() && it->second >= max_connections_per_ip_) {
+            LOG_WARN("per-ip connection limit reached. ip:%s, count:%u, limit:%u", client_addr.GetIp().c_str(),
+                it->second, max_connections_per_ip_);
+            return false;
+        }
+    }
+    return true;
+}
+
+void ServerWorker::OnConnectionAdmitted(const common::Address& client_addr) {
+    ++ip_conn_count_[client_addr.GetIp()];
+}
+
+void ServerWorker::OnConnectionReleased(const std::shared_ptr<IConnection>& conn) {
+    auto owner = conn_source_ip_.find(conn.get());
+    if (owner == conn_source_ip_.end()) {
+        return;
+    }
+
+    auto counter = ip_conn_count_.find(owner->second);
+    if (counter != ip_conn_count_.end()) {
+        if (--counter->second == 0) {
+            // Drop empty buckets, otherwise the map grows without bound as
+            // distinct source IPs come and go.
+            ip_conn_count_.erase(counter);
+        }
+    }
+    conn_source_ip_.erase(owner);
+}
+
 void ServerWorker::HandleConnectionClose(std::shared_ptr<IConnection> conn, uint64_t error, const std::string& reason) {
+    OnConnectionReleased(conn);
+
     // Also purge the handshake watchdog entry: if the connection is closed
     // before its handshake completes (peer aborted, handshake error, etc.)
     // there may still be a pending timer whose lambda owns a shared_ptr to

@@ -27,11 +27,12 @@ MatchResult Router::Match(HttpMethod method, const std::string& path) {
 
     auto iter = router_map_.find(method);
     if (iter == router_map_.end()) {
-        return std::move(result);
+        // Return the local directly: an explicit move here would suppress NRVO.
+        return result;
     }
 
     result.is_match = iter->second->Match(path, 0, "", result);
-    return std::move(result);
+    return result;
 }
 
 }  // namespace http3

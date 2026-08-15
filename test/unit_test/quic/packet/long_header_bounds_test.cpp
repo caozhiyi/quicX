@@ -65,7 +65,7 @@ public:
 
     bool header_decrypt_attempted = false;
 
-    Result DecryptHeader(common::BufferSpan& ciphertext, common::BufferSpan& sample, uint32_t pn_offset,
+    Result DecryptHeader(common::BufferSpan& ciphertext, common::BufferSpan& sample, uint8_t pn_offset,
         uint8_t& out_packet_num_len, bool is_short) override {
         header_decrypt_attempted = true;
         return inner_->DecryptHeader(ciphertext, sample, pn_offset, out_packet_num_len, is_short);
@@ -96,7 +96,7 @@ public:
         return inner_->EncryptPacket(pn, ad, pt, out);
     }
     bool HasPrevReadKey() const override { return inner_->HasPrevReadKey(); }
-    Result EncryptHeader(common::BufferSpan& pt, common::BufferSpan& sample, uint32_t pn_offset, size_t pn_len,
+    Result EncryptHeader(common::BufferSpan& pt, common::BufferSpan& sample, uint8_t pn_offset, size_t pn_len,
         bool is_short) override {
         return inner_->EncryptHeader(pt, sample, pn_offset, pn_len, is_short);
     }

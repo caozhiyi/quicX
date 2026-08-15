@@ -1,6 +1,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include <quicx/common/if_event_loop.h>
 #include <quicx/common/metrics.h>
 #include <quicx/common/metrics_std.h>
 #include "common/buffer/buffer_chunk.h"
@@ -37,15 +38,15 @@ namespace quic {
 BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_enabled,
     std::shared_ptr<common::IEventLoop> loop, const ConnectionCallbacks& callbacks):
     IConnection(callbacks),
-    ecn_enabled_(ecn_enabled),
-    recv_control_(loop),
-    send_manager_(loop),
-    event_loop_(loop),
     last_communicate_time_(0),
+    ecn_enabled_(ecn_enabled),
     send_flow_controller_(start),
     recv_flow_controller_(start),
-    state_machine_(this),
+    recv_control_(loop),
+    send_manager_(loop),
     packet_builder_(std::make_unique<PacketBuilder>()),
+    state_machine_(this),
+    event_loop_(loop),
     is_server_(start == StreamIDGenerator::StreamStarter::kServer) {
     // Sole owner of version state. Its TP-push callback routes back here
     // because EncodeAndPushTpToTls also serves the general (non-version) TP
@@ -62,6 +63,9 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_
     // for RTT/PTO).
     handshake_start_wall_time_ms_ = common::UTCTimeMsec();
     connection_crypto_.SetRemoteTransportParamCB([this](auto& tp) { OnTransportParams(tp); });
+    // Lets the crypto layer reject the server-only transport parameters when it is
+    // the server reading a client's parameters (RFC 9000 §18.2).
+    connection_crypto_.SetIsServer(is_server_);
 
     // RFC 9000: When 0-RTT write key is installed, trigger early connection callback
     // so the application can start sending data before the handshake completes
@@ -170,11 +174,23 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_
         },
         nullptr /* qlog trace installed later via SetQlogTrace */);
 
+    // RFC 9000 §8.1. The emitter is the only place datagrams leave the connection,
+    // so hooking the budget here means no send path can bypass it — including
+    // handshake packets, coalesced Initial/Handshake, retransmits and bare ACKs.
+    emitter_->SetAmpBudgetCheck([this](uint32_t bytes) { return send_manager_.CheckAndChargeAmpBudget(bytes); });
+
     // Sole owner of socket lifecycle across migration. It performs the socket
     // switch and the close(2); we only forward the finished event to the
     // application (that needs shared_from_this(), which only we can do).
     migration_controller_ =
-        std::make_unique<MigrationController>(state_machine_, *path_manager_, transport_param_, *emitter_);
+        std::make_unique<MigrationController>(state_machine_, *path_manager_, transport_param_, *emitter_, event_loop_);
+
+    // The controller owns the loop-thread dispatch for migration; hand it the
+    // connection's address resolvers so it can pick the migration address family
+    // on the loop thread (race-free) rather than on the caller's thread.
+    migration_controller_->SetLocalAddressResolver(
+        [this](std::string& ip, uint32_t& port) { GetLocalAddr(ip, port); });
+    migration_controller_->SetPeerAddressResolver([this]() { return GetPeerAddress(); });
     migration_controller_->SetMigrationFinishedCallback(
         [this](const MigrationInfo& info) { OnMigrationFinished(info); });
     migration_controller_->SetLocalAddressUpdatedCallback(
@@ -421,6 +437,13 @@ uint64_t BaseConnection::GetConnectionIDHash() {
 }
 
 void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket>>& packets) {
+    // Tie the lifetime guards of our timer controllers to this connection so
+    // their timer callbacks are skipped once we are destroyed (and kept alive
+    // while they run). Must happen after we are owned by a shared_ptr, which is
+    // the case here; see RecvControl::Bind / SendControl::Bind.
+    recv_control_.Bind(weak_from_this());
+    send_manager_.Bind(weak_from_this());
+
     // Closing state: Check if packet contains CONNECTION_CLOSE, otherwise retransmit
     if (state_machine_.IsClosing()) {
         HandlePacketsInClosingState(now, packets);
@@ -449,21 +472,33 @@ void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket
     // emit a single datagrams_received summary after the loop.
     const uint64_t datagram_id = next_recv_datagram_id_++;
     current_recv_datagram_id_ = datagram_id;
-    uint32_t recv_datagram_total_bytes = 0;
     std::vector<uint64_t> recv_packet_numbers;
     if (qlog_trace_) {
         recv_packet_numbers.reserve(packets.size());
     }
 
-    for (size_t i = 0; i < packets.size(); i++) {
-        if (qlog_trace_) {
-            // packet_size from the encoded src buffer; sum into the datagram
-            // total so the datagrams_received event matches what hit the
-            // socket. We collect packet numbers here too so the event can
-            // list them in arrival order regardless of dispatch outcome.
-            recv_datagram_total_bytes += packets[i]->GetSrcBuffer().GetLength();
-        }
+    // Sum of the encoded packet sizes, so the datagrams_received event matches
+    // what hit the socket. Computed unconditionally (not just under qlog_trace_)
+    // because the anti-amplification credit depends on it: RFC 9000 §8.1 counts
+    // received datagram bytes, and gating that on qlog being enabled would make
+    // a security limit depend on a debug setting.
+    uint32_t recv_datagram_total_bytes = 0;
+    for (const auto& packet : packets) {
+        recv_datagram_total_bytes += packet->GetSrcBuffer().GetLength();
+    }
 
+    // RFC 9000 §8.1: credit the datagram against the 3x budget *before*
+    // dispatching. Dispatch generates the response inline — the server answers a
+    // client Initial from inside DispatchByType — so crediting afterwards meant
+    // the first server flight was weighed against a still-empty budget, refused
+    // by the emitter, and deferred to a later pump or PTO. Waiting for dispatch
+    // buys nothing: crediting is already a no-op once the address is validated.
+    send_manager_.OnCandidatePathBytesReceived(recv_datagram_total_bytes);
+
+    bool any_packet_processed = false;
+    for (size_t i = 0; i < packets.size(); i++) {
+        // Packet numbers are collected here so the qlog event can list them in
+        // arrival order regardless of dispatch outcome.
         bool packet_processed = DispatchByType(packets[i]);
 
         if (qlog_trace_) {
@@ -472,8 +507,17 @@ void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket
 
         // After processing (decrypting and decoding frames), record packet for ACK tracking
         if (packet_processed) {
+            any_packet_processed = true;
             recv_control_.OnPacketRecv(now, packets[i]);
         }
+    }
+
+    // RFC 9000 §10.3.1: a Stateless Reset is deliberately indistinguishable from a
+    // normal 1-RTT packet, so it can only be detected after normal processing has
+    // failed. Only then is it worth checking whether the trailing 16 bytes are one
+    // of the peer's reset tokens.
+    if (!any_packet_processed && !packets.empty() && CheckStatelessReset(packets)) {
+        return;
     }
 
     if (qlog_trace_) {
@@ -491,6 +535,35 @@ void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket
 
     // reset idle timeout timer task
     timer_coordinator_->ResetIdleTimer();
+}
+
+bool BaseConnection::CheckStatelessReset(const std::vector<std::shared_ptr<IPacket>>& packets) {
+    // RFC 9000 §10.3: "The Stateless Reset Token is the last 16 bytes of the
+    // datagram." A reset is never coalesced, so only the final packet's buffer can
+    // hold it, and the datagram must be long enough to be a plausible 1-RTT packet.
+    const auto& src = packets.back()->GetSrcBuffer();
+    const uint32_t length = src.GetLength();
+    if (length < kMinStatelessResetSize) {
+        return false;
+    }
+
+    const uint8_t* token = src.GetStart() + (length - TransportParam::kStatelessResetTokenLength);
+    if (!cid_coordinator_->IsPeerStatelessResetToken(token)) {
+        return false;
+    }
+
+    LOG_INFO("stateless reset received; peer has lost our connection state.");
+
+    // §10.3: the receiver enters the draining state immediately and MUST NOT send
+    // anything further on this connection -- in particular it must not reply with
+    // CONNECTION_CLOSE, which would be answered with another reset. This is the
+    // same transition a received CONNECTION_CLOSE drives, which is exactly the
+    // "peer ended it, stay silent" semantics required here.
+    state_machine_.OnConnectionCloseFrameReceived();
+    if (connection_close_cb_) {
+        connection_close_cb_(shared_from_this(), static_cast<uint64_t>(QuicErrorCode::kNoError), "stateless reset");
+    }
+    return true;
 }
 
 void BaseConnection::HandlePacketsInClosingState(uint64_t now, std::vector<std::shared_ptr<IPacket>>& packets) {
@@ -583,6 +656,14 @@ bool BaseConnection::DispatchByType(const std::shared_ptr<IPacket>& packet) {
             // version again. Placed in the dispatcher so the base and
             // ClientConnection overrides of OnHandshakePacket share it.
             connection_crypto_.DiscardPreviousInitialKeys();
+
+            // RFC 9000 §8.1: "a server MUST NOT send more than three times as many
+            // bytes as the number of bytes it has received [...] until it has
+            // validated the client's address." Successfully processing a Handshake
+            // packet proves the client received our Initial (Handshake keys come
+            // from the TLS handshake), so the address is validated and the
+            // amplification limit is lifted.
+            send_manager_.MarkAddressValidated();
             return true;
         }
         case PacketType::kRetryPacketType:
@@ -598,6 +679,11 @@ bool BaseConnection::DispatchByType(const std::shared_ptr<IPacket>& packet) {
 bool BaseConnection::OnInitialPacket(const std::shared_ptr<IPacket>& packet) {
     LongHeader* header = (LongHeader*)packet->GetHeader();
     uint32_t pkt_version = header->GetVersion();
+
+    // RFC 9000 §7.3: remember the peer's SCID from its first Initial so that
+    // ValidatePeerConnectionIds() can later confirm the peer's
+    // initial_source_connection_id transport parameter agrees with it.
+    RecordPeerInitialScid(header->GetSourceConnectionId(), header->GetSourceConnectionIdLength());
 
     // RFC 9368: Record the version the peer used in its FIRST Initial. This
     // is needed on the server side for the mandatory "peer_chosen_version
@@ -615,6 +701,21 @@ bool BaseConnection::OnInitialPacket(const std::shared_ptr<IPacket>& packet) {
             // ApplyVersion also re-pushes version_information to TLS, which
             // RFC 9368 §4 requires before EncryptedExtensions is serialized.
             version_negotiator_->ApplyVersion(pkt_version);
+        }
+
+        // RFC 9000 §7.3: "The server MUST include the original_destination_connection_id
+        // transport parameter", set to the DCID of the client's first Initial. That value is
+        // what lets the client prove the handshake belongs to the CID it originally chose.
+        // The accepting worker usually supplies it via QuicTransportParams, but back-fill it
+        // here whenever it is missing so the parameter can never be dropped by an embedder
+        // that builds the server connection itself. Must happen before the CRYPTO frames in
+        // this very packet reach TLS, i.e. before OnNormalPacket() below.
+        if (is_server_ && transport_param_.GetOriginalDestinationConnectionId().empty() &&
+            header->GetDestinationConnectionIdLength() > 0) {
+            transport_param_.SetOriginalDestinationConnectionId(
+                std::string(reinterpret_cast<const char*>(header->GetDestinationConnectionId()),
+                    header->GetDestinationConnectionIdLength()));
+            EncodeAndPushTpToTls(transport_param_);
         }
 
         LOG_INFO("Installing Initial Secret for decryption from packet DCID: length=%u, version=0x%08x",
@@ -899,6 +1000,37 @@ bool BaseConnection::ParsePreferredAddress(const std::string& value, common::Add
     return true;
 }
 
+void BaseConnection::RecordPeerInitialScid(const uint8_t* id, uint8_t len) {
+    if (peer_initial_scid_recorded_) {
+        return;
+    }
+    peer_initial_scid_recorded_ = true;
+    if (id != nullptr && len > 0) {
+        peer_initial_scid_.assign(reinterpret_cast<const char*>(id), len);
+    }
+}
+
+bool BaseConnection::ValidatePeerConnectionIds(const TransportParam& remote_tp) {
+    // RFC 9000 §7.3: "An endpoint MUST treat the following as a connection error of
+    // type TRANSPORT_PARAMETER_ERROR: [...] a mismatch between values received from a
+    // peer in these transport parameters and the value sent in the corresponding
+    // Destination or Source Connection ID fields of Initial packets."
+    if (!peer_initial_scid_recorded_) {
+        // No long-header packet observed (e.g. a resumed/0-RTT-only path in tests):
+        // nothing to compare against, so do not manufacture a failure.
+        return true;
+    }
+
+    const std::string& tp_iscid = remote_tp.GetInitialSourceConnectionId();
+    if (tp_iscid != peer_initial_scid_) {
+        LOG_ERROR("initial_source_connection_id mismatch: tp_len=%zu, observed_len=%zu", tp_iscid.length(),
+            peer_initial_scid_.length());
+        InnerConnectionClose(QuicErrorCode::kTransportParameterError, 0, "initial_source_connection_id mismatch");
+        return false;
+    }
+    return true;
+}
+
 void BaseConnection::OnTransportParams(TransportParam& remote_tp) {
     // RFC 9368 §4: Validate remote peer's version_information (if present) and,
     // on the server, decide whether to compatibly upgrade the connection version.
@@ -907,6 +1039,20 @@ void BaseConnection::OnTransportParams(TransportParam& remote_tp) {
     if (!ValidateAndMaybeUpgradeByRemoteTP(remote_tp)) {
         // Downgrade / protocol violation detected; connection has been closed.
         return;
+    }
+
+    // RFC 9000 §7.3. Must also run BEFORE Merge(), which folds the peer's CID
+    // parameters into our own TransportParam and would erase the evidence.
+    if (!ValidatePeerConnectionIds(remote_tp)) {
+        return;
+    }
+
+    // RFC 9000 §10.3.1: the stateless_reset_token transport parameter belongs to
+    // the peer's initial CID. Record it so a Stateless Reset for that CID is
+    // recognised rather than discarded as an undecryptable packet.
+    const std::string& reset_token = remote_tp.GetStatelessResetToken();
+    if (reset_token.size() == TransportParam::kStatelessResetTokenLength) {
+        cid_coordinator_->AddPeerStatelessResetToken(reinterpret_cast<const uint8_t*>(reset_token.data()));
     }
 
     // RecvFlowController was already initialized with local values during Init().
@@ -1193,62 +1339,20 @@ void BaseConnection::CheckAndReplenishLocalCIDPool() {
 }
 
 bool BaseConnection::InitiateMigration() {
-    // May be invoked from any thread (e.g. a test/application migration
-    // thread). The migration path touches per-connection state owned by the
-    // event-loop thread (DatagramEmitter sockets, EventLoop timers, PathManager
-    // probe socket); running it off-loop races with the worker thread and trips
-    // EventLoop's AssertInLoopThread. Marshal the whole operation onto that
-    // thread, mirroring UdpReceiver::AddReceiver's RunInLoop pattern.
-    auto loop = GetEventLoop();
-    if (!loop) return false;
-    if (loop->IsInLoopThread()) {
-        return InitiateMigrationOnLoop();
-    }
-    loop->RunInLoop([self = shared_from_this()]() { self->InitiateMigrationOnLoop(); });
-    return true;  // async: real outcome reported via the migration callback
-}
-
-bool BaseConnection::InitiateMigrationOnLoop() {
-    // RFC 9000 §9 convenience wrapper for interop tests: keep the local IP but
-    // let the system pick a fresh ephemeral port. Address-family resolution
-    // stays here because it needs peer_addr_ and the cached local address.
-    // Always invoked on the connection's event-loop thread (see InitiateMigration).
-    LOG_INFO("InitiateMigration: delegating to MigrationController");
-
-    std::string current_ip;
-    uint32_t current_port;
-    GetLocalAddr(current_ip, current_port);
-
-    if (current_ip.empty() || current_ip == "::") {
-        // Dual-stack socket reports "::" as local address. For migration, we need
-        // to match the address family of the peer to ensure the new socket can
-        // communicate with the peer. IPv4 peers need an IPv4 socket.
-        bool peer_is_ipv4 = (peer_addr_.GetIp().find(':') == std::string::npos);
-        if (peer_is_ipv4) {
-            current_ip = "0.0.0.0";
-            LOG_INFO("InitiateMigration: peer is IPv4, using 0.0.0.0 for migration");
-        } else {
-            current_ip = "::";
-            LOG_INFO("InitiateMigration: peer is IPv6, using :: for migration");
-        }
-    }
-
-    return migration_controller_->InitiateMigration(current_ip);
+    // All migration state (paths, connection IDs, sockets, timers) is owned by
+    // this connection's event-loop thread. MigrationController performs the
+    // thread hop internally and waits for the result, so this call is safe from
+    // any thread. Address-family resolution is likewise done inside the
+    // controller on the loop thread, so it never races the cached local/peer
+    // addresses that live there. The weak owner lets the controller skip the
+    // deferred task if the connection is destroyed while the request is queued.
+    return migration_controller_->InitiateMigration(
+        std::weak_ptr<void>(std::static_pointer_cast<BaseConnection>(shared_from_this())));
 }
 
 MigrationResult BaseConnection::InitiateMigrationTo(const std::string& local_ip, uint16_t local_port) {
-    // Same cross-thread concern as InitiateMigration: the migration path must
-    // run on the connection's event-loop thread. Marshal it there; the real
-    // outcome is also delivered via the migration callback.
-    auto loop = GetEventLoop();
-    if (!loop) return MigrationResult::kFailedInvalidState;
-    if (loop->IsInLoopThread()) {
-        return migration_controller_->InitiateMigrationTo(local_ip, local_port);
-    }
-    loop->RunInLoop([self = shared_from_this(), local_ip, local_port]() {
-        self->migration_controller_->InitiateMigrationTo(local_ip, local_port);
-    });
-    return MigrationResult::kSuccess;  // async: queued onto the event loop
+    return migration_controller_->InitiateMigrationTo(
+        std::weak_ptr<void>(std::static_pointer_cast<BaseConnection>(shared_from_this())), local_ip, local_port);
 }
 
 void BaseConnection::SetMigrationCallback(migration_callback cb) {
@@ -1594,6 +1698,11 @@ bool BaseConnection::TrySendRetransmit() {
 
 int BaseConnection::TrySendBurst(int budget) {
     common::Metrics::CounterInc(common::MetricsStd::DiagTrySendIters);
+    // Tie the lifetime guards of our timer controllers to this connection (see
+    // OnPackets for rationale). Ensures PTO / retransmit callbacks are skipped
+    // once we are destroyed.
+    recv_control_.Bind(weak_from_this());
+    send_manager_.Bind(weak_from_this());
     if (budget <= 0) {
         return 0;
     }

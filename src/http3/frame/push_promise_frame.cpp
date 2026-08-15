@@ -1,6 +1,7 @@
 #include "http3/frame/push_promise_frame.h"
 #include "common/buffer/buffer_decode_wrapper.h"
 #include "common/buffer/buffer_encode_wrapper.h"
+#include "common/log/log.h"
 
 namespace quicx {
 namespace http3 {
@@ -48,6 +49,12 @@ DecodeResult PushPromiseFrame::Decode(std::shared_ptr<common::IBuffer> buffer, b
         return DecodeResult::kError;
     }
 
+    if (length_ > kMaxFrameLength) {
+        LOG_ERROR("PushPromiseFrame::Decode: length %llu exceeds limit %llu", (unsigned long long)length_,
+            (unsigned long long)kMaxFrameLength);
+        return DecodeResult::kError;
+    }
+
     // Check if we have enough data
     if (wrapper.GetDataLength() < length_) {
         return DecodeResult::kError;
@@ -61,7 +68,15 @@ DecodeResult PushPromiseFrame::Decode(std::shared_ptr<common::IBuffer> buffer, b
 
     // Calculate remaining length for encoded fields
     uint32_t push_id_size = common::GetEncodeVarintLength(push_id_);
-    uint32_t fields_length = length_ - push_id_size;
+    // The Push ID is part of the frame payload, so a Length smaller than the Push
+    // ID's own encoding is malformed. Without this guard the subtraction wraps and
+    // fields_length becomes a huge value.
+    if (length_ < push_id_size) {
+        LOG_ERROR("PushPromiseFrame::Decode: length %llu smaller than push id size %u", (unsigned long long)length_,
+            push_id_size);
+        return DecodeResult::kError;
+    }
+    uint32_t fields_length = static_cast<uint32_t>(length_) - push_id_size;
 
     // Check if we have enough data for fields
     if (wrapper.GetBuffer()->GetDataLength() < fields_length) {

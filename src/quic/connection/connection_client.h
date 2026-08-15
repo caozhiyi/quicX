@@ -36,6 +36,12 @@ protected:
     // HANDSHAKE_DONE frame handler (set as callback to frame processor)
     bool HandleHandshakeDoneFrame(std::shared_ptr<IFrame> frame);
 
+    // RFC 9000 §7.3: in addition to the shared initial_source_connection_id check,
+    // the client must verify original_destination_connection_id and, after a Retry,
+    // retry_source_connection_id. These are the checks that bind the handshake to the
+    // CIDs the client actually chose/observed, defeating forged Retry downgrades.
+    virtual bool ValidatePeerConnectionIds(const TransportParam& remote_tp) override;
+
 private:
     // Common TLS setup for both Dial() overloads (ALPN, SNI, transport params)
     bool DialSetupTLS(std::shared_ptr<TLSClientConnection> tls_conn, const common::Address& addr,
@@ -46,6 +52,9 @@ private:
     // Original Destination Connection ID (for Retry handling per RFC 9000)
     ConnectionID original_dcid_;
     bool retry_received_{false};
+    // SCID carried by the Retry packet we accepted; compared against the server's
+    // retry_source_connection_id transport parameter.
+    std::string retry_scid_;
 
     // RFC 9000 §19.20: HANDSHAKE_DONE is ack-eliciting and the server WILL
     // retransmit it whenever our ACK is lost or delayed. Every side effect of

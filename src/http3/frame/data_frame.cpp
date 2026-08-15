@@ -67,6 +67,14 @@ DecodeResult DataFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool wit
         return DecodeResult::kNeedMoreData;
     }
 
+    // Bound before narrowing: the varint holds up to 2^62-1, so the cast to
+    // uint32_t silently truncated oversized values and produced a length that
+    // disagreed with what the peer actually announced.
+    if (length_64 > kMaxFrameLength) {
+        LOG_ERROR("DataFrame::Decode: length %llu exceeds limit %llu", (unsigned long long)length_64,
+            (unsigned long long)kMaxFrameLength);
+        return DecodeResult::kError;
+    }
     length_ = static_cast<uint32_t>(length_64);
 
     // Check if we have enough data for the complete frame

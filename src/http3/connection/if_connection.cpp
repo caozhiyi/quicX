@@ -32,13 +32,16 @@ void IConnection::Init() {
     // pure virtual on a half-destroyed object (was the cause of the
     // __cxa_pure_virtual SIGABRT). Per ownership_and_memory.md §3.1.
     std::weak_ptr<IConnection> weak_self = weak_from_this();
-    quic_connection_->SetStreamStateCallBack([weak_self](std::shared_ptr<IQuicStream> stream, uint32_t error_code) {
-        auto self = weak_self.lock();
-        if (!self) {
-            return;
-        }
-        self->HandleStream(stream, error_code);
-    });
+    auto qc = quic_connection_.lock();
+    if (qc) {
+        qc->SetStreamStateCallBack([weak_self](std::shared_ptr<IQuicStream> stream, uint32_t error_code) {
+            auto self = weak_self.lock();
+            if (!self) {
+                return;
+            }
+            self->HandleStream(stream, error_code);
+        });
+    }
 
     // Start periodic cleanup timer for completed streams (runs every 100ms)
     StartCleanupTimer();
@@ -48,9 +51,12 @@ IConnection::~IConnection() {
     // Set flag to prevent timer callbacks from accessing this object
     is_destroying_->store(true);
 
-    // Only call Close if the QUIC connection is still active
-    // If already closing/draining/closed, skip to avoid duplicate CloseInternal error
-    if (quic_connection_ && !quic_connection_->IsTerminating()) {
+    // Only call Close if the QUIC connection is still active. The QUIC
+    // connection is held weakly (see header), so when we are destroyed it may
+    // already be torn down — in that case lock() returns null and there is
+    // nothing left to close.
+    auto qc = quic_connection_.lock();
+    if (qc && !qc->IsTerminating()) {
         Close(0);
     }
 
@@ -64,22 +70,24 @@ IConnection::~IConnection() {
 }
 
 void IConnection::Close(uint32_t error_code) {
-    // Skip if QUIC connection is already in terminating state
-    if (!quic_connection_ || quic_connection_->IsTerminating()) {
+    // Skip if QUIC connection is already in terminating state or gone
+    auto qc = quic_connection_.lock();
+    if (!qc || qc->IsTerminating()) {
         return;
     }
 
     if (error_code != 0) {
-        quic_connection_->Reset(error_code);
+        qc->Reset(error_code);
     } else {
-        quic_connection_->Close();
+        qc->Close();
     }
 }
 
 void IConnection::Shutdown() {
     // RFC 9114 §5.2: GOAWAY may only be sent once per direction with a
     // non-increasing id. Repeated calls collapse into a single GOAWAY.
-    if (!quic_connection_ || quic_connection_->IsTerminating()) {
+    auto qc = quic_connection_.lock();
+    if (!qc || qc->IsTerminating()) {
         return;
     }
     if (draining_) {
@@ -148,39 +156,44 @@ bool IConnection::HasInFlightRequests() const {
 }
 
 bool IConnection::InitiateMigration() {
-    if (!quic_connection_) {
+    auto qc = quic_connection_.lock();
+    if (!qc) {
         LOG_WARN("IConnection::InitiateMigration: no QUIC connection");
         return false;
     }
-    return quic_connection_->InitiateMigration();
+    return qc->InitiateMigration();
 }
 
 MigrationResult IConnection::InitiateMigrationTo(const std::string& local_ip, uint16_t local_port) {
-    if (!quic_connection_) {
+    auto qc = quic_connection_.lock();
+    if (!qc) {
         LOG_WARN("IConnection::InitiateMigrationTo: no QUIC connection");
         return MigrationResult::kFailedInvalidState;
     }
-    return quic_connection_->InitiateMigrationTo(local_ip, local_port);
+    return qc->InitiateMigrationTo(local_ip, local_port);
 }
 
 void IConnection::SetMigrationCallback(migration_callback cb) {
-    if (quic_connection_) {
-        quic_connection_->SetMigrationCallback(cb);
+    auto qc = quic_connection_.lock();
+    if (qc) {
+        qc->SetMigrationCallback(cb);
     }
 }
 
 bool IConnection::IsMigrationSupported() const {
-    if (!quic_connection_) {
+    auto qc = quic_connection_.lock();
+    if (!qc) {
         return false;
     }
-    return quic_connection_->IsMigrationSupported();
+    return qc->IsMigrationSupported();
 }
 
 bool IConnection::IsMigrationInProgress() const {
-    if (!quic_connection_) {
+    auto qc = quic_connection_.lock();
+    if (!qc) {
         return false;
     }
-    return quic_connection_->IsMigrationInProgress();
+    return qc->IsMigrationInProgress();
 }
 
 void IConnection::HandleSettings(const std::unordered_map<uint16_t, uint64_t>& settings) {
@@ -261,7 +274,8 @@ void IConnection::StartCleanupTimer() {
         // re-arms itself, so there is nothing to do here.
         return;
     }
-    if (!quic_connection_) {
+    auto qc = quic_connection_.lock();
+    if (!qc) {
         return;
     }
 
@@ -285,8 +299,8 @@ void IConnection::StartCleanupTimer() {
     // slot whenever the wheel lagged real time. The timer cancels itself when
     // the owning QUIC connection (and thus its TimerCoordinator life token)
     // is destroyed.
-    cleanup_timer_id_ = quic_connection_->AddTimer(std::move(cb), kStreamCleanupIntervalMs,
-                                                   /*periodic=*/true);
+    cleanup_timer_id_ = qc->AddTimer(std::move(cb), kStreamCleanupIntervalMs,
+                                     /*periodic=*/true);
 }
 
 void IConnection::CleanupDestroyedStreams() {
@@ -303,7 +317,8 @@ void IConnection::CleanupDestroyedStreams() {
     // finished stream alive in streams_to_destroy_ for one extra tick;
     // by the time we land here that holding-area has been cleared above,
     // so HasInFlightRequests() reflects the real state.
-    if (draining_ && quic_connection_ && !quic_connection_->IsTerminating() && !HasInFlightRequests()) {
+    auto qc = quic_connection_.lock();
+    if (draining_ && qc && !qc->IsTerminating() && !HasInFlightRequests()) {
         LOG_INFO("IConnection::CleanupDestroyedStreams: drain complete, emitting CONNECTION_CLOSE(H3_NO_ERROR)");
         Close(0);
     }

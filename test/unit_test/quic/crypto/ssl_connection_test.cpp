@@ -116,11 +116,13 @@ public:
                     ADD_FAILURE() << LevelToString(level) << " handshake data written after handshake keys installed";
                     return;
                 }
+                [[fallthrough]];
             case kHandshake:
                 if (!levels_[kApplication].write_secret.empty()) {
                     ADD_FAILURE() << LevelToString(level) << " handshake data written after application keys installed";
                     return;
                 }
+                [[fallthrough]];
             case kApplication:
                 break;
             default:

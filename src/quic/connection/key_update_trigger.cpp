@@ -1,22 +1,17 @@
 #include "quic/connection/key_update_trigger.h"
 #include "common/log/log.h"
+#include "quic/config.h"
 
 namespace quicx {
 namespace quic {
-
-// Default threshold: 512KB of data before triggering key update
-static const uint64_t kDefaultBytesThreshold = 512 * 1024;
-
-// Default packet number threshold: 1000 packets
-static const uint64_t kDefaultPacketNumberThreshold = 1000;
 
 KeyUpdateTrigger::KeyUpdateTrigger():
     enabled_(false),
     triggered_(false),
     key_update_count_(0),
-    bytes_threshold_(kDefaultBytesThreshold),
+    bytes_threshold_(kKeyUpdateBytesThreshold),
     total_bytes_sent_(0),
-    pn_threshold_(kDefaultPacketNumberThreshold),
+    pn_threshold_(kKeyUpdatePacketNumberThreshold),
     last_pn_at_update_(0),
     current_pn_(0) {}
 

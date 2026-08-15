@@ -36,7 +36,7 @@ PushReceiverStream::~PushReceiverStream() {
     stream_.reset();
 }
 
-void PushReceiverStream::OnData(std::shared_ptr<IBufferRead> data, bool is_last, uint32_t error) {
+void PushReceiverStream::OnData(std::shared_ptr<IBufferRead> data, bool /*is_last*/, uint32_t error) {
     if (error != 0) {
         LOG_ERROR("PushReceiverStream::OnData error: %d", error);
         error_handler_(stream_->GetStreamID(), error);

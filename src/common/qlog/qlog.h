@@ -25,8 +25,11 @@
 #define QLOG_ENABLED 0
 #endif
 
-#if QLOG_ENABLED
-
+// These includes are deliberately unconditional. Call sites build event structs such
+// as common::PacketDroppedData in ordinary code and only pass them to a QLOG_* macro,
+// so the types must stay visible even when the macros compile to no-ops. The event
+// objects then become unused locals that the optimiser drops, which keeps the
+// disabled build free of qlog work without forcing every call site into an #if.
 #include "common/qlog/event/connectivity_events.h"
 #include "common/qlog/event/http3_events.h"
 #include "common/qlog/event/qlog_event.h"
@@ -39,8 +42,13 @@
 #include "common/qlog/util/qlog_constants.h"
 #include "common/util/time.h"
 
+// The namespace must be opened outside the QLOG_ENABLED guard: the closing braces
+// at the bottom of this header are unconditional, so opening it only in the enabled
+// branch makes the QUICX_ENABLE_QLOG=OFF build fail to parse.
 namespace quicx {
 namespace common {
+
+#if QLOG_ENABLED
 
 /**
  * @brief Get current timestamp (microseconds)

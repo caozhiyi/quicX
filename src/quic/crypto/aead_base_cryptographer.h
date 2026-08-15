@@ -35,13 +35,13 @@ public:
     virtual Result EncryptPacket(uint64_t pkt_number, common::BufferSpan& associated_data,
         common::BufferSpan& plaintext, std::shared_ptr<common::IBuffer> out_ciphertext) override;
 
-    virtual Result DecryptHeader(common::BufferSpan& ciphertext, common::BufferSpan& sample, uint32_t pn_offset,
+    virtual Result DecryptHeader(common::BufferSpan& ciphertext, common::BufferSpan& sample, uint8_t pn_offset,
         uint8_t& out_packet_num_len, bool is_short) override;
 
     // RFC 9001 §6: Check if previous read key is available
     virtual bool HasPrevReadKey() const override { return !prev_read_secret_.key_.empty(); }
 
-    virtual Result EncryptHeader(common::BufferSpan& plaintext, common::BufferSpan& sample, uint32_t pn_offset,
+    virtual Result EncryptHeader(common::BufferSpan& plaintext, common::BufferSpan& sample, uint8_t pn_offset,
         size_t pkt_number_len, bool is_short) override;
 
     virtual size_t GetTagLength() override { return aead_tag_length_; }

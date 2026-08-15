@@ -36,7 +36,14 @@ Client::~Client() {
     // are destroyed. Without this, a quick Close()+Destroy() cycle leaves
     // BaseConnection (~120KB) pinned until process exit.
     conn_map_.clear();
-    wait_request_map_.clear();
+    {
+        // Serialise against any in-flight OnConnection() on a worker thread
+        // that may still be touching wait_request_map_ (find/erase/pop) while
+        // the destructor drops it. Without the lock the unordered_map's
+        // internal rehash state races with the clear() — a TSan data race.
+        std::lock_guard<std::mutex> wl(wait_request_map_mu_);
+        wait_request_map_.clear();
+    }
 }
 
 bool Client::Init(const Http3ClientConfig& config) {
@@ -185,11 +192,14 @@ bool Client::DoRequestImpl(
         addr.SetPort(port);
 
         std::string addr_key = addr.AsString();
-        wait_request_map_[addr_key].push(WaitRequestContext{host, request, handler});
+        {
+            std::lock_guard<std::mutex> wl(wait_request_map_mu_);
+            wait_request_map_[addr_key].push(WaitRequestContext{host, request, handler});
 
-        if (wait_request_map_[addr_key].size() == 1) {
-            uint32_t timeout_ms = config_.connection_timeout_ms_;
-            quic_->Connection(addr.GetIp(), addr.GetPort(), kHttp3Alpn, timeout_ms, "", host);
+            if (wait_request_map_[addr_key].size() == 1) {
+                uint32_t timeout_ms = config_.connection_timeout_ms_;
+                quic_->Connection(addr.GetIp(), addr.GetPort(), kHttp3Alpn, timeout_ms, "", host);
+            }
         }
     });
 
@@ -260,43 +270,46 @@ void Client::OnConnection(
         // and synchronously tearing down the owning quic client from that frame
         // would invalidate the event_loop/connection_closer that the caller still
         // uses after we return (timer registration, log writes, etc.).
-        if (is_closing_ && pending_close_count_ > 0) {
-            --pending_close_count_;
-            if (pending_close_count_ == 0 && !destroy_scheduled_) {
-                destroy_scheduled_ = true;
+        if (is_closing_.load(std::memory_order_relaxed) && pending_close_count_.load(std::memory_order_relaxed) > 0) {
+            pending_close_count_.fetch_sub(1, std::memory_order_relaxed);
+            if (pending_close_count_.load(std::memory_order_relaxed) == 0 && !destroy_scheduled_.load(std::memory_order_relaxed)) {
+                destroy_scheduled_.store(true, std::memory_order_relaxed);
                 LOG_DEBUG("Client: all connections closed, destroying quic client immediately");
                 quic_->AddTimer(0, [this]() { quic_->Destroy(); });
             }
         }
 
         // Clear waiting requests for this address (connection failed)
-        auto wait_it = wait_request_map_.find(addr_key);
-        if (wait_it != wait_request_map_.end()) {
-            // Notify all waiting requests about the connection failure
-            uint32_t error_code = error != 0 ? error : Http3ErrorCode::kInternalError;
-            while (!wait_it->second.empty()) {
-                auto& context = wait_it->second.front();
+        {
+            std::lock_guard<std::mutex> wl(wait_request_map_mu_);
+            auto wait_it = wait_request_map_.find(addr_key);
+            if (wait_it != wait_request_map_.end()) {
+                // Notify all waiting requests about the connection failure
+                uint32_t error_code = error != 0 ? error : Http3ErrorCode::kInternalError;
+                while (!wait_it->second.empty()) {
+                    auto& context = wait_it->second.front();
 
-                // Call the user's response callback with error
-                if (context.IsAsync()) {
-                    auto handler = context.GetAsyncHandler();
-                    if (handler) {
-                        handler->OnError(error_code);
+                    // Call the user's response callback with error
+                    if (context.IsAsync()) {
+                        auto handler = context.GetAsyncHandler();
+                        if (handler) {
+                            handler->OnError(error_code);
+                        }
+                    } else {
+                        auto handler = context.GetCompleteHandler();
+                        if (handler) {
+                            handler(nullptr, error_code);
+                        }
                     }
-                } else {
-                    auto handler = context.GetCompleteHandler();
-                    if (handler) {
-                        handler(nullptr, error_code);
-                    }
-                }
 
-                // Also call error handler if available
-                if (error_handler_) {
-                    error_handler_(context.host, error_code);
+                    // Also call error handler if available
+                    if (error_handler_) {
+                        error_handler_(context.host, error_code);
+                    }
+                    wait_it->second.pop();
                 }
-                wait_it->second.pop();
+                wait_request_map_.erase(wait_it);
             }
-            wait_request_map_.erase(wait_it);
         }
         return;
     }
@@ -305,78 +318,84 @@ void Client::OnConnection(
     if (error != 0) {
         LOG_ERROR("connection creation failed. error: %d, reason: %s", error, reason.c_str());
         // Handle connection failure - notify all waiting requests
-        auto wait_it = wait_request_map_.find(addr_key);
-        if (wait_it != wait_request_map_.end()) {
-            while (!wait_it->second.empty()) {
-                auto& context = wait_it->second.front();
+        {
+            std::lock_guard<std::mutex> wl(wait_request_map_mu_);
+            auto wait_it = wait_request_map_.find(addr_key);
+            if (wait_it != wait_request_map_.end()) {
+                while (!wait_it->second.empty()) {
+                    auto& context = wait_it->second.front();
 
-                // Call the user's response callback with error
-                if (context.IsAsync()) {
-                    auto handler = context.GetAsyncHandler();
-                    if (handler) {
-                        handler->OnError(error);
+                    // Call the user's response callback with error
+                    if (context.IsAsync()) {
+                        auto handler = context.GetAsyncHandler();
+                        if (handler) {
+                            handler->OnError(error);
+                        }
+                    } else {
+                        auto handler = context.GetCompleteHandler();
+                        if (handler) {
+                            handler(nullptr, error);
+                        }
                     }
-                } else {
-                    auto handler = context.GetCompleteHandler();
-                    if (handler) {
-                        handler(nullptr, error);
-                    }
-                }
 
-                // Also call error handler if available
-                if (error_handler_) {
-                    error_handler_(context.host, error);
+                    // Also call error handler if available
+                    if (error_handler_) {
+                        error_handler_(context.host, error);
+                    }
+                    wait_it->second.pop();
                 }
-                wait_it->second.pop();
+                wait_request_map_.erase(wait_it);
             }
-            wait_request_map_.erase(wait_it);
         }
         return;
     }
 
     // Connection established successfully
-    auto wait_it = wait_request_map_.find(addr_key);
-    if (wait_it == wait_request_map_.end() || wait_it->second.empty()) {
-        LOG_ERROR("no wait request context found for connection. addr: %s", addr_key.c_str());
-        return;
-    }
-
-    // Get the first context to determine the host name for connection mapping
-    auto first_context = wait_it->second.front();
-    std::string host_name = first_context.host;
-
-    // Create client connection
-    auto client_conn = std::make_shared<ClientConnection>(
-        host_name, settings_, conn, [this](auto a, auto b) { HandleError(a, b); },
-        [this](auto a) { return HandlePushPromise(a); }, [this](auto a, auto b) { HandlePush(a, b); },
-        config_.max_concurrent_streams_, config_.enable_push_);
-
-    // Initialize connection (starts timers)
-    client_conn->Init();
-
-    // Store connection in map (held under unique lock so user-thread
-    // fast-path readers never see a half-rehashed bucket).
     {
-        std::unique_lock<std::shared_mutex> wlock(conn_map_mu_);
-        conn_map_[host_name] = client_conn;
-    }
-
-    // Process all waiting requests in the queue
-    while (!wait_it->second.empty()) {
-        auto& context = wait_it->second.front();
-
-        // Send request with the appropriate handler type
-        if (context.IsAsync()) {
-            client_conn->DoRequest(context.request, context.GetAsyncHandler());
-        } else {
-            client_conn->DoRequest(context.request, context.GetCompleteHandler());
+        std::lock_guard<std::mutex> wl(wait_request_map_mu_);
+        auto wait_it = wait_request_map_.find(addr_key);
+        if (wait_it == wait_request_map_.end() || wait_it->second.empty()) {
+            LOG_ERROR("no wait request context found for connection. addr: %s", addr_key.c_str());
+            return;
         }
 
-        wait_it->second.pop();
-    }
+        // Get the first context to determine the host name for connection mapping
+        auto first_context = wait_it->second.front();
+        std::string host_name = first_context.host;
 
-    // Remove the empty queue from wait_request_map_
-    wait_request_map_.erase(wait_it);
+        // Create client connection
+        auto client_conn = std::make_shared<ClientConnection>(
+            host_name, settings_, conn, [this](auto a, auto b) { HandleError(a, b); },
+            [this](auto a) { return HandlePushPromise(a); }, [this](auto a, auto b) { HandlePush(a, b); },
+            config_.max_concurrent_streams_, config_.enable_push_);
+
+        // Initialize connection (starts timers)
+        client_conn->Init();
+
+        // Store connection in map (held under unique lock so user-thread
+        // fast-path readers never see a half-rehashed bucket).
+        {
+            std::unique_lock<std::shared_mutex> wlock(conn_map_mu_);
+            conn_map_[host_name] = client_conn;
+        }
+
+        // Process all waiting requests in the queue
+        while (!wait_it->second.empty()) {
+            auto& context = wait_it->second.front();
+
+            // Send request with the appropriate handler type
+            if (context.IsAsync()) {
+                client_conn->DoRequest(context.request, context.GetAsyncHandler());
+            } else {
+                client_conn->DoRequest(context.request, context.GetCompleteHandler());
+            }
+
+            wait_it->second.pop();
+        }
+
+        // Remove the empty queue from wait_request_map_
+        wait_request_map_.erase(wait_it);
+    }
 }
 
 void Client::HandleError(const std::string& unique_id, uint32_t error_code) {
@@ -434,10 +453,10 @@ void Client::Close() {
     // Guard against double-close: if Close() was already invoked the
     // Destroy() timer is already scheduled; registering a second one
     // would lead to double-free corruption.
-    if (is_closing_) {
+    if (is_closing_.load(std::memory_order_relaxed)) {
         return;
     }
-    is_closing_ = true;
+    is_closing_.store(true, std::memory_order_relaxed);
 
     // Snapshot every active ClientConnection under the conn_map_ lock
     // *before* invoking Close() on any of them. ClientConnection::Close
@@ -469,7 +488,7 @@ void Client::Close() {
     // has torn them down), so that short-lived clients (e.g. one
     // request + Close()) do not pay the full
     // kConnectionCloseDestroyTimeoutMs (1s) tax on destruction.
-    pending_close_count_ = static_cast<uint32_t>(snapshot.size());
+    pending_close_count_.store(static_cast<uint32_t>(snapshot.size()), std::memory_order_relaxed);
 
     // Close all active HTTP/3 connections from the snapshot. Even if a
     // synchronous CONNECTION_CLOSE callback erases the matching entry
@@ -480,11 +499,11 @@ void Client::Close() {
     }
     snapshot.clear();
 
-    if (pending_close_count_ == 0) {
+    if (pending_close_count_.load(std::memory_order_relaxed) == 0) {
         // No live connections at all (e.g. Close() before any
         // DoRequest). Destroy immediately — nothing to drain.
-        if (!destroy_scheduled_) {
-            destroy_scheduled_ = true;
+        if (!destroy_scheduled_.load(std::memory_order_relaxed)) {
+            destroy_scheduled_.store(true, std::memory_order_relaxed);
             quic_->Destroy();
         }
         return;
@@ -496,8 +515,8 @@ void Client::Close() {
     // short-circuit this when all connections have genuinely closed
     // first.
     quic_->AddTimer(kConnectionCloseDestroyTimeoutMs, [this]() {
-        if (!destroy_scheduled_) {
-            destroy_scheduled_ = true;
+        if (!destroy_scheduled_.load(std::memory_order_relaxed)) {
+            destroy_scheduled_.store(true, std::memory_order_relaxed);
             quic_->Destroy();
         }
     });

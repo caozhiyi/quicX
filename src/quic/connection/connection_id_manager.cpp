@@ -7,7 +7,11 @@ namespace quic {
 
 ConnectionID ConnectionIDManager::Generator() {
     ConnectionID id;
-    ConnectionIDGenerator::Instance().Generator(id.id_, id.length_);
+    if (!ConnectionIDGenerator::Instance().Generator(id.id_, id.length_)) {
+        // The id is zeroed on failure. Surface it here rather than letting a
+        // predictable CID silently enter the pool.
+        LOG_ERROR("ConnectionIDManager::Generator: failed to generate a connection id");
+    }
     id.sequence_number_ = ++cur_sequence_number_;
     AddID(id);
     return id;

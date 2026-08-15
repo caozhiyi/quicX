@@ -1,6 +1,7 @@
+#include <atomic>
 #include <cstdlib>
+#include <thread>
 
-#include <quicx/common/if_event_loop.h>
 #include <quicx/common/metrics.h>
 #include <quicx/common/metrics_std.h>
 #include "common/allocator/pool_block.h"
@@ -13,17 +14,32 @@ static const uint16_t kMaxBlockNum = 20;
 
 BlockMemoryPool::BlockMemoryPool(uint32_t large_sz, uint32_t add_num):
     number_large_add_nodes_(add_num),
-    large_size_(large_sz) {}
+    large_size_(large_sz),
+    owner_tid_(std::thread::id()) {}
 
 BlockMemoryPool::~BlockMemoryPool() {
-    // free all memory
+    // Free all blocks still in the owner's free list.
     for (auto iter = free_mem_vec_.begin(); iter != free_mem_vec_.end(); ++iter) {
         free(*iter);
     }
     free_mem_vec_.clear();
+
+    // Any block still queued for handback was returned to THIS pool by a foreign
+    // thread but never drained (e.g. the pool is destroyed at teardown while a
+    // worker thread still held in-flight packets). Those blocks are not
+    // referenced by any live object, so free them directly to avoid leaking.
+    void* batch = handback_head_.exchange(nullptr, std::memory_order_acquire);
+    while (batch) {
+        void* next = *reinterpret_cast<void**>(batch);
+        free(batch);
+        batch = next;
+    }
 }
 
 void* BlockMemoryPool::PoolLargeMalloc() {
+    // Reclaim foreign-thread frees before we may need to expand.
+    DrainHandback();
+
     if (free_mem_vec_.empty()) {
         Expansion();
     }
@@ -40,61 +56,43 @@ void* BlockMemoryPool::PoolLargeMalloc() {
 }
 
 void BlockMemoryPool::PoolLargeFree(void*& m) {
-    // Fast path: same-thread free (the common case).
-    //
-    // BlockMemoryPool is held in a thread_local on each QUIC worker, and so
-    // is the worker's IEventLoop. BufferChunk objects are allocated and
-    // released by the same worker that owns the pool, so the vast majority
-    // of PoolLargeFree calls happen on the owning thread. In that case we
-    // skip the RunInLoop wrapper entirely - that wrapper allocates a
-    // std::function (potentially heap), copies a weak_ptr (atomic op), and
-    // re-acquires the shared_ptr inside the lambda (another atomic). All
-    // pure overhead when there is no thread switch.
-    //
-    // Cross-thread fallback (kept for safety): if some unusual teardown
-    // path drops the last BufferChunk reference on a different thread, we
-    // still serialise the free_mem_vec_ mutation back onto the owning
-    // thread via PostTask so the std::vector stays single-threaded.
-    auto loop = event_loop_.lock();
-    if (loop && !loop->IsInLoopThread()) {
-        void* ptr = m;
-        auto weak_self = weak_from_this();
-        loop->RunInLoop([weak_self, ptr]() mutable {
-            auto self = weak_self.lock();
-            if (!self) {
-                // Pool already destroyed, free the raw memory directly
-                free(ptr);
-                return;
-            }
-            self->free_mem_vec_.push_back(ptr);
-
-            // Metrics: Memory deallocated
-            common::Metrics::GaugeDec(common::MetricsStd::MemPoolAllocatedBlocks);
-            common::Metrics::GaugeInc(common::MetricsStd::MemPoolFreeBlocks);
-            common::Metrics::CounterInc(common::MetricsStd::MemPoolDeallocations);
-
-            if (self->free_mem_vec_.size() > kMaxBlockNum) {
-                // Safe to call ReleaseHalf - we're in the owning thread
-                self->ReleaseHalf();
-            }
-        });
+    // Fast path: same-thread free (the common case), or owner not yet known.
+    // The free list is only ever touched by the owner thread, so no atomic ops
+    // or allocation are needed here — exactly as in the original design.
+    if (owner_tid_ == std::thread::id() || std::this_thread::get_id() == owner_tid_) {
+        free_mem_vec_.push_back(m);
         m = nullptr;
+
+        // Metrics: Memory deallocated
+        common::Metrics::GaugeDec(common::MetricsStd::MemPoolAllocatedBlocks);
+        common::Metrics::GaugeInc(common::MetricsStd::MemPoolFreeBlocks);
+        common::Metrics::CounterInc(common::MetricsStd::MemPoolDeallocations);
+
+        if (free_mem_vec_.size() > kMaxBlockNum) {
+            ReleaseHalf();
+        }
         return;
     }
 
-    // Same-thread (or no event loop, e.g. tests / shutdown): mutate the
-    // free list directly. No lambda construction, no atomic ref-count ops.
-    free_mem_vec_.push_back(m);
+    // Cross-thread free. Push the block onto the lock-free handback stack. We
+    // reuse the freed block's own first 8 bytes as the intrusive next pointer,
+    // so this is allocation-free and needs no event loop. The owner thread
+    // reclaims it via DrainHandback() (called from PoolLargeMalloc / ~dtor).
+    //
+    // Intrusive link: the block is not in free_mem_vec_ while queued here, so
+    // overwriting its first 8 bytes is safe. malloc() guarantees >= 8-byte
+    // alignment on 64-bit platforms.
+    void* head = handback_head_.load(std::memory_order_relaxed);
+    do {
+        *reinterpret_cast<void**>(m) = head;
+    } while (!handback_head_.compare_exchange_weak(
+        head, m, std::memory_order_release, std::memory_order_relaxed));
     m = nullptr;
 
-    // Metrics: Memory deallocated
+    // Metrics: Memory deallocated (gauges are atomic, safe from any thread).
     common::Metrics::GaugeDec(common::MetricsStd::MemPoolAllocatedBlocks);
     common::Metrics::GaugeInc(common::MetricsStd::MemPoolFreeBlocks);
     common::Metrics::CounterInc(common::MetricsStd::MemPoolDeallocations);
-
-    if (free_mem_vec_.size() > kMaxBlockNum) {
-        ReleaseHalf();
-    }
 }
 
 uint32_t BlockMemoryPool::GetSize() {
@@ -105,8 +103,21 @@ uint32_t BlockMemoryPool::GetBlockLength() {
     return large_size_;
 }
 
-void BlockMemoryPool::SetEventLoop(std::shared_ptr<IEventLoop> loop) {
-    event_loop_ = loop;
+void BlockMemoryPool::SetOwnerThread(std::thread::id owner) {
+    owner_tid_ = owner;
+}
+
+void BlockMemoryPool::DrainHandback() {
+    void* batch = handback_head_.exchange(nullptr, std::memory_order_acquire);
+    while (batch) {
+        void* next = *reinterpret_cast<void**>(batch);
+        free_mem_vec_.push_back(batch);
+        batch = next;
+    }
+    // If the drain pushed a large batch back, trim the free list.
+    if (free_mem_vec_.size() > kMaxBlockNum) {
+        ReleaseHalf();
+    }
 }
 
 void BlockMemoryPool::ReleaseHalf() {

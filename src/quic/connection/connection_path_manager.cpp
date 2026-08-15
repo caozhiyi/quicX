@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <openssl/mem.h>
 
 #include "common/log/log.h"
 #include "common/util/time.h"
@@ -65,7 +66,11 @@ void PathManager::StartPathValidationProbeInternal(bool dcid_pre_rotated) {
 
     // Generate PATH_CHALLENGE
     auto challenge = std::make_shared<PathChallengeFrame>();
-    challenge->MakeData();
+    if (!challenge->MakeData()) {
+        // Without an unpredictable token the probe proves nothing, so do not send one.
+        LOG_ERROR("PathManager: cannot start path validation, failed to generate challenge token");
+        return;
+    }
     memcpy(pending_path_challenge_data_, challenge->GetData(), 8);
     path_probe_inflight_ = true;
 
@@ -116,7 +121,9 @@ void PathManager::OnPathResponse(const uint8_t* data) {
         return;
     }
 
-    if (memcmp(data, pending_path_challenge_data_, 8) != 0) {
+    // Constant-time compare: a timing side channel here would let an off-path
+    // attacker recover the outstanding token byte by byte and forge a response.
+    if (CRYPTO_memcmp(data, pending_path_challenge_data_, 8) != 0) {
         LOG_DEBUG("PathManager::OnPathResponse: token mismatch, ignoring");
         return;
     }
@@ -238,9 +245,12 @@ void PathManager::OnObservedPeerAddress(const ::quicx::common::Address& addr) {
 }
 
 void PathManager::OnCandidatePathBytesReceived(uint32_t bytes) {
-    if (path_probe_inflight_) {
-        send_manager_.OnCandidatePathBytesReceived(bytes);
-    }
+    // Intentionally does not credit the amplification budget. Every received
+    // datagram is now credited exactly once, centrally, in
+    // BaseConnection::OnPackets(). Crediting again here would double-count bytes
+    // arriving on a candidate path during migration and hand out twice the
+    // budget RFC 9000 §8.1 allows.
+    (void)bytes;
 }
 
 // ==================== Client-Initiated Migration ====================
@@ -326,7 +336,10 @@ void PathManager::EnterAntiAmplification() {
 }
 
 void PathManager::ExitAntiAmplification() {
-    send_manager_.SetStreamsAllowed(true);
+    // Lifts both halves of the restriction: stream scheduling and the RFC 9000
+    // §8.1 byte budget. Previously only streams were re-enabled, leaving the
+    // controller stuck in its unvalidated state.
+    send_manager_.MarkAddressValidated();
 }
 
 // ==================== Send Address Selection ====================
@@ -380,7 +393,12 @@ void PathManager::ScheduleProbeRetry() {
                 return;
             }
             auto challenge = std::make_shared<PathChallengeFrame>();
-            challenge->MakeData();
+            if (!challenge->MakeData()) {
+                // Keep the probe pending and try again on the next scheduled retry.
+                LOG_ERROR("PathManager: failed to generate challenge token, deferring retry");
+                ScheduleProbeRetry();
+                return;
+            }
             LOG_DEBUG("PathManager: retrying path validation (attempt %d/%d) to %s:%d", probe_retry_count_ + 1,
                 kMaxProbeRetries, candidate_peer_addr_.GetIp().c_str(), candidate_peer_addr_.GetPort());
             memcpy(pending_path_challenge_data_, challenge->GetData(), 8);

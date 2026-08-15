@@ -12,8 +12,8 @@ namespace upgrade {
 class ConnectionHandler: public common::IFdHandler {
 public:
     ConnectionHandler(std::shared_ptr<common::IEventLoop> event_loop, std::shared_ptr<ISmartHandler> handler):
-        event_loop_(event_loop),
-        handler_(handler) {}
+        handler_(handler),
+        event_loop_(event_loop) {}
     virtual ~ConnectionHandler() = default;
 
     virtual void OnRead(uint32_t fd) override;

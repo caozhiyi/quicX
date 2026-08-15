@@ -33,13 +33,15 @@ BufferChunk::BufferChunk(BufferChunk&& other) noexcept {
     pool_ = std::move(other.pool_);
     data_ = other.data_;
     length_ = other.length_;
-    write_floor_offset_ = other.write_floor_offset_;
-    freeze_count_ = other.freeze_count_;
+    write_floor_offset_.store(other.write_floor_offset_.load(std::memory_order_relaxed),
+        std::memory_order_relaxed);
+    freeze_count_.store(other.freeze_count_.load(std::memory_order_relaxed),
+        std::memory_order_relaxed);
 
     other.data_ = nullptr;
     other.length_ = 0;
-    other.write_floor_offset_ = 0;
-    other.freeze_count_ = 0;
+    other.write_floor_offset_.store(0, std::memory_order_relaxed);
+    other.freeze_count_.store(0, std::memory_order_relaxed);
 }
 
 // Move assignment transfers ownership of the block. Any currently owned block
@@ -51,13 +53,15 @@ BufferChunk& BufferChunk::operator=(BufferChunk&& other) noexcept {
         pool_ = std::move(other.pool_);
         data_ = other.data_;
         length_ = other.length_;
-        write_floor_offset_ = other.write_floor_offset_;
-        freeze_count_ = other.freeze_count_;
+        write_floor_offset_.store(other.write_floor_offset_.load(std::memory_order_relaxed),
+            std::memory_order_relaxed);
+        freeze_count_.store(other.freeze_count_.load(std::memory_order_relaxed),
+            std::memory_order_relaxed);
 
         other.data_ = nullptr;
         other.length_ = 0;
-        other.write_floor_offset_ = 0;
-        other.freeze_count_ = 0;
+        other.write_floor_offset_.store(0, std::memory_order_relaxed);
+        other.freeze_count_.store(0, std::memory_order_relaxed);
     }
     return *this;
 }
@@ -86,19 +90,21 @@ void BufferChunk::FreezeUpTo(uint8_t* end) {
     if (offset > length_) {
         offset = length_;
     }
-    if (offset > write_floor_offset_) {
-        write_floor_offset_ = offset;
+    uint32_t cur = write_floor_offset_.load(std::memory_order_relaxed);
+    if (offset > cur) {
+        write_floor_offset_.store(offset, std::memory_order_relaxed);
     }
-    ++freeze_count_;
+    freeze_count_.fetch_add(1, std::memory_order_relaxed);
 }
 
 void BufferChunk::Unfreeze(uint8_t* /*end*/) {
-    if (freeze_count_ == 0) {
+    if (freeze_count_.load(std::memory_order_relaxed) == 0) {
         return;
     }
-    --freeze_count_;
-    if (freeze_count_ == 0) {
-        write_floor_offset_ = 0;
+    uint32_t prev = freeze_count_.fetch_sub(1, std::memory_order_relaxed);
+    if (prev == 1) {
+        // This was the last outstanding span; reset the floor.
+        write_floor_offset_.store(0, std::memory_order_relaxed);
     }
 }
 
@@ -106,7 +112,7 @@ uint8_t* BufferChunk::GetWriteFloor() const {
     if (!data_) {
         return nullptr;
     }
-    return data_ + write_floor_offset_;
+    return data_ + write_floor_offset_.load(std::memory_order_acquire);
 }
 
 // Return the block to the original pool (if the pool is still alive) and clear

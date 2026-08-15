@@ -19,9 +19,9 @@ RequestStream::RequestStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
     const std::function<void(std::unordered_map<std::string, std::string>&, uint64_t push_id)>& push_promise_handler):
     ReqRespBaseStream(qpack_encoder, qpack_decoder, blocked_registry, stream, error_handler),
-    async_handler_(async_handler),
     body_length_(0),
     received_body_length_(0),
+    async_handler_(async_handler),
     push_promise_handler_(push_promise_handler) {}
 
 RequestStream::RequestStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
@@ -30,9 +30,9 @@ RequestStream::RequestStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
     const std::function<void(std::unordered_map<std::string, std::string>&, uint64_t push_id)>& push_promise_handler):
     ReqRespBaseStream(qpack_encoder, qpack_decoder, blocked_registry, stream, error_handler),
-    response_handler_(response_handler),
     body_length_(0),
     received_body_length_(0),
+    response_handler_(response_handler),
     push_promise_handler_(push_promise_handler) {}
 
 RequestStream::~RequestStream() {

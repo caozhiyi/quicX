@@ -402,7 +402,7 @@ bool QpackEncoder::Decode(
                     std::vector<uint8_t> encoded;
                     encoded.resize(static_cast<size_t>(name_len));
                     if (buffer->Read(encoded.data(), static_cast<uint32_t>(name_len)) !=
-                        static_cast<int32_t>(name_len)) {
+                        static_cast<uint32_t>(name_len)) {
                         LOG_ERROR("QpackEncoder::Decode: read huffman name failed. len:%llu", name_len);
                         return false;
                     }
@@ -410,7 +410,7 @@ bool QpackEncoder::Decode(
                 } else {
                     name.resize(static_cast<size_t>(name_len));
                     if (buffer->Read((uint8_t*)name.data(), static_cast<uint32_t>(name_len)) !=
-                        static_cast<int32_t>(name_len)) {
+                        static_cast<uint32_t>(name_len)) {
                         LOG_ERROR("QpackEncoder::Decode: read name failed. len:%llu", name_len);
                         return false;
                     }
@@ -957,14 +957,14 @@ bool QpackEncoder::DecodeString(const std::shared_ptr<common::IBuffer> buffer, s
     if (huffman) {
         std::vector<uint8_t> encoded;
         encoded.resize(static_cast<size_t>(length));
-        if (buffer->Read(encoded.data(), static_cast<uint32_t>(length)) != static_cast<int32_t>(length)) {
+        if (buffer->Read(encoded.data(), static_cast<uint32_t>(length)) != static_cast<uint32_t>(length)) {
             LOG_ERROR("QpackEncoder::DecodeString: read encoded string failed. length:%llu", length);
             return false;
         }
         output = HuffmanEncoder::Instance().Decode(encoded);
     } else {
         output.resize(static_cast<size_t>(length));
-        if (buffer->Read((uint8_t*)output.data(), static_cast<uint32_t>(length)) != static_cast<int32_t>(length)) {
+        if (buffer->Read((uint8_t*)output.data(), static_cast<uint32_t>(length)) != static_cast<uint32_t>(length)) {
             LOG_ERROR("QpackEncoder::DecodeString: read encoded string failed. length:%llu", length);
             return false;
         }

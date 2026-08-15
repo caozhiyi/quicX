@@ -225,6 +225,11 @@ public:
      *
      * @note For production use, prefer InitiateMigrationTo() which provides
      *       detailed error codes and explicit address control.
+     *
+     * @note Thread-safe. Each connection's migration runs on the thread that
+     *       owns it, so calling from an application thread hands the work off
+     *       and waits for the result. Do not hold a lock that your own
+     *       connection/stream/response callbacks also take.
      */
     virtual bool InitiateMigration() = 0;
 

@@ -1,6 +1,7 @@
 #ifndef COMMON_BUFFER_BUFFER_CHUNK
 #define COMMON_BUFFER_BUFFER_CHUNK
 
+#include <atomic>
 #include <cstdint>
 #include <memory>
 
@@ -58,8 +59,14 @@ private:
     // SharedBufferSpan. While freeze_count_ > 0, writes that would land below
     // (data_ + write_floor_offset_) MUST be silently clamped or rejected.
     // Once freeze_count_ drops to zero, write_floor_offset_ resets to 0.
-    uint32_t write_floor_offset_ = 0;
-    uint32_t freeze_count_ = 0;
+    //
+    // Both fields are atomic: a BufferChunk can be frozen/scanned on the
+    // packet-processing thread while its owning NetPacket is cleared (and
+    // GetWriteFloor() read) on a different thread during recycling. TSan
+    // reported a data race between GetWriteFloor() (read) and Unfreeze()
+    // (write) across threads.
+    std::atomic<uint32_t> write_floor_offset_{0};
+    std::atomic<uint32_t> freeze_count_{0};
 };
 
 }  // namespace common

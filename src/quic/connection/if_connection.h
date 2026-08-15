@@ -38,6 +38,9 @@ public:
     virtual void SetUserData(void* user_data) override { user_data_ = user_data; }
     virtual void* GetUserData() override { return user_data_; }
 
+    virtual void SetContext(std::shared_ptr<void> context) override { context_ = std::move(context); }
+    virtual std::shared_ptr<void> GetContext() override { return context_; }
+
     virtual void GetRemoteAddr(std::string& addr, uint32_t& port) override;
 
     // close the connection gracefully. that means all the streams will be closed gracefully.
@@ -73,7 +76,7 @@ public:
     // diverged from reality). Callers wanting one packet pass budget=1.
     virtual int TrySendBurst(int budget) = 0;
     // Set sender for direct packet transmission (used by tests)
-    virtual void SetSender(std::shared_ptr<ISender> sender) {}
+    virtual void SetSender(std::shared_ptr<ISender> /*sender*/) {}
     // Install (or clear with nullptr) a per-drain-round batch sink. When
     // installed, built NetPackets are appended to the sink rather than handed
     // straight to sender_->Send(), so the worker can issue a single
@@ -160,6 +163,7 @@ public:
 
 protected:
     void* user_data_;
+    std::shared_ptr<void> context_;
     common::Address peer_addr_;
     common::Address local_addr_;  // Cached local address
     // callback

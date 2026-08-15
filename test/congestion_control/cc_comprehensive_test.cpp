@@ -166,9 +166,9 @@ TEST(CCAlgorithmTest, RenoVsCubicInLossyNetwork) {
 
     printf("\nComparison:\n");
     printf(
-        "Reno  - Throughput: %.2f Mbps, Recovery: %llu\n", reno_metrics.throughput_mbps, reno_metrics.recovery_count);
+        "Reno  - Throughput: %.2f Mbps, Recovery: %lu\n", reno_metrics.throughput_mbps, reno_metrics.recovery_count);
     printf(
-        "CUBIC - Throughput: %.2f Mbps, Recovery: %llu\n", cubic_metrics.throughput_mbps, cubic_metrics.recovery_count);
+        "CUBIC - Throughput: %.2f Mbps, Recovery: %lu\n", cubic_metrics.throughput_mbps, cubic_metrics.recovery_count);
 
     // Both should handle losses
     EXPECT_GT(reno_metrics.recovery_count, 0UL);

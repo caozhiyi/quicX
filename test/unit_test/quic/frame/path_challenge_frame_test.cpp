@@ -19,7 +19,7 @@ TEST(PathChallengeFrameTest, codec) {
     std::shared_ptr<common::SingleBlockBuffer> write_buffer =
         std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
 
-    frame1.MakeData();
+    EXPECT_TRUE(frame1.MakeData());
 
     EXPECT_TRUE(frame1.Encode(write_buffer));
 

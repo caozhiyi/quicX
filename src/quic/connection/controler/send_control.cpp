@@ -17,8 +17,8 @@ namespace quicx {
 namespace quic {
 
 SendControl::SendControl(std::shared_ptr<common::ITimerScheduler> scheduler):
-    scheduler_(scheduler),
-    max_ack_delay_(kMaxAckDelay) {
+    max_ack_delay_(kMaxAckDelay),
+    scheduler_(scheduler) {
     memset(pkt_num_largest_sent_, 0, sizeof(pkt_num_largest_sent_));
     memset(pkt_num_largest_acked_, 0, sizeof(pkt_num_largest_acked_));
     memset(largest_sent_time_, 0, sizeof(largest_sent_time_));
@@ -495,7 +495,12 @@ void SendControl::CanSend(uint64_t now, uint64_t& can_send_bytes) {
 
 void SendControl::UpdateConfig(const TransportParam& tp) {
     max_ack_delay_ = static_cast<uint32_t>(tp.GetMaxAckDelay());
-    ack_delay_exponent_ = static_cast<uint32_t>(tp.GetackDelayExponent());
+    // Defence in depth: TransportParam::Decode already rejects values above 20 per
+    // RFC 9000 §18.2, but this value drives `<<` below, where anything >= 64 is
+    // undefined behaviour. Clamp so a future decode path that misses the check
+    // cannot turn a peer-supplied value into UB.
+    ack_delay_exponent_ = static_cast<uint32_t>(
+        std::min<uint64_t>(tp.GetackDelayExponent(), TransportParam::kMaxAckDelayExponent));
 }
 
 void SendControl::ClearRetransmissionData() {

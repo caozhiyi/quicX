@@ -40,6 +40,16 @@ public:
         active_send_cb_ = nullptr;
     }
 
+    // Bind the owning connection's lifetime guard. The connection calls this
+    // once it is safely owned by a shared_ptr (e.g. on first OnPacketRecv), so
+    // the delayed-ACK timer can keep the connection alive during its callback
+    // and be skipped once the connection is destroyed. Without this the timer
+    // would fire into a half-destructed connection (TSan vptr race).
+    void Bind(std::weak_ptr<void> self) {
+        conn_self_ = self;
+        life_token_ = self;
+    }
+
     void OnPacketRecv(uint64_t time, std::shared_ptr<IPacket> packet);
     void OnEcnCounters(uint8_t ecn, PacketNumberSpace ns);
     std::shared_ptr<IFrame> MayGenerateAckFrame(uint64_t now, PacketNumberSpace ns, bool ecn_enabled = true);
@@ -101,8 +111,13 @@ private:
     // inside MayGenerateAckFrame() once the ACK is emitted.
     bool ack_due_[PacketNumberSpace::kNumberSpaceCount]{false, false, false};
     std::shared_ptr<common::ITimerScheduler> scheduler_;
-    // Guards the delayed-ACK callback, which captures a raw `this`.
-    std::shared_ptr<int> life_token_ = std::make_shared<int>(0);
+    // Guards the delayed-ACK callback. It is a weak_ptr to the owning
+    // connection: EventLoop::FireSlot skips the callback once the connection is
+    // destroyed (see if_timer_scheduler.h). Using a dummy shared_ptr<int> here
+    // (the previous behaviour) made the guard never expire, allowing the
+    // callback to run into a half-destructed connection (TSan vptr race).
+    std::weak_ptr<void> life_token_;
+    std::weak_ptr<void> conn_self_;
     common::Timer ack_delay_timer_;
     void ArmAckDelayTimer();
     std::function<void(PacketNumberSpace)> immediate_ack_cb_;  // Immediate ACK callback

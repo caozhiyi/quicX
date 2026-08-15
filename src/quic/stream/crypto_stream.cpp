@@ -2,6 +2,7 @@
 
 #include "common/log/log.h"
 
+#include "quic/connection/error.h"
 #include "quic/frame/crypto_frame.h"
 #include "quic/quicx/global_resource.h"
 #include "quic/stream/crypto_stream.h"
@@ -16,6 +17,7 @@ CryptoStream::CryptoStream(std::weak_ptr<common::IEventLoop> loop,
     IStream(loop, 0, active_send_cb, stream_close_cb, connection_close_cb) {
     for (int i = 0; i < kNumEncryptionLevels; i++) {
         next_read_offset_[i] = 0;
+        out_order_bytes_[i] = 0;
         send_offset_[i] = 0;
         read_buffers_[i] =
             std::make_shared<common::MultiBlockBuffer>(GlobalResource::Instance().GetThreadLocalBlockPool());
@@ -70,7 +72,7 @@ IStream::TrySendResult CryptoStream::TrySendData(IFrameVisitor* visitor, Encrypt
     // buffer's real free space. CRYPTO frame header worst case:
     // type(1B) + offset(<=8B) + length(<=2B) = ~11B; reserve 20B for safety.
     // Replaces the historical hardcoded 1300 cap which left ~120B unused
-    // on each packet (kVisitorBudget is 1420).
+    // on each packet (kMaxFramePayload is 1420).
     constexpr uint32_t kCryptoHeaderReserve = 20;
     uint32_t crypto_pkt_left = visitor->GetPacketLeftSize();
     uint32_t crypto_pkt_cap = crypto_pkt_left > kCryptoHeaderReserve ? crypto_pkt_left - kCryptoHeaderReserve : 0;
@@ -128,7 +130,7 @@ IStream::TrySendResult CryptoStream::TrySendData(IFrameVisitor* visitor, Encrypt
 }
 
 // reset the stream
-void CryptoStream::Reset(uint32_t error) {
+void CryptoStream::Reset(uint32_t /*error*/) {
     // do nothing
 }
 
@@ -143,6 +145,7 @@ void CryptoStream::ResetForRetry() {
         std::make_shared<common::MultiBlockBuffer>(GlobalResource::Instance().GetThreadLocalBlockPool());
     next_read_offset_[level] = 0;
     out_order_frame_[level].clear();
+    out_order_bytes_[level] = 0;
 
     // Reset send state
     send_buffers_[level] = nullptr;  // Next send will recreate it if needed
@@ -259,56 +262,124 @@ void CryptoStream::OnCryptoFrame(std::shared_ptr<IFrame> frame) {
     LOG_INFO("CryptoStream::OnCryptoFrame: level=%d, offset=%llu, len=%u, expected=%llu", level,
         crypto_frame->GetOffset(), crypto_frame->GetLength(), next_read_offset_[level]);
 
-    if (crypto_frame->GetOffset() == next_read_offset_[level]) {
-        // IMPORTANT: Copy the bytes into read_buffers_ (do NOT push the shared
-        // chunk). CRYPTO frames from a received packet share the packet's
-        // decode buffer; that buffer is recycled once the packet is fully
-        // processed, so holding a shared pointer is not enough to guarantee
-        // the bytes remain stable. Copy into a fresh chunk owned by
-        // read_buffers_[level] to avoid later corruption.
-        auto data_span = crypto_frame->GetData();
-        read_buffers_[level]->Write(data_span.GetStart(), crypto_frame->GetLength());
-        next_read_offset_[level] += crypto_frame->GetLength();
+    const uint64_t frame_offset = crypto_frame->GetOffset();
+    const uint64_t frame_length = crypto_frame->GetLength();
 
-        // Check for out-of-order frames that can now be processed
-        auto& out_order = out_order_frame_[level];
-        while (true) {
-            auto iter = out_order.find(next_read_offset_[level]);
-            if (iter == out_order.end()) {
-                break;
-            }
-
-            crypto_frame = std::dynamic_pointer_cast<CryptoFrame>(iter->second);
-            auto queued_span = crypto_frame->GetData();
-            read_buffers_[level]->Write(queued_span.GetStart(), crypto_frame->GetLength());
-            next_read_offset_[level] += crypto_frame->GetLength();
-            out_order.erase(iter);
+    // RFC 9000 §19.6: "The largest offset delivered on a stream -- the sum of the
+    // offset and data length -- cannot exceed 2^62-1 [...] receipt of a frame that
+    // exceeds this limit MUST be treated as a connection error of type
+    // FRAME_ENCODING_ERROR." This also covers the unsigned wraparound of
+    // offset + length that would otherwise corrupt next_read_offset_.
+    if (frame_offset > kMaxCryptoOffset || frame_length > kMaxCryptoOffset - frame_offset) {
+        LOG_ERROR("crypto frame offset+length out of range. level:%d, offset:%llu, len:%llu", level, frame_offset,
+            frame_length);
+        if (connection_close_cb_) {
+            connection_close_cb_(
+                QuicErrorCode::kFrameEncodingError, frame->GetType(), "crypto frame offset+length out of range.");
         }
+        return;
+    }
+
+    if (frame_offset <= next_read_offset_[level]) {
+        // In-order, or overlapping data we have already delivered in part. Skip the
+        // prefix we have seen and append only the new suffix; a pure duplicate
+        // contributes nothing.
+        const uint64_t already_have = next_read_offset_[level] - frame_offset;
+        if (already_have < frame_length) {
+            // IMPORTANT: Copy the bytes into read_buffers_ (do NOT push the shared
+            // chunk). CRYPTO frames from a received packet share the packet's
+            // decode buffer; that buffer is recycled once the packet is fully
+            // processed, so holding a shared pointer is not enough to guarantee
+            // the bytes remain stable. Copy into a fresh chunk owned by
+            // read_buffers_[level] to avoid later corruption.
+            auto data_span = crypto_frame->GetData();
+            const uint32_t new_bytes = static_cast<uint32_t>(frame_length - already_have);
+            read_buffers_[level]->Write(data_span.GetStart() + already_have, new_bytes);
+            next_read_offset_[level] += new_bytes;
+        }
+
+        // Buffered frames may now be contiguous (possibly overlapping) with the
+        // advanced offset.
+        DrainOutOrderFrames(level);
 
         // Notify upper layer (TLS) with correct level
         if (recv_cb_) {
             recv_cb_(read_buffers_[level], 0, level);
         }
-    } else if (crypto_frame->GetOffset() > next_read_offset_[level]) {
-        // Cache out-of-order frame only if not already cached; ignore duplicates
-        // at same offset to avoid overwriting already-buffered frames.
-        if (out_order_frame_[level].find(crypto_frame->GetOffset()) == out_order_frame_[level].end()) {
-            // Must also detach from packet buffer: copy into a standalone frame.
-            auto data_span = crypto_frame->GetData();
-            auto new_frame = std::make_shared<CryptoFrame>();
-            new_frame->SetOffset(crypto_frame->GetOffset());
-            new_frame->SetEncryptionLevel(level);
-            // Allocate a dedicated buffer and copy bytes so the span stays valid
-            // after the source packet buffer is recycled.
-            auto standalone =
-                std::make_shared<common::MultiBlockBuffer>(GlobalResource::Instance().GetThreadLocalBlockPool());
-            standalone->Write(data_span.GetStart(), crypto_frame->GetLength());
-            auto owned_span = standalone->GetSharedReadableSpan(crypto_frame->GetLength());
-            new_frame->SetData(owned_span);
-            out_order_frame_[level][crypto_frame->GetOffset()] = new_frame;
-        }
+        return;
     }
-    // else: offset < next_read_offset_ -> already processed / retransmit, ignore
+
+    // Strictly ahead of the current offset: buffer it until the gap is filled.
+    // Duplicates at the same offset are ignored so an existing (possibly longer)
+    // buffered frame is not overwritten.
+    auto& out_order = out_order_frame_[level];
+    if (out_order.find(frame_offset) != out_order.end()) {
+        return;
+    }
+
+    // RFC 9000 §7.5 cap. Enforced before allocating, so the attacker-controlled
+    // frame cannot cause the allocation it is meant to prevent.
+    if (out_order.size() >= kMaxOutOrderFrames || out_order_bytes_[level] + frame_length > kMaxOutOrderBytes) {
+        LOG_ERROR("crypto out-of-order buffer exceeded. level:%d, frames:%zu, bytes:%llu, incoming:%llu", level,
+            out_order.size(), out_order_bytes_[level], frame_length);
+        if (connection_close_cb_) {
+            connection_close_cb_(
+                QuicErrorCode::kCryptoBufferExceeded, frame->GetType(), "crypto out-of-order buffer exceeded.");
+        }
+        return;
+    }
+
+    // Must also detach from packet buffer: copy into a standalone frame.
+    auto data_span = crypto_frame->GetData();
+    auto new_frame = std::make_shared<CryptoFrame>();
+    new_frame->SetOffset(frame_offset);
+    new_frame->SetEncryptionLevel(level);
+    // Allocate a dedicated buffer and copy bytes so the span stays valid
+    // after the source packet buffer is recycled.
+    auto standalone = std::make_shared<common::MultiBlockBuffer>(GlobalResource::Instance().GetThreadLocalBlockPool());
+    standalone->Write(data_span.GetStart(), static_cast<uint32_t>(frame_length));
+    auto owned_span = standalone->GetSharedReadableSpan(static_cast<uint32_t>(frame_length));
+    new_frame->SetData(owned_span);
+    out_order[frame_offset] = new_frame;
+    out_order_bytes_[level] += frame_length;
+}
+
+uint64_t CryptoStream::DrainOutOrderFrames(uint8_t level) {
+    auto& out_order = out_order_frame_[level];
+    uint64_t appended = 0;
+
+    while (!out_order.empty()) {
+        // Largest buffered offset that is not beyond the delivery point. Anything
+        // above it leaves a genuine gap, so delivery stops there.
+        auto upper = out_order.upper_bound(next_read_offset_[level]);
+        if (upper == out_order.begin()) {
+            break;
+        }
+        auto iter = std::prev(upper);
+
+        auto buffered = std::dynamic_pointer_cast<CryptoFrame>(iter->second);
+        if (!buffered) {
+            out_order.erase(iter);
+            continue;
+        }
+
+        const uint64_t buffered_offset = iter->first;
+        const uint64_t buffered_length = buffered->GetLength();
+        const uint64_t already_have = next_read_offset_[level] - buffered_offset;
+
+        if (already_have < buffered_length) {
+            auto span = buffered->GetData();
+            const uint32_t new_bytes = static_cast<uint32_t>(buffered_length - already_have);
+            read_buffers_[level]->Write(span.GetStart() + already_have, new_bytes);
+            next_read_offset_[level] += new_bytes;
+            appended += new_bytes;
+        }
+        // Fully superseded (or now consumed): release it either way.
+        out_order_bytes_[level] -= std::min(out_order_bytes_[level], buffered_length);
+        out_order.erase(iter);
+    }
+
+    return appended;
 }
 
 }  // namespace quic

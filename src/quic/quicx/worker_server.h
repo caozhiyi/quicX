@@ -87,8 +87,51 @@ protected:
      */
     bool ShouldSendRetry(bool has_valid_token, const common::Address& client_addr);
 
+    /**
+     * @brief Concurrency admission check for a brand-new connection.
+     *
+     * Rate limiting (rate_monitor_ / ip_limiter_) only bounds how *fast* new
+     * connections arrive; it does nothing about how many are alive at once. A peer
+     * that stays under the rate threshold can still open connections forever and
+     * exhaust memory. This enforces the global and per-IP concurrency caps.
+     *
+     * @return true if a new connection may be admitted.
+     */
+    bool CanAcceptNewConnection(const common::Address& client_addr) const;
+
+    /**
+     * @brief Send an RFC 9000 §10.3 Stateless Reset for an unroutable packet.
+     *
+     * Called when a 1-RTT packet arrives for a connection ID we have no state
+     * for -- typically a peer still talking to a connection lost to a restart or
+     * a crash. Without this the peer keeps retransmitting into the void until its
+     * idle timeout expires (up to tens of seconds); the reset ends it at once.
+     *
+     * The token is recomputed from the connection ID, which is what makes this
+     * possible with no connection state at all.
+     *
+     * @param triggering_packet_size Size of the datagram that prompted the reset.
+     *        The reset MUST be smaller, so that two endpoints that both reset
+     *        cannot ping-pong ever-larger packets at each other (§10.3).
+     * @return true if a reset was sent.
+     */
+    bool SendStatelessReset(const common::Address& addr, int32_t socket, const ConnectionID& dcid,
+        uint32_t triggering_packet_size);
+
+    /** Bookkeeping for the per-IP concurrency cap. */
+    void OnConnectionAdmitted(const common::Address& client_addr);
+    void OnConnectionReleased(const std::shared_ptr<IConnection>& conn);
+
 private:
     std::string server_alpn_;
+
+    /** Concurrency caps; 0 disables the corresponding check. */
+    uint32_t max_connections_per_worker_;
+    uint32_t max_connections_per_ip_;
+
+    /** Live connection count per source IP, and each connection's source IP. */
+    std::unordered_map<std::string, uint32_t> ip_conn_count_;
+    std::unordered_map<IConnection*, std::string> conn_source_ip_;
 
     /** Retry policy configuration */
     RetryPolicy retry_policy_;

@@ -77,7 +77,7 @@ bool ConnectionCloser::StartGracefulClose(ActiveSendCallback active_send_cb) {
     return true;
 }
 
-bool ConnectionCloser::CheckGracefulCloseComplete(ActiveSendCallback active_send_cb) {
+bool ConnectionCloser::CheckGracefulCloseComplete(ActiveSendCallback /*active_send_cb*/) {
     if (!graceful_closing_pending_) {
         return false;
     }
@@ -121,7 +121,7 @@ void ConnectionCloser::StorePeerCloseInfo(uint64_t error, uint16_t trigger_frame
 // ==================== Immediate Close ====================
 
 void ConnectionCloser::StartImmediateClose(
-    uint64_t error, uint16_t trigger_frame, const std::string& reason, ActiveSendCallback active_send_cb) {
+    uint64_t error, uint16_t trigger_frame, const std::string& reason, ActiveSendCallback /*active_send_cb*/) {
     LOG_INFO("ConnectionCloser::StartImmediateClose called. error=%llu, reason=%s", error, reason.c_str());
 
     // Cancel graceful close if it's pending

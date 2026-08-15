@@ -60,10 +60,14 @@ private:
 
     std::unique_ptr<IEventDriver> driver_;
 
-    // The one real timer engine. Owned by value: it is a single-threaded data
-    // structure whose serialisation domain is this loop's thread, so there is
-    // nothing to share and nothing to reference-count.
-    TimerCore timer_core_;
+    // The one real timer engine. Held by shared_ptr (not by value) so that Timer
+    // handles -- which keep only a weak_ptr to it -- can outlive this EventLoop
+    // during teardown. A connection's Timer handle may be destroyed on a different
+    // thread after the loop thread has exited; with a value member that would be a
+    // use-after-free when the handle dereferences the freed core. The shared_ptr
+    // keeps the core alive until the last handle is gone, and weak_ptr handles
+    // simply no-op once it is.
+    std::shared_ptr<TimerCore> timer_core_;
 
     std::vector<Event> events_;
 

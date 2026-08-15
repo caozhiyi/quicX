@@ -21,14 +21,14 @@ ReqRespBaseStream::ReqRespBaseStream(const std::shared_ptr<QpackEncoder>& qpack_
     const std::shared_ptr<IQuicBidirectionStream>& stream,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler):
     IStream(StreamType::kReqResp, error_handler),
-    is_last_data_(false),
-    current_frame_is_last_(false),
     qpack_encoder_(qpack_encoder),
     qpack_decoder_(qpack_decoder),
+    stream_(stream),
     blocked_registry_(blocked_registry),
+    is_last_data_(false),
+    current_frame_is_last_(false),
     is_provider_mode_(false),
-    all_provider_data_sent_(false),
-    stream_(stream) {
+    all_provider_data_sent_(false) {
     // Callback registration moved to Init() method
     // Cannot call shared_from_this() here because object is not yet managed by shared_ptr
 }
@@ -343,6 +343,12 @@ void ReqRespBaseStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
                 if (self->qpack_decoder_->GetLastDecodedRequiredInsertCount() > 0) {
                     self->qpack_decoder_->EmitDecoderFeedback(0x00, self->header_block_key_);
                 }
+                // Same §4.2.2 limit as the non-blocked path; the retry route must
+                // not become a way to bypass it.
+                if (!self->EnforceFieldSectionSize()) {
+                    self->blocked_retry_fn_ = nullptr;
+                    return;
+                }
                 self->HandleHeaders();
 
                 // Clear the retry callback to break any captures and free resources
@@ -389,7 +395,41 @@ void ReqRespBaseStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
         qpack_decoder_->EmitDecoderFeedback(0x00, header_block_key_);
     }
 
+    if (!EnforceFieldSectionSize()) {
+        return;
+    }
+
     HandleHeaders();
+}
+
+bool ReqRespBaseStream::EnforceFieldSectionSize() {
+    if (max_field_section_size_ == 0) {
+        return true;
+    }
+
+    // RFC 9114 §4.2.2: "The size of a field list is calculated based on the
+    // uncompressed size of fields, including the length of the name and value in
+    // bytes plus an overhead of 32 bytes for each field." The 32 bytes account for
+    // per-field bookkeeping so that many tiny fields cannot evade the limit.
+    uint64_t section_size = 0;
+    for (const auto& field : headers_) {
+        section_size += field.first.size() + field.second.size() + 32;
+        if (section_size > max_field_section_size_) {
+            break;
+        }
+    }
+
+    if (section_size > max_field_section_size_) {
+        LOG_ERROR("field section size %llu exceeds advertised max %llu, stream=%llu",
+            static_cast<unsigned long long>(section_size), static_cast<unsigned long long>(max_field_section_size_),
+            static_cast<unsigned long long>(GetStreamID()));
+        headers_.clear();
+        if (error_handler_) {
+            error_handler_(GetStreamID(), Http3ErrorCode::kExcessiveLoad);
+        }
+        return false;
+    }
+    return true;
 }
 
 void ReqRespBaseStream::HandleData(std::shared_ptr<IFrame> frame) {

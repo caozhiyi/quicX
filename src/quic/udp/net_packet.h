@@ -22,7 +22,7 @@ public:
     const common::Address& GetAddress() { return addr_; }
 
     void SetSocket(int32_t sockfd) { sock_ = sockfd; }
-    const int32_t GetSocket() { return sock_; }
+    int32_t GetSocket() const { return sock_; }
 
     void SetTime(uint64_t time) { time_ = time; }
     uint64_t GetTime() { return time_; }

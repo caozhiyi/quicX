@@ -26,8 +26,8 @@ ResponseStream::ResponseStream(const std::shared_ptr<QpackEncoder>& qpack_encode
     const std::function<bool()>& settings_received_cb):
     ReqRespBaseStream(qpack_encoder, qpack_decoder, blocked_registry, stream, error_handler),
     body_length_(0),
-    is_response_sent_(false),
     received_body_length_(0),
+    is_response_sent_(false),
     http_processor_(http_processor),
     push_handler_(push_handler),
     settings_received_cb_(settings_received_cb) {}

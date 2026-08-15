@@ -9,6 +9,7 @@
 #include "quic/connection/connection_frame_processor.h"
 #include "quic/connection/connection_id_generator.h"
 #include "quic/connection/connection_stream_manager.h"
+#include "quic/connection/error.h"
 #include "quic/connection/session_cache.h"
 #include "quic/crypto/retry_crypto.h"
 #include "quic/packet/handshake_packet.h"
@@ -144,14 +145,25 @@ bool ClientConnection::DialSetupTLS(std::shared_ptr<TLSClientConnection> tls_con
     // server via available_versions), and on successful upgrade the connection
     // will transparently switch to |preferred_version|.
     if (GetVersion() != kQuicVersion1) {
-        LOG_INFO(
-            "RFC 9368: starting client handshake with v1 Initial "
-            "(preferred=0x%08x, compatible VN will upgrade if peer agrees)",
-            GetVersion());
-        // Capture the configured version as our preference before switching the
-        // wire version to v1, or the preference would record v1.
-        SetPreferredVersion(GetVersion());
-        SetVersion(kQuicVersion1);
+        if (GetVersion() == kQuicVersion2) {
+            LOG_INFO(
+                "RFC 9368: starting client handshake with v1 Initial "
+                "(preferred=0x%08x, compatible VN will upgrade if peer agrees)",
+                GetVersion());
+            // Capture the configured version as our preference before switching the
+            // wire version to v1, or the preference would record v1.
+            SetPreferredVersion(GetVersion());
+            SetVersion(kQuicVersion1);
+        } else {
+            // A grease / unsupported version (e.g. the interop PREFERRED_VERSION
+            // 0x1a2a3a4a) is not a real protocol version we can actually speak, so
+            // keep it on the wire. The peer must answer with a Version Negotiation
+            // packet and we fall back to a supported version per RFC 9000 §6.2.
+            LOG_INFO(
+                "RFC 9000 §6.2: attempting grease/unsupported version 0x%08x on the "
+                "wire; expecting a Version Negotiation packet to fall back",
+                GetVersion());
+        }
     }
 
     // Set application protocol
@@ -203,7 +215,10 @@ bool ClientConnection::DialFinalize(std::shared_ptr<TLSClientConnection> tls_con
     // Mixing the placeholder into the map collides with peer-chosen sequence numbers,
     // which previously corrupted CID rotation during connection migration.
     uint8_t dcid_buf[kMaxCidLength];
-    ConnectionIDGenerator::Instance().Generator(dcid_buf, kMaxCidLength);
+    if (!ConnectionIDGenerator::Instance().Generator(dcid_buf, kMaxCidLength)) {
+        LOG_ERROR("failed to generate the initial destination connection id, aborting dial");
+        return false;
+    }
     ConnectionID dcid(dcid_buf, kMaxCidLength, /*sequence_number=*/0);
 
     // RFC 9000: Save original DCID for Retry handling
@@ -289,7 +304,7 @@ bool ClientConnection::OnHandshakePacket(const std::shared_ptr<IPacket>& packet)
     return OnNormalPacket(packet);
 }
 
-bool ClientConnection::HandleHandshakeDoneFrame(std::shared_ptr<IFrame> frame) {
+bool ClientConnection::HandleHandshakeDoneFrame(std::shared_ptr<IFrame> /*frame*/) {
     LOG_DEBUG("ClientConnection::HandleHandshakeDoneFrame called");
     // Idempotency guard: a retransmitted HANDSHAKE_DONE must be accepted (so it
     // still gets ACKed by the caller) but must not repeat any side effect.
@@ -404,6 +419,11 @@ bool ClientConnection::OnRetryPacket(const std::shared_ptr<IPacket>& packet) {
     cid_coordinator_->GetRemoteConnectionIDManager()->SetCurrentID(long_header->GetSourceConnectionId(),
         long_header->GetSourceConnectionIdLength(),
         /*sequence=*/0);
+
+    // RFC 9000 §7.3: remember the Retry SCID so the server's
+    // retry_source_connection_id transport parameter can be verified against it.
+    retry_scid_.assign(reinterpret_cast<const char*>(long_header->GetSourceConnectionId()),
+        long_header->GetSourceConnectionIdLength());
 
     // Update token
     token_ = std::string((char*)token_span.GetStart(), token_span.GetLength());
@@ -557,6 +577,49 @@ void ClientConnection::WriteCryptoData(std::shared_ptr<IBufferRead> buffer, int3
     if (tls_connection_->DoHandleShake()) {
         LOG_DEBUG("handshake done.");
     }
+}
+
+bool ClientConnection::ValidatePeerConnectionIds(const TransportParam& remote_tp) {
+    // Shared check first: the server's initial_source_connection_id must match the
+    // SCID it used on its first Initial.
+    if (!BaseConnection::ValidatePeerConnectionIds(remote_tp)) {
+        return false;
+    }
+
+    // RFC 9000 §7.3: the client MUST validate original_destination_connection_id
+    // against the DCID it put in its very first Initial. This is what authenticates
+    // the whole handshake back to the CID the client itself chose; without it an
+    // off-path attacker can complete a handshake against a CID of its choosing.
+    const std::string& tp_odcid = remote_tp.GetOriginalDestinationConnectionId();
+    std::string expected_odcid(reinterpret_cast<const char*>(original_dcid_.GetID()), original_dcid_.GetLength());
+    if (tp_odcid != expected_odcid) {
+        LOG_ERROR("original_destination_connection_id mismatch: tp_len=%zu, expected_len=%zu", tp_odcid.length(),
+            expected_odcid.length());
+        InnerConnectionClose(QuicErrorCode::kTransportParameterError, 0,
+            "original_destination_connection_id mismatch");
+        return false;
+    }
+
+    // RFC 9000 §7.3: retry_source_connection_id MUST be present and equal to the
+    // Retry packet's SCID when a Retry was processed, and MUST be absent otherwise.
+    // The "absent otherwise" half is what prevents an attacker from convincing the
+    // client that a Retry it never saw had taken place.
+    const std::string& tp_rscid = remote_tp.GetRetrySourceConnectionId();
+    if (retry_received_) {
+        if (tp_rscid != retry_scid_) {
+            LOG_ERROR("retry_source_connection_id mismatch: tp_len=%zu, observed_len=%zu", tp_rscid.length(),
+                retry_scid_.length());
+            InnerConnectionClose(QuicErrorCode::kTransportParameterError, 0, "retry_source_connection_id mismatch");
+            return false;
+        }
+    } else if (!tp_rscid.empty()) {
+        LOG_ERROR("retry_source_connection_id present without a Retry. len:%zu", tp_rscid.length());
+        InnerConnectionClose(QuicErrorCode::kTransportParameterError, 0,
+            "unexpected retry_source_connection_id");
+        return false;
+    }
+
+    return true;
 }
 
 }  // namespace quic

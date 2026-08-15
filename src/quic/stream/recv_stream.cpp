@@ -22,11 +22,11 @@ RecvStream::RecvStream(std::weak_ptr<common::IEventLoop> loop, uint64_t init_dat
     std::function<void(uint64_t stream_id)> stream_close_cb,
     std::function<void(uint64_t error, uint16_t frame_type, const std::string& resion)> connection_close_cb):
     IStream(loop, id, active_send_cb, stream_close_cb, connection_close_cb),
-    local_data_limit_(init_data_limit),
     final_offset_(0),
+    local_data_limit_(init_data_limit),
     except_offset_(0),
-    reset_error_(0),
-    out_order_bytes_(0) {
+    out_order_bytes_(0),
+    reset_error_(0) {
     buffer_ = std::make_shared<common::MultiBlockBuffer>(GlobalResource::Instance().GetThreadLocalBlockPool());
     recv_machine_ = std::make_shared<StreamStateMachineRecv>();
 }

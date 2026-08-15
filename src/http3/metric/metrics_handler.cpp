@@ -5,7 +5,7 @@
 namespace quicx {
 namespace http3 {
 
-void MetricsHandler::Handle(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response) {
+void MetricsHandler::Handle(std::shared_ptr<IRequest> /*request*/, std::shared_ptr<IResponse> response) {
     // Export metrics in Prometheus format
     std::string metrics_data = common::Metrics::ExportPrometheus();
 

@@ -10,14 +10,15 @@ namespace common {
 // include/quicx/common/if_timer_scheduler.h. It is kept out of line so the
 // public header never needs the definition of TimerCore.
 
-Timer::Timer(TimerCore* core, uint32_t index, uint32_t gen) noexcept: core_(core), index_(index), gen_(gen) {}
+Timer::Timer(std::shared_ptr<TimerCore> core, uint32_t index, uint32_t gen) noexcept
+    : core_(std::move(core)), index_(index), gen_(gen) {}
 
 Timer::~Timer() {
     Cancel();
 }
 
 Timer::Timer(Timer&& other) noexcept: core_(other.core_), index_(other.index_), gen_(other.gen_) {
-    other.core_ = nullptr;
+    other.core_.reset();
 }
 
 Timer& Timer::operator=(Timer&& other) noexcept {
@@ -30,40 +31,50 @@ Timer& Timer::operator=(Timer&& other) noexcept {
     core_ = other.core_;
     index_ = other.index_;
     gen_ = other.gen_;
-    other.core_ = nullptr;
+    other.core_.reset();
     return *this;
 }
 
 bool Timer::IsActive() const noexcept {
-    return core_ != nullptr && core_->IsActive(index_, gen_);
+    auto core = core_.lock();
+    return core && core->IsActive(index_, gen_);
 }
 
 void Timer::Cancel() noexcept {
-    if (core_ == nullptr) {
+    auto core = core_.lock();
+    if (!core) {
+        // Core already torn down (e.g. the owning EventLoop was destroyed before
+        // this handle was cancelled). Nothing to do and nothing to dereference --
+        // this is what makes destruction/cancellation from any thread safe.
+        core_.reset();
         return;
     }
-    if (core_->IsInLoopThread()) {
+    if (core->IsInLoopThread()) {
         // Fast path: unlink the node and release the slot right away, so the
         // callback (and anything it captured) is destroyed immediately.
-        core_->CancelLocal(index_, gen_);
-        core_->ReleaseEntry(index_, gen_);
+        core->CancelLocal(index_, gen_);
+        core->ReleaseEntry(index_, gen_);
     } else {
         // Teardown path: hand the cancel to the loop thread. It is applied
         // before the loop runs any further callback, so the contract "no
         // callback after Cancel() returns" still holds for callbacks that have
-        // not started yet.
-        core_->CancelRemote(index_, gen_);
+        // not started yet. If the loop is already gone the weak_ptr above would
+        // have returned null and we would not reach here.
+        core->CancelRemote(index_, gen_);
     }
     // Detach unconditionally: a handle never refers to a slot it does not own,
     // which is what makes double-cancel and use-after-cancel safe no-ops.
-    core_ = nullptr;
+    core_.reset();
 }
 
 bool Timer::Rearm(uint32_t delay_ms, uint64_t now) noexcept {
-    if (core_ == nullptr) {
+    auto core = core_.lock();
+    if (!core) {
         return false;
     }
-    return core_->Rearm(index_, gen_, delay_ms, now != 0 ? now : UTCTimeMsec());
+    // Rearm reuses the same slot and generation, so the handle stays valid and
+    // keeps referring to the timer it already owned. Do NOT detach here.
+    return core->Rearm(index_, gen_, delay_ms, now != 0 ? now : UTCTimeMsec());
 }
 
 }  // namespace common

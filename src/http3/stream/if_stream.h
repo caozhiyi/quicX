@@ -34,7 +34,7 @@ public:
     // error code without having to know the underlying QUIC stream type.
     // Tracked as a learning-only limitation in
     // learning_project_roadmap.md §2.
-    virtual void Close(uint32_t error_code) {}
+    virtual void Close(uint32_t /*error_code*/) {}
 
 protected:
     StreamType stream_type_;

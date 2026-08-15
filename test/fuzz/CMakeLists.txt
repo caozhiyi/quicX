@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
+add_compile_options(-Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function)
 
 # Set project name
 project(QUICFuzzTests)

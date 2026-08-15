@@ -28,6 +28,7 @@ public:
     TimerTask(const TimerTask& t)
         : tcb_(t.tcb_), time_(t.time_), id_(t.id_),
           wheel_idx_(t.wheel_idx_), slot_idx_(t.slot_idx_), list_it_(t.list_it_) {}
+    TimerTask& operator=(const TimerTask&) = default;
 
     void SetTimeoutCallback(std::function<void()> tcb) { tcb_ = tcb; }
     uint64_t GetId() const { return id_; }

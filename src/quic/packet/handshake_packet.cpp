@@ -118,7 +118,7 @@ bool HandshakePacket::DecodeWithoutCrypto(std::shared_ptr<common::IBuffer> buffe
     return true;
 }
 
-bool HandshakePacket::DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) {
+bool HandshakePacket::DecodeWithCrypto(std::shared_ptr<common::IBuffer> /*buffer*/) {
     auto span = packet_src_data_;
     uint8_t* cur_pos = span.GetStart();
     uint8_t* end = span.GetEnd();

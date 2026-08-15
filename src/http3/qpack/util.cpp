@@ -78,7 +78,7 @@ bool QpackEncodeStringLiteral(const std::string& s, std::shared_ptr<common::IBuf
     if (!QpackEncodePrefixedInteger(buf, 7, 0x00, static_cast<uint64_t>(s.size()))) return false;
     if (s.empty()) return true;
     return buf->Write(const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(s.data())),
-               static_cast<uint32_t>(s.size())) == static_cast<int32_t>(s.size());
+               static_cast<uint32_t>(s.size())) == static_cast<uint32_t>(s.size());
 }
 
 // Continues a prefixed integer whose first byte the caller already consumed.
@@ -121,11 +121,12 @@ static bool QpackReadStringBody(
 
     if (!huffman) {
         out.resize(static_cast<size_t>(len));
-        return buf->Read(reinterpret_cast<uint8_t*>(&out[0]), static_cast<uint32_t>(len)) == static_cast<int32_t>(len);
+        return buf->Read(reinterpret_cast<uint8_t*>(&out[0]), static_cast<uint32_t>(len))
+               == static_cast<uint32_t>(len);
     }
     std::vector<uint8_t> tmp;
     tmp.resize(static_cast<size_t>(len));
-    if (buf->Read(tmp.data(), static_cast<uint32_t>(len)) != static_cast<int32_t>(len)) return false;
+    if (buf->Read(tmp.data(), static_cast<uint32_t>(len)) != static_cast<uint32_t>(len)) return false;
     out = HuffmanEncoder::Instance().Decode(tmp);
     return true;
 }
@@ -147,7 +148,7 @@ bool QpackEncodeStringLiteralWithPrefix(const std::string& s, std::shared_ptr<co
     }
     if (s.empty()) return true;
     return buf->Write(const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(s.data())),
-               static_cast<uint32_t>(s.size())) == static_cast<int32_t>(s.size());
+               static_cast<uint32_t>(s.size())) == static_cast<uint32_t>(s.size());
 }
 
 bool QpackDecodeStringLiteralWithPrefix(const std::shared_ptr<common::IBuffer> buf, uint8_t first_byte,
@@ -185,12 +186,13 @@ bool QpackDecodeStringLiteral(const std::shared_ptr<common::IBuffer> buf, std::s
 
     if (!huffman) {
         out.resize(static_cast<size_t>(len));
-        return buf->Read(reinterpret_cast<uint8_t*>(&out[0]), static_cast<uint32_t>(len)) == static_cast<int32_t>(len);
+        return buf->Read(reinterpret_cast<uint8_t*>(&out[0]), static_cast<uint32_t>(len))
+               == static_cast<uint32_t>(len);
     }
     // Huffman encoded: read into temp buffer then decode
     std::vector<uint8_t> tmp;
     tmp.resize(static_cast<size_t>(len));
-    if (buf->Read(tmp.data(), static_cast<uint32_t>(len)) != static_cast<int32_t>(len)) return false;
+    if (buf->Read(tmp.data(), static_cast<uint32_t>(len)) != static_cast<uint32_t>(len)) return false;
     out = HuffmanEncoder::Instance().Decode(tmp);
     return true;
 }

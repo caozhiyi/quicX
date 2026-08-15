@@ -32,6 +32,31 @@ public:
     virtual void* GetUserData() = 0;
 
     /**
+     * @brief Bind a shared-ownership context object to the connection.
+     *
+     * Unlike SetUserData (raw pointer, caller-owned), this stores a
+     * std::shared_ptr<void>, so the bound object's lifetime is tied to the
+     * connection: it is destroyed when the connection object is destroyed.
+     * This lets an application layer (e.g. an HTTP/3 connection) attach its
+     * per-connection state directly to the transport connection without a
+     * separate side table keyed by connection identity.
+     */
+    virtual void SetContext(std::shared_ptr<void> context) = 0;
+
+    /**
+     * @brief Retrieve the context bound via SetContext.
+     */
+    virtual std::shared_ptr<void> GetContext() = 0;
+
+    /**
+     * @brief Convenience typed accessor: static_pointer_cast of GetContext().
+     */
+    template <typename T>
+    std::shared_ptr<T> GetContextAs() {
+        return std::static_pointer_cast<T>(GetContext());
+    }
+
+    /**
      * @brief Query the peer's address as observed by the transport.
      *
      * @param addr Filled with the string representation of the remote IP.
@@ -127,6 +152,18 @@ public:
      *
      * @note For production use, prefer InitiateMigrationTo() which provides
      *       detailed error codes and explicit address control.
+     *
+     * @note Thread-safe. Migration state (paths, connection IDs, sockets,
+     *       timers) is owned by the connection's event-loop thread, so a call
+     *       from any other thread is dispatched onto that loop and blocks
+     *       until the loop reports the outcome. Consequences:
+     *       - Do not hold a lock that your own connection/stream callbacks
+     *         also acquire; the loop thread may need it to make progress.
+     *         Copy what you need out from under the lock, then call.
+     *       - Calling from inside a callback (already on the loop thread)
+     *         runs inline with no extra latency.
+     *       - If the loop is stopped or wedged the call gives up after a
+     *         few seconds and returns false rather than blocking forever.
      */
     virtual bool InitiateMigration() { return false; }
 
@@ -140,6 +177,11 @@ public:
      * @param local_addr New local address to migrate to (IP:port).
      *                   If port is 0, system chooses an ephemeral port.
      * @return MigrationResult indicating success or failure reason.
+     *
+     * @note Thread-safe, with the same dispatch semantics and locking caveat
+     *       as InitiateMigration(). Returns kFailedTimeout if the event loop
+     *       never picks the request up, kFailedInvalidState if the connection
+     *       no longer has a loop.
      */
     virtual MigrationResult InitiateMigrationTo(const std::string& local_ip, uint16_t local_port = 0) {
         (void)local_ip;

@@ -7,7 +7,7 @@ namespace upgrade {
 HttpSmartHandler::HttpSmartHandler(const UpgradeSettings& settings, std::shared_ptr<common::IEventLoop> event_loop):
     BaseSmartHandler(settings, event_loop) {}
 
-bool HttpSmartHandler::InitializeConnection(std::shared_ptr<ITcpSocket> socket) {
+bool HttpSmartHandler::InitializeConnection(std::shared_ptr<ITcpSocket> /*socket*/) {
     // HTTP connections don't need special initialization
     return true;
 }
@@ -20,7 +20,7 @@ int HttpSmartHandler::WriteData(std::shared_ptr<ITcpSocket> socket, std::vector<
     return socket->Send(data);
 }
 
-void HttpSmartHandler::CleanupConnection(std::shared_ptr<ITcpSocket> socket) {
+void HttpSmartHandler::CleanupConnection(std::shared_ptr<ITcpSocket> /*socket*/) {
     // HTTP connections don't need special cleanup
 }
 

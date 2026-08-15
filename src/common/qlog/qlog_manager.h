@@ -4,6 +4,7 @@
 #ifndef COMMON_QLOG_QLOG_MANAGER
 #define COMMON_QLOG_QLOG_MANAGER
 
+#include <atomic>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -39,8 +40,12 @@ public:
 
     /**
      * @brief Check if qlog is enabled
+     *
+     * Uses a dedicated atomic so the (hot, per-event) check does not take the
+     * config mutex and cannot race with Enable()/SetConfig() updating
+     * config_.enabled on another thread (TSan data race).
      */
-    bool IsEnabled() const { return config_.enabled; }
+    bool IsEnabled() const { return enabled_.load(std::memory_order_acquire); }
 
     /**
      * @brief Set complete configuration
@@ -119,6 +124,9 @@ private:
 
     // Whether initialized
     bool initialized_;
+
+    // Mirror of config_.enabled for lock-free, race-free reads in IsEnabled().
+    std::atomic<bool> enabled_{false};
 };
 
 }  // namespace common

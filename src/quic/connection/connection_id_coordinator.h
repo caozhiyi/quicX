@@ -1,6 +1,7 @@
 #ifndef QUIC_CONNECTION_ID_COORDINATOR_H
 #define QUIC_CONNECTION_ID_COORDINATOR_H
 
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -40,29 +41,31 @@ public:
 
     ~ConnectionIDCoordinator() = default;
 
+    // ==================== Peer Stateless Reset Tokens ====================
+
     /**
-     * @brief Fill |out| with a stateless reset token (RFC 9000 §10.3).
+     * @brief Remember a stateless reset token the peer associated with one of its
+     *        connection IDs (from its transport parameters or a NEW_CONNECTION_ID
+     *        frame).
      *
-     * The token must be hard to guess: a peer that can predict it can inject a
-     * Stateless Reset packet and tear the connection down at will. It therefore
-     * comes from the CSPRNG, as src/common/util/random.h requires for exactly
-     * this case. It was previously a loop of `rand() % 256`, which is a
-     * non-cryptographic LCG, never seeded anywhere in this project (so identical
-     * on every run), and not thread-safe while workers generate tokens
-     * concurrently.
+     * RFC 9000 §10.3.1: a Stateless Reset is indistinguishable from a normal
+     * packet except that its last 16 bytes equal one of these tokens. Recognising
+     * one is the only way to learn that the peer has lost our connection state;
+     * without it we retransmit until the idle timeout.
      *
-     * TODO(RFC 9000 §10.3.1): once a Stateless Reset *send* path exists, this
-     * has to become HMAC(static_key, connection_id) instead. A server that has
-     * lost state cannot look a random token up -- it must recompute it from the
-     * CID in the incoming packet. Random is correct only while nothing needs to
-     * reconstruct the token, which is true today: this is the only generation
-     * site and there is no validation path.
-     *
-     * Public and static so it can be tested without building a coordinator.
-     *
-     * @return false if |out| is null or |len| is 0, or if the CSPRNG fails.
+     * @param token Pointer to kStatelessResetTokenLength bytes.
      */
-    static bool GenerateStatelessResetToken(uint8_t* out, uint32_t len);
+    void AddPeerStatelessResetToken(const uint8_t* token);
+
+    /**
+     * @brief Constant-time test of whether |token| is one of the peer's tokens.
+     *
+     * Constant time per §10.3: a timing-variable compare would let an observer
+     * probe for valid tokens, and a valid token is enough to kill the connection.
+     *
+     * @param token Pointer to kStatelessResetTokenLength bytes.
+     */
+    bool IsPeerStatelessResetToken(const uint8_t* token) const;
 
     // ==================== Initialization ====================
 
@@ -191,6 +194,12 @@ private:
     // requirements.
     uint64_t pending_retire_remote_seq_{0};
     bool has_pending_retire_remote_cid_{false};
+
+    // Stateless reset tokens advertised by the peer. Bounded so a peer that floods
+    // NEW_CONNECTION_ID frames cannot grow this without limit; the peer's own
+    // active_connection_id_limit already bounds how many CIDs are useful.
+    static constexpr size_t kMaxPeerResetTokens = 32;
+    std::vector<std::array<uint8_t, 16>> peer_reset_tokens_;
 };
 
 }  // namespace quic

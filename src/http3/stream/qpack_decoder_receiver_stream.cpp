@@ -22,7 +22,7 @@ QpackDecoderReceiverStream::~QpackDecoderReceiverStream() {
     stream_.reset();
 }
 
-void QpackDecoderReceiverStream::OnData(std::shared_ptr<IBufferRead> data, bool is_last, uint32_t error) {
+void QpackDecoderReceiverStream::OnData(std::shared_ptr<IBufferRead> data, bool /*is_last*/, uint32_t error) {
     if (error != 0) {
         LOG_ERROR("QpackDecoderReceiverStream::OnData error: %d", error);
         error_handler_(stream_->GetStreamID(), error);

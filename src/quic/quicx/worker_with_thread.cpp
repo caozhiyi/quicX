@@ -8,8 +8,8 @@ namespace quicx {
 namespace quic {
 
 WorkerWithThread::WorkerWithThread(std::shared_ptr<common::IEventLoop> event_loop, std::shared_ptr<IWorker> worker_ptr):
-    event_loop_(event_loop),
     worker_ptr_(worker_ptr),
+    event_loop_(event_loop),
     ready_future_(ready_promise_.get_future().share()) {}
 
 WorkerWithThread::~WorkerWithThread() {}

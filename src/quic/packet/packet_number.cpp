@@ -52,7 +52,7 @@ uint8_t* PacketNumber::Decode(uint8_t* pos, uint8_t* end, uint32_t packet_number
         static_cast<uint32_t>(end - pos) < packet_number_len) {
         return nullptr;
     }
-    for (int i = 0; i < packet_number_len; i++) {
+    for (uint32_t i = 0; i < packet_number_len; i++) {
         packet_number = ((packet_number) << 8u) + (*pos);
         pos++;
     }

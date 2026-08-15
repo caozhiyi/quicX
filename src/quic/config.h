@@ -23,6 +23,16 @@ static constexpr uint32_t kDefaultDestinationCidLength = 20;
 // 1420 bytes fits within MTU 1500 after QUIC header + AEAD tag + IP/UDP headers
 static constexpr uint32_t kMaxFramePayload = 1420;
 
+// Maximum length (bytes) of a CONNECTION_CLOSE reason phrase. RFC 9000 leaves
+// this unbounded; 16KB is a safe ceiling against memory exhaustion. Used in:
+// frame/connection_close_frame.cpp
+static constexpr uint32_t kMaxConnectionCloseReasonLength = 16384;
+
+// Maximum NEW_CONNECTION_ID sequence numbers retired per single frame. Caps the
+// retirement loop to avoid DoS from large retire_prior_to values. Used in:
+// connection/connection_frame_processor.cpp
+static constexpr uint64_t kMaxRetireConnectionIdPerFrame = 256;
+
 // ============================================================================
 // Connection-level Flow Control
 // ============================================================================
@@ -58,6 +68,12 @@ static constexpr uint64_t kStreamsIncreaseAmount = 10;
 // Balances ACK frequency with protocol overhead
 // Used in: send_control.cpp
 static constexpr uint32_t kMaxAckDelay = 25;
+
+// Fallback re-check interval (ms) for connection-level flow control. When a
+// connection is held back purely by the peer's MAX_DATA, a low-frequency timer
+// re-examines it so it is not dropped from the worker's active set until idle
+// timeout (see Bug #17). Used in: connection/controler/send_manager.cpp
+static constexpr uint32_t kFlowControlRecheckIntervalMs = 100;
 
 // ============================================================================
 // Stream-level Flow Control
@@ -130,6 +146,15 @@ static constexpr bool kDefaultTlsVerifyPeer = false;
 // Used in: worker_server.cpp
 static constexpr uint32_t kHandshakeTimeoutMs = 5000;
 
+// Connection-migration dispatch timeout in milliseconds.
+// When a migration API (InitiateMigration / InitiateMigrationTo) is invoked from
+// a thread other than the connection's event-loop thread, the work is posted to
+// the loop and the caller blocks on a future for this long before giving up with
+// kFailedTimeout. Sized equal to kHandshakeTimeoutMs — if the loop cannot drain a
+// single posted task within 5s it is effectively stalled/dead, so failing fast is
+// the correct outcome. Used in: connection/migration_controller.cpp
+static constexpr uint32_t kMigrationDispatchTimeoutMs = 5000;
+
 // Retry token Connection ID length (RFC 9000 Section 8.1)
 // 8 bytes is the minimum recommended CID length for retry tokens
 // Used in: worker_server.cpp
@@ -148,6 +173,15 @@ static constexpr uint32_t kPacketBufferSize = 1500;
 // Number of blocks in packet pool allocator
 // 64 blocks balances memory overhead with allocation efficiency
 static constexpr uint32_t kPacketPoolBlockCount = 64;
+
+// ============================================================================
+// Key Update Configuration
+// ============================================================================
+// Default thresholds that trigger a KeyUpdate (RFC 9000 §6.5 / §6.6). These are
+// the compile-time defaults; a connection may tighten them at runtime.
+// Used in: connection/key_update_trigger.cpp
+static constexpr uint64_t kKeyUpdateBytesThreshold = 512 * 1024;    // 512KB of data sent
+static constexpr uint64_t kKeyUpdatePacketNumberThreshold = 1000;   // packets sent
 
 // ============================================================================
 // UDP Receive Configuration
@@ -192,6 +226,15 @@ static constexpr int kMaxPacketsPerRound = 128;
 // traffic. Legal range [1, 1024].
 // Used in: connection/controler/recv_control.cpp
 static constexpr size_t kAckThreshold = 10;
+
+// Maximum ACK ranges packed into a single ACK frame (fits within MTU). Used in:
+// connection/controler/recv_control.cpp
+static constexpr uint32_t kMaxAckRanges = 64;
+
+// Maximum segments per UDP GSO sendmsg(2) call, bounded by the kernel's
+// UDP_MAX_SEGMENTS ceiling. Also sizes the per-thread GSO scratch buffer.
+// Used in: udp/udp_sender.cpp
+static constexpr size_t kGsoMaxSegments = 64;
 
 }  // namespace quic
 }  // namespace quicx

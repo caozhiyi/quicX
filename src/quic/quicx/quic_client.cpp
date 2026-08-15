@@ -1,5 +1,7 @@
 #include "common/log/file_logger.h"
+#include "common/log/stdout_logger.h"
 #include "common/util/random.h"
+#include <atomic>
 #include "common/log/log.h"
 #include "common/network/io_handle.h"
 #include "common/qlog/qlog_manager.h"
@@ -103,12 +105,17 @@ QuicClient::~QuicClient() {
 bool QuicClient::Init(const QuicClientConfig& config) {
     // Always sync the configured level to the logger so that LOG_xxx macros
     // can short-circuit argument evaluation when level is kNull.
-    LOG_SET_LEVEL(common::LogLevel(config.config_.log_level_));
-    if (config.config_.log_level_ != LogLevel::kNull) {
-        // std::shared_ptr<common::Logger> log = std::make_shared<common::StdoutLogger>();
+    // Atomic + exchange makes the one-time logger setup thread-safe: multiple
+    // QuicClient instances created on different threads used to race on the
+    // `initialized` flag (TSan data race).
+    static std::atomic<bool> initialized{false};
+
+    if (config.config_.log_level_ != LogLevel::kNull && !initialized.exchange(true)) {
+        LOG_SET_LEVEL(common::LogLevel(config.config_.log_level_));
+        std::shared_ptr<common::Logger> log = std::make_shared<common::StdoutLogger>();
         std::shared_ptr<common::FileLogger> file_log =
             std::make_shared<common::FileLogger>(config.config_.log_path_ + "/client.log");
-        // file_log->SetLogger(log);
+        file_log->SetLogger(log);
         LOG_SET(file_log);
     }
 

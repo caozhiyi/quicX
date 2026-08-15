@@ -1,15 +1,14 @@
 #include "quic/frame/path_challenge_frame.h"
 #include <cstring>
+#include <openssl/mem.h>
+#include <openssl/rand.h>
 #include "common/buffer/buffer_decode_wrapper.h"
 #include "common/buffer/buffer_encode_wrapper.h"
 #include "common/log/log.h"
-#include "common/util/random.h"
 #include "quic/frame/path_response_frame.h"
 
 namespace quicx {
 namespace quic {
-
-std::shared_ptr<common::RangeRandom> PathChallengeFrame::random_ = std::make_shared<common::RangeRandom>(0, 62);
 
 PathChallengeFrame::PathChallengeFrame():
     IFrame(FrameType::kPathChallenge) {
@@ -59,22 +58,19 @@ uint32_t PathChallengeFrame::EncodeSize() {
 }
 
 bool PathChallengeFrame::CompareData(std::shared_ptr<PathResponseFrame> response) {
-    return strncmp((const char*)data_, (const char*)response->GetData(), kPathDataLength) == 0;
+    // The token is opaque binary, so it may contain embedded NUL bytes: a string
+    // compare would stop early and accept a forged prefix. CRYPTO_memcmp also keeps
+    // the comparison constant time so the token cannot be recovered byte by byte.
+    return CRYPTO_memcmp(data_, response->GetData(), kPathDataLength) == 0;
 }
 
-void PathChallengeFrame::MakeData() {
-    for (uint32_t i = 0; i < kPathDataLength; i++) {
-        int32_t randomChar = random_->Random();
-        if (randomChar < 26) {
-            data_[i] = 'a' + randomChar;
-
-        } else if (randomChar < 52) {
-            data_[i] = 'A' + randomChar - 26;
-
-        } else {
-            data_[i] = '0' + randomChar - 52;
-        }
+bool PathChallengeFrame::MakeData() {
+    if (RAND_bytes(data_, kPathDataLength) != 1) {
+        memset(data_, 0, kPathDataLength);
+        LOG_ERROR("failed to generate path challenge data from the cryptographic RNG");
+        return false;
     }
+    return true;
 }
 
 }  // namespace quic

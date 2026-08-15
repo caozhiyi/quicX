@@ -2,6 +2,7 @@
 #include "common/buffer/buffer_decode_wrapper.h"
 #include "common/buffer/buffer_encode_wrapper.h"
 #include "common/log/log.h"
+#include "quic/config.h"
 
 namespace quicx {
 namespace quic {
@@ -44,8 +45,6 @@ bool ConnectionCloseFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
 }
 
 bool ConnectionCloseFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type) {
-    uint16_t size = EncodeSize();
-
     common::BufferDecodeWrapper wrapper(buffer);
     if (with_type) {
         uint64_t type = 0;
@@ -71,9 +70,8 @@ bool ConnectionCloseFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool 
 
     // Limit reason_length to prevent memory exhaustion from malicious packets.
     // RFC 9000 does not define a limit, but 16KB is a reasonable upper bound.
-    static constexpr uint32_t kMaxReasonLength = 16384;
-    if (reason_length > kMaxReasonLength) {
-        LOG_ERROR("reason length too large. length:%u, max:%u", reason_length, kMaxReasonLength);
+    if (reason_length > kMaxConnectionCloseReasonLength) {
+        LOG_ERROR("reason length too large. length:%u, max:%u", reason_length, kMaxConnectionCloseReasonLength);
         return false;
     }
 

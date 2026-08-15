@@ -13,7 +13,8 @@ namespace quic {
 /*
  pool packet allocator, alloc packet from pool memory
 */
-class PoolPacketAllocator: public NormalPacketAllocator {
+class PoolPacketAllocator: public NormalPacketAllocator,
+                           public std::enable_shared_from_this<PoolPacketAllocator> {
 public:
     PoolPacketAllocator();
     virtual ~PoolPacketAllocator();

@@ -63,7 +63,9 @@ bool RouterNode::AddRoute(const std::string& path, int path_offset, const RouteC
         }
     }
 
-    if (path_offset >= path.size()) {
+    // path_offset only ever walks forward from 0, so the cast is safe; making it
+    // explicit stops a negative value from wrapping into a huge unsigned.
+    if (path_offset < 0 || static_cast<size_t>(path_offset) >= path.size()) {
         return true;
     }
     return cur_node->AddRoute(path, path_offset, config);
@@ -111,7 +113,7 @@ std::shared_ptr<IRouterNode> RouterNode::MakeNode(
         return nullptr;
     }
 
-    bool is_last = path.size() <= path_offset;
+    bool is_last = path_offset >= 0 && path.size() <= static_cast<size_t>(path_offset);
 
     RouterNodeType node_type;
     std::string full_path = path.substr(0, path_offset);

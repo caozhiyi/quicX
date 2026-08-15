@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
+add_compile_options(-Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function)
 
 # Integration tests
 add_executable(http3_methods_test http3_methods_test.cpp)

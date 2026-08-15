@@ -163,7 +163,7 @@ static size_t GetCurrentRSS() {
     FILE* f = fopen("/proc/self/statm", "r");
     if (!f) return 0;
     long pages = 0;
-    if (fscanf(f, "%*ld %ld", &pages) != 1) pages = 0;
+    if (fscanf(f, "%*d %ld", &pages) != 1) pages = 0;
     fclose(f);
     return pages * sysconf(_SC_PAGESIZE);
 #else
@@ -260,12 +260,13 @@ static void BM_E2E_Handshake_Burst(benchmark::State& state) {
     Http3ServerConfig sc;
     sc.quic_config_.cert_pem_ = kCert;
     sc.quic_config_.key_pem_ = kKey;
-    // NOTE: kMultiThread mode triggers a "double free" in the current quicX build;
-    // keep single-thread server here. This makes the benchmark effectively measure
-    // server single-worker handshake capacity under a concurrent client storm — the
-    // very bottleneck this scenario is designed to expose.
-    sc.quic_config_.config_.thread_mode_ = ThreadMode::kSingleThread;
-    sc.quic_config_.config_.worker_thread_num_ = 1;
+    // The HTTP/3 ServerConnection is now owned by its QUIC connection via
+    // IQuicConnection::SetContext(), with a weak back-reference (no central
+    // conn_map_ + recursive_mutex, no deferred-release vector). That removed
+    // the reference-cycle / re-entrant-teardown double free that previously
+    // forced this benchmark onto a single-thread server. Multi-thread mode is
+    // safe again.
+    sc.quic_config_.config_.thread_mode_ = ThreadMode::kMultiThread;
     sc.quic_config_.config_.log_level_ = LogLevel::kError;
     server->Init(sc);
 

@@ -1,3 +1,5 @@
+add_compile_options(-Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function)
+
 add_subdirectory(hello_world)
 add_subdirectory(server_push)
 add_subdirectory(restful_api)

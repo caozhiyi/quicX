@@ -121,7 +121,7 @@ inline const uint8_t* GetInitialSalt(uint32_t version) {
     return kInitialSaltV1.data();
 }
 
-inline size_t GetInitialSaltLength(uint32_t version) {
+inline size_t GetInitialSaltLength(uint32_t /*version*/) {
     return 20;  // Both v1 and v2 use 20-byte salt
 }
 

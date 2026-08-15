@@ -284,7 +284,6 @@ ICryptographer::Result AeadBaseCryptographer::DecryptPacket(uint64_t pkt_number,
     }
 
     size_t out_length = 0;
-    auto tag_length = aead_tag_length_;
     auto out_span = out_plaintext->GetWritableSpan();
 
     if (EVP_AEAD_CTX_open(raw, out_span.GetStart(), &out_length, out_span.GetLength(), nonce, read_secret_.iv_.size(),
@@ -359,11 +358,7 @@ ICryptographer::Result AeadBaseCryptographer::EncryptPacket(uint64_t pkt_number,
     if (EVP_AEAD_CTX_seal(raw, out_span.GetStart(), &out_length, out_span.GetLength(), nonce, write_secret_.iv_.size(),
             plaintext.GetStart(), plaintext.GetLength(), associated_data.GetStart(),
             associated_data.GetLength()) != 1) {
-        // The most common cause is insufficient output space, so report the
-        // budget alongside what the ciphertext plus tag actually needs.
-        LOG_ERROR("EVP_AEAD_CTX_seal failed. pn=%llu max_out=%u inlen=%u needed=%u ad_len=%u",
-            (unsigned long long)pkt_number, (uint32_t)out_span.GetLength(), (uint32_t)plaintext.GetLength(),
-            (uint32_t)(plaintext.GetLength() + aead_tag_length_), (uint32_t)associated_data.GetLength());
+        LOG_ERROR("EVP_AEAD_CTX_seal failed");
         return Result::kEncryptFailed;
     }
     out_ciphertext->MoveWritePt(out_length);
@@ -371,7 +366,7 @@ ICryptographer::Result AeadBaseCryptographer::EncryptPacket(uint64_t pkt_number,
 }
 
 ICryptographer::Result AeadBaseCryptographer::DecryptHeader(common::BufferSpan& ciphertext, common::BufferSpan& sample,
-    uint32_t pn_offset, uint8_t& out_packet_num_len, bool is_short) {
+    uint8_t pn_offset, uint8_t& out_packet_num_len, bool is_short) {
     if (read_secret_.hp_.empty()) {
         LOG_ERROR("decrypt header but not install hp secret");
         return Result::kNotInitialized;
@@ -392,14 +387,12 @@ ICryptographer::Result AeadBaseCryptographer::DecryptHeader(common::BufferSpan& 
 
     // remove protection for first byte
     uint8_t* pos = ciphertext.GetStart();
-    uint8_t old_flag = *pos;
     if (is_short) {
         *pos = *pos ^ (mask[0] & 0x1f);
 
     } else {
         *pos = *pos ^ (mask[0] & 0x0f);
     }
-    uint8_t new_flag = *pos;
 
     // get length of packet number from header flags
     // RFC 9000: The 2-bit field encodes (actual_length - 1)
@@ -416,7 +409,7 @@ ICryptographer::Result AeadBaseCryptographer::DecryptHeader(common::BufferSpan& 
 }
 
 ICryptographer::Result AeadBaseCryptographer::EncryptHeader(common::BufferSpan& plaintext, common::BufferSpan& sample,
-    uint32_t pn_offset, size_t pkt_number_len, bool is_short) {
+    uint8_t pn_offset, size_t pkt_number_len, bool is_short) {
     if (write_secret_.hp_.empty()) {
         LOG_ERROR("encrypt header but not install hp secret");
         return Result::kNotInitialized;

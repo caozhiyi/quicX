@@ -1,3 +1,5 @@
+#include <set>
+
 #include "common/decode/decode.h"
 #include "common/log/log.h"
 
@@ -244,20 +246,53 @@ bool TransportParam::Encode(const common::BufferSpan& buffer, size_t& bytes_writ
     return true;
 }
 
-bool TransportParam::Decode(const common::BufferSpan& buffer) {
+bool TransportParam::Decode(const common::BufferSpan& buffer, bool received_by_server) {
     uint64_t type = 0;
     uint8_t* pos = buffer.GetStart();
     uint8_t* end = buffer.GetEnd();
     LOG_INFO("TransportParam::Decode: BEGIN, total_len=%ld", (long)(end - pos));
+
+    // RFC 9000 §7.4: "An endpoint MUST treat receipt of a transport parameter more
+    // than once as a connection error of type TRANSPORT_PARAMETER_ERROR." Without
+    // this, a later copy silently overwrites an earlier one.
+    std::set<uint64_t> seen_params;
+
+    // RFC 9000 §18.2: these parameters may only be sent by a server. A client that
+    // sends them is committing a protocol violation, and honouring them would let a
+    // client, for example, inject a stateless_reset_token for a connection it does
+    // not own.
+    auto is_server_only_param = [](TransportParamType t) {
+        return t == TransportParamType::kOriginalDestinationConnectionId ||
+               t == TransportParamType::kPreferredAddress || t == TransportParamType::kRetrySourceConnectionId ||
+               t == TransportParamType::kStatelessResetToken;
+    };
+
     while (pos != nullptr && pos < end) {
         pos = common::DecodeVarint(pos, end, type);
         if (pos == nullptr) {
             return false;
         }
+
+        if (!seen_params.insert(type).second) {
+            LOG_ERROR("TransportParam: duplicate transport parameter. type:%llu", (unsigned long long)type);
+            return false;
+        }
+        if (received_by_server && is_server_only_param(static_cast<TransportParamType>(type))) {
+            LOG_ERROR("TransportParam: client sent server-only transport parameter. type:%llu",
+                (unsigned long long)type);
+            return false;
+        }
+
         switch (static_cast<TransportParamType>(type)) {
             case TransportParamType::kOriginalDestinationConnectionId:
                 pos = DecodeString(pos, end, original_destination_connection_id_);
                 if (pos == nullptr) {
+                    return false;
+                }
+                // RFC 9000 §18.2: a connection ID never exceeds 20 bytes.
+                if (original_destination_connection_id_.length() > kMaxTransportParamCidLength) {
+                    LOG_ERROR("TransportParam: original_destination_connection_id too long. len:%zu",
+                        original_destination_connection_id_.length());
                     return false;
                 }
                 break;
@@ -268,10 +303,24 @@ bool TransportParam::Decode(const common::BufferSpan& buffer) {
             case TransportParamType::kStatelessResetToken:
                 pos = DecodeString(pos, end, stateless_reset_token_);
                 if (pos == nullptr) return false;
+                // RFC 9000 §18.2: the token is exactly 16 bytes; any other length
+                // leaves downstream fixed-size comparisons reading past the value.
+                if (stateless_reset_token_.length() != kStatelessResetTokenLength) {
+                    LOG_ERROR("TransportParam: stateless_reset_token must be 16 bytes. len:%zu",
+                        stateless_reset_token_.length());
+                    return false;
+                }
                 break;
             case TransportParamType::kMaxUdpPayloadSize:
                 pos = DecodeUint(pos, end, max_udp_payload_size_);
                 if (pos == nullptr) return false;
+                // RFC 9000 §18.2: values below 1200 are invalid. A tiny advertised MTU
+                // would otherwise wedge the sender, unable to emit a conforming datagram.
+                if (max_udp_payload_size_ < kMinMaxUdpPayloadSize) {
+                    LOG_ERROR("TransportParam: max_udp_payload_size below 1200. value:%llu",
+                        (unsigned long long)max_udp_payload_size_);
+                    return false;
+                }
                 break;
             case TransportParamType::kInitialMaxData:
                 pos = DecodeUint(pos, end, initial_max_data_);
@@ -292,18 +341,44 @@ bool TransportParam::Decode(const common::BufferSpan& buffer) {
             case TransportParamType::kInitialMaxStreamsBidi:
                 pos = DecodeUint(pos, end, initial_max_streams_bidi_);
                 if (pos == nullptr) return false;
+                // RFC 9000 §18.2: a limit above 2^60 would allow stream IDs that
+                // overflow the 62-bit varint stream ID space.
+                if (initial_max_streams_bidi_ > kMaxStreamsLimit) {
+                    LOG_ERROR("TransportParam: initial_max_streams_bidi exceeds 2^60. value:%llu",
+                        (unsigned long long)initial_max_streams_bidi_);
+                    return false;
+                }
                 break;
             case TransportParamType::kInitialMaxStreamsUni:
                 pos = DecodeUint(pos, end, initial_max_streams_uni_);
                 if (pos == nullptr) return false;
+                if (initial_max_streams_uni_ > kMaxStreamsLimit) {
+                    LOG_ERROR("TransportParam: initial_max_streams_uni exceeds 2^60. value:%llu",
+                        (unsigned long long)initial_max_streams_uni_);
+                    return false;
+                }
                 break;
             case TransportParamType::kAckDelayExponent:
                 pos = DecodeUint(pos, end, ack_delay_exponent_);
                 if (pos == nullptr) return false;
+                // RFC 9000 §18.2: values above 20 are invalid. This value feeds shift
+                // expressions when encoding/decoding ACK delays, so an unchecked value
+                // above 63 is undefined behaviour, remotely triggerable by the peer.
+                if (ack_delay_exponent_ > kMaxAckDelayExponent) {
+                    LOG_ERROR("TransportParam: ack_delay_exponent exceeds 20. value:%llu",
+                        (unsigned long long)ack_delay_exponent_);
+                    return false;
+                }
                 break;
             case TransportParamType::kMaxAckDelay:
                 pos = DecodeUint(pos, end, max_ack_delay_);
                 if (pos == nullptr) return false;
+                // RFC 9000 §18.2: must be less than 2^14 milliseconds.
+                if (max_ack_delay_ >= kMaxAckDelayLimitMs) {
+                    LOG_ERROR("TransportParam: max_ack_delay must be < 2^14 ms. value:%llu",
+                        (unsigned long long)max_ack_delay_);
+                    return false;
+                }
                 break;
             case TransportParamType::kDisableActiveMigration:
                 pos = DecodeBool(pos, end, disable_active_migration_);
@@ -316,14 +391,31 @@ bool TransportParam::Decode(const common::BufferSpan& buffer) {
             case TransportParamType::kActiveConnectionIdLimit:
                 pos = DecodeUint(pos, end, active_connection_id_limit_);
                 if (pos == nullptr) return false;
+                // RFC 9000 §18.2: the minimum permitted value is 2. Accepting a smaller
+                // value degrades CID management and breaks migration bookkeeping.
+                if (active_connection_id_limit_ < kMinActiveConnectionIdLimit) {
+                    LOG_ERROR("TransportParam: active_connection_id_limit below 2. value:%llu",
+                        (unsigned long long)active_connection_id_limit_);
+                    return false;
+                }
                 break;
             case TransportParamType::kInitialSourceConnectionId:
                 pos = DecodeString(pos, end, initial_source_connection_id_);
                 if (pos == nullptr) return false;
+                if (initial_source_connection_id_.length() > kMaxTransportParamCidLength) {
+                    LOG_ERROR("TransportParam: initial_source_connection_id too long. len:%zu",
+                        initial_source_connection_id_.length());
+                    return false;
+                }
                 break;
             case TransportParamType::kRetrySourceConnectionId:
                 pos = DecodeString(pos, end, retry_source_connection_id_);
                 if (pos == nullptr) return false;
+                if (retry_source_connection_id_.length() > kMaxTransportParamCidLength) {
+                    LOG_ERROR("TransportParam: retry_source_connection_id too long. len:%zu",
+                        retry_source_connection_id_.length());
+                    return false;
+                }
                 break;
             case TransportParamType::kVersionInformation: {
                 // RFC 9368 §3: Decode version_information TP (id 0x11).
@@ -494,7 +586,7 @@ uint8_t* TransportParam::EncodeString(uint8_t* start, uint8_t* end, const std::s
     return start;
 }
 
-uint8_t* TransportParam::EncodeBool(uint8_t* start, uint8_t* end, bool value, uint32_t type) {
+uint8_t* TransportParam::EncodeBool(uint8_t* start, uint8_t* end, bool /*value*/, uint32_t type) {
     // RFC 9000 §18: Zero-length parameters — presence indicates true.
     start = common::EncodeVarint(start, end, type);
     start = common::EncodeVarint(start, end, 0);  // zero-length value

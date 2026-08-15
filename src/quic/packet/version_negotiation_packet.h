@@ -19,7 +19,7 @@ public:
     virtual uint16_t GetCryptoLevel() const { return PacketCryptoLevel::kUnknownCryptoLevel; }
     virtual bool Encode(std::shared_ptr<common::IBuffer> buffer);
     virtual bool DecodeWithoutCrypto(std::shared_ptr<common::IBuffer> buffer, bool with_flag = false);
-    virtual bool DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) { return true; }
+    virtual bool DecodeWithCrypto(std::shared_ptr<common::IBuffer> /*buffer*/) { return true; }
 
     virtual IHeader* GetHeader() { return &header_; }
 

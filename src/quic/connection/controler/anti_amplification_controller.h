@@ -1,6 +1,7 @@
 #ifndef QUIC_CONNECTION_CONTROLER_ANTI_AMPLIFICATION_CONTROLLER
 #define QUIC_CONNECTION_CONTROLER_ANTI_AMPLIFICATION_CONTROLLER
 
+#include <atomic>
 #include <cstdint>
 
 namespace quicx {
@@ -26,11 +27,15 @@ namespace quic {
  * - Server starts in validated state (handshake validates initial address)
  * - When starting path validation to a new address, call EnterUnvalidatedState()
  * - Call OnBytesReceived() for every packet received from the candidate address
- * - Call CanSend() before sending each packet
- * - Call OnBytesSent() after successfully sending each packet
+ * - Call TryCharge() before sending each datagram (atomic check-and-debit)
  * - Call ExitUnvalidatedState() when address is validated
  *
- * Thread safety: Not thread-safe. Caller must provide synchronization.
+ * Thread safety: Thread-safe via lock-free atomics. is_unvalidated_ is an
+ * acquire/release flag; sent_bytes_ is committed with a CAS so that TryCharge()'s
+ * check-and-debit is atomic (no TOCTOU between the budget check and the debit);
+ * received_bytes_ is a monotonically increasing counter read with relaxed
+ * ordering, which is safe because reading a slightly stale (smaller) value only
+ * makes the 3x budget more conservative.
  */
 class AntiAmplificationController {
 public:
@@ -73,17 +78,30 @@ public:
     /**
      * @brief Record bytes sent to the unvalidated address
      *
-     * Must be called after successfully sending a packet. Updates the
-     * sent bytes counter.
+     * Test-facing accessor kept for unit tests. Production code should use
+     * TryCharge(), which debits atomically. No-op once validated.
      *
      * @param bytes Number of bytes sent
      */
     void OnBytesSent(uint64_t bytes);
 
     /**
+     * @brief Atomically check the budget AND debit it for `bytes`.
+     *
+     * A single CAS on sent_bytes_ so concurrent senders cannot both pass the
+     * budget check and then over-debit past the 3x limit. Returns true and
+     * commits the debit, or false (budget exhausted) without charging.
+     *
+     * @param bytes Size of the datagram about to be sent
+     * @return true if the debit succeeded (send allowed), false otherwise
+     */
+    bool TryCharge(uint64_t bytes);
+
+    /**
      * @brief Check if we can send a packet of given size
      *
-     * Verifies if sending the packet would violate the 3x amplification limit.
+     * Read-only variant kept for unit tests. Production code should use
+     * TryCharge() to avoid the check/charge TOCTOU window.
      *
      * @param bytes Size of the packet to send
      * @return true if allowed to send, false if would exceed limit
@@ -95,7 +113,7 @@ public:
      *
      * @return true if address is unvalidated (restrictions active), false otherwise
      */
-    bool IsUnvalidated() const { return is_unvalidated_; }
+    bool IsUnvalidated() const { return is_unvalidated_.load(std::memory_order_acquire); }
 
     /**
      * @brief Get current send budget remaining
@@ -111,14 +129,14 @@ public:
      *
      * @return Total bytes sent
      */
-    uint64_t GetBytesSent() const { return sent_bytes_; }
+    uint64_t GetBytesSent() const { return sent_bytes_.load(std::memory_order_relaxed); }
 
     /**
      * @brief Get total bytes received from unvalidated address
      *
      * @return Total bytes received
      */
-    uint64_t GetBytesReceived() const { return received_bytes_; }
+    uint64_t GetBytesReceived() const { return received_bytes_.load(std::memory_order_relaxed); }
 
     /**
      * @brief Check if approaching amplification limit (for Retry consideration)
@@ -138,12 +156,16 @@ public:
     void Reset();
 
 private:
-    // State flag
-    bool is_unvalidated_;  // True if address is not yet validated
+    // State flag. acquire/release: once validation flips it false, all later
+    // sends observe "unrestricted" immediately.
+    std::atomic<bool> is_unvalidated_{false};  // True if address is not yet validated
 
-    // Byte counters
-    uint64_t sent_bytes_;      // Total bytes sent to unvalidated address
-    uint64_t received_bytes_;  // Total bytes received from unvalidated address
+    // Byte counters. sent_bytes_ is the only field that needs an atomic commit
+    // (via TryCharge's CAS); received_bytes_ is monotonically increasing and is
+    // read with relaxed ordering, as a stale (smaller) value only tightens the
+    // 3x budget, keeping us safely within RFC 9000 Section 8.1.
+    std::atomic<uint64_t> sent_bytes_{0};      // Total bytes sent to unvalidated address
+    std::atomic<uint64_t> received_bytes_{0};  // Total bytes received from unvalidated address
 
     // Constants (RFC 9000 Section 8.1)
     static constexpr uint64_t kAmplificationFactor = 3;     // Maximum amplification factor

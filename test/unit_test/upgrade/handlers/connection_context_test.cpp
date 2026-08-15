@@ -153,10 +153,10 @@ TEST_F(ConnectionContextTest, NegotiationTimer) {
     // and clearing it cancels.
     EXPECT_FALSE(context.negotiation_timer.IsActive());
 
-    common::TimerCore core;
+    auto core = std::make_shared<common::TimerCore>();
     uint32_t gen = 0;
-    uint32_t index = core.Arm([]() {}, {}, false, 1000, 0, common::UTCTimeMsec(), gen);
-    context.negotiation_timer = common::Timer(&core, index, gen);
+    uint32_t index = core->Arm([]() {}, {}, false, 1000, 0, common::UTCTimeMsec(), gen);
+    context.negotiation_timer = common::Timer(core, index, gen);
     EXPECT_TRUE(context.negotiation_timer.IsActive());
 
     context.negotiation_timer.Cancel();

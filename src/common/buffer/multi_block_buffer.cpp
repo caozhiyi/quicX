@@ -447,7 +447,13 @@ uint32_t MultiBlockBuffer::Write(const uint8_t* data, uint32_t len) {
             continue;
         }
         uint32_t to_copy = std::min<uint32_t>(len - written, capacity);
-        std::memcpy(state.write_pos_, data + written, to_copy);
+        // Use memmove, not memcpy: a span being appended may overlap the
+        // destination chunk (e.g. when a buffer is grown by appending a span
+        // that references its own earlier data -- the HTTP/3 DATA encode path
+        // does exactly this). memcpy with overlapping ranges is UB and, under
+        // ASan, aborts; memmove is correct and costs nothing when ranges are
+        // disjoint.
+        std::memmove(state.write_pos_, data + written, to_copy);
         state.write_pos_ += to_copy;
         total_data_length_ += to_copy;
         written += to_copy;
