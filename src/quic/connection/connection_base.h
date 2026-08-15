@@ -380,6 +380,14 @@ protected:
     // Full migration API (production use - specify new local address)
     virtual MigrationResult InitiateMigrationTo(const std::string& local_ip, uint16_t local_port = 0) override;
 
+    // Runs the actual migration work on the connection's event-loop thread.
+    // InitiateMigration/InitiateMigrationTo may be called from any thread
+    // (e.g. an application/test migration thread); the migration path touches
+    // per-connection state owned by the event-loop thread (DatagramEmitter
+    // sockets, EventLoop timers, PathManager probe socket), so the work must
+    // be marshaled onto that thread. Mirrors UdpReceiver's RunInLoop pattern.
+    bool InitiateMigrationOnLoop();
+
     // Set callback for migration events
     virtual void SetMigrationCallback(migration_callback cb) override;
 

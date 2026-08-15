@@ -56,10 +56,25 @@ ip -brief addr show 2>/dev/null || ifconfig 2>/dev/null || true
 echo ""
 
 # Define supported and unsupported test cases
-# Supported tests: must match scenarios in testcases.py that quicX can handle
-# NOTE: "multiplexing" was removed — it is not a valid scenario in testcases.py.
-#       "multiconnect" is the correct name for concurrent client testing.
-SUPPORTED_TESTS="handshake transfer retry resumption zerortt multiconnect versionnegotiation chacha20 keyupdate v2 rebind-port rebind-addr connectionmigration http3"
+# These testnames must match what the official quic-interop-runner passes via
+# TESTCASE_CLIENT / TESTCASE_SERVER (see official testcases_quic.py `testname()`).
+#
+# Official test -> testname seen by the endpoint:
+#   longrtt          -> handshake
+#   multiplexing     -> transfer
+#   amplificationlimit -> transfer
+#   blackhole        -> transfer
+#   transferloss     -> transfer
+#   rebind-port/addr -> transfer
+#   ipv6             -> transfer
+#   handshakeloss    -> multiconnect
+#   keyupdate        -> keyupdate (client) / transfer (server)
+#   connectionmigration -> transfer (client) / connectionmigration (server)
+#
+# "versionnegotiation" is NOT in the official TESTCASES_QUIC (disabled upstream,
+# see quic-interop/endpoint note "Currently disabled due to #20"), so it is
+# intentionally omitted here.
+SUPPORTED_TESTS="handshake transfer retry resumption zerortt multiconnect chacha20 keyupdate v2 rebind-port rebind-addr connectionmigration http3 handshakecorruption transfercorruption ecn"
 
 # Explicitly unsupported tests (none currently)
 UNSUPPORTED_TESTS=""
@@ -128,9 +143,6 @@ run_client() {
     
     # Test case specific parameters
     case "$ACTUAL_TESTCASE" in
-        versionnegotiation)
-            cmd+=" --force-version 0x1a2a3a4a"
-            ;;
         retry)
             cmd+=" --expect-retry"
             ;;
@@ -153,6 +165,10 @@ run_client() {
             ;;
         http3)
             cmd+=" --http3"
+            ;;
+        ecn)
+            # Official TestCaseECN expects the endpoint to mark packets ECT(0).
+            export ENABLE_ECN=1
             ;;
     esac
     
@@ -205,14 +221,15 @@ run_server() {
         keyupdate)
             cmd+=" --enable-keyupdate"
             ;;
-        versionnegotiation)
-            cmd+=" --strict-version"
-            ;;
         v2)
             cmd+=" --quic-version 0x6b3343cf"
             ;;
         http3)
             cmd+=" --http3"
+            ;;
+        ecn)
+            # Official TestCaseECN expects the endpoint to mark packets ECT(0).
+            export ENABLE_ECN=1
             ;;
     esac
     

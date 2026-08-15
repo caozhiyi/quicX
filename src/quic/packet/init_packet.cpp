@@ -46,14 +46,24 @@ bool InitPacket::Encode(std::shared_ptr<common::IBuffer> buffer) {
     cur_pos = common::EncodeVarint(cur_pos, end, token_length_);
     if (token_length_ > 0) {
         uint8_t* token_ptr = token_span_.Valid() ? token_span_.GetStart() : token_raw_;
+        if (token_ptr == nullptr) {
+            LOG_ERROR("encode token failed: no token data. len:%u", token_length_);
+            return false;
+        }
+        // The token length is chosen by the peer (it is echoed from the server's
+        // Retry), so it must be validated against the space actually available
+        // rather than trusted. Without this check an oversized token overflows
+        // the datagram buffer.
+        if (static_cast<size_t>(end - cur_pos) < static_cast<size_t>(token_length_)) {
+            LOG_ERROR("encode token failed: token does not fit. len:%u remain:%zu", token_length_,
+                static_cast<size_t>(end - cur_pos));
+            return false;
+        }
         std::memcpy(cur_pos, token_ptr, token_length_);
         cur_pos += token_length_;
     }
 
     // encode length
-    auto len = payload_.GetLength();
-    auto len1 = header_.GetPacketNumberLength();
-    auto len2 = crypto_grapher_ ? crypto_grapher_->GetTagLength() : 0;
     length_ = payload_.GetLength() + header_.GetPacketNumberLength() +
               (crypto_grapher_ ? crypto_grapher_->GetTagLength() : 0);
     cur_pos = common::EncodeVarint(cur_pos, end, length_);
@@ -81,7 +91,9 @@ bool InitPacket::Encode(std::shared_ptr<common::IBuffer> buffer) {
     auto payload_span = payload_.GetSpan();
     auto result = crypto_grapher_->EncryptPacket(packet_number_, ad_span, payload_span, buffer);
     if (result != ICryptographer::Result::kOk) {
-        LOG_ERROR("encrypt payload failed. result:%d", result);
+        LOG_ERROR("encrypt payload failed. result:%d pn=%llu token_len=%u payload_len=%u remain=%u", result,
+            (unsigned long long)packet_number_, token_length_, (uint32_t)payload_.GetLength(),
+            (uint32_t)(end - cur_pos));
         return false;
     }
 
@@ -268,8 +280,18 @@ bool InitPacket::DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) {
 }
 
 void InitPacket::SetToken(uint8_t* token, uint32_t len) {
-    token_raw_ = token;
-    token_length_ = len;
+    // Copy: the packet is retained after the first send and re-encoded on
+    // retransmission, long after the caller's buffer is gone. See token_owned_.
+    if (token != nullptr && len > 0) {
+        token_owned_.assign(token, token + len);
+        token_raw_ = token_owned_.data();
+        token_length_ = len;
+    } else {
+        token_owned_.clear();
+        token_raw_ = nullptr;
+        token_length_ = 0;
+    }
+    token_span_ = common::SharedBufferSpan();
 }
 
 void InitPacket::SetToken(const common::SharedBufferSpan& token) {
