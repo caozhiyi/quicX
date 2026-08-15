@@ -11,12 +11,12 @@ namespace quicx {
 namespace quic {
 
 ShortHeader::ShortHeader():
-    destination_connection_id_length_(kDefaultDestinationCidLength),
-    IHeader(PacketHeaderType::kShortHeader) {}
+    IHeader(PacketHeaderType::kShortHeader),
+    destination_connection_id_length_(kDefaultDestinationCidLength) {}
 
 ShortHeader::ShortHeader(uint8_t flag):
-    destination_connection_id_length_(kDefaultDestinationCidLength),
-    IHeader(flag) {}
+    IHeader(flag),
+    destination_connection_id_length_(kDefaultDestinationCidLength) {}
 
 ShortHeader::~ShortHeader() {}
 
@@ -77,6 +77,13 @@ uint32_t ShortHeader::EncodeHeaderSize() {
 }
 
 void ShortHeader::SetDestinationConnectionId(const uint8_t* id, uint8_t len) {
+    // RFC 9000 §17.2: connection IDs are at most 20 bytes. destination_connection_id_
+    // is a fixed kMaxConnectionLength array, so an unclamped len would overflow it.
+    // Mirrors LongHeader::SetDestinationConnectionId().
+    if (len > kMaxConnectionLength) {
+        LOG_ERROR("reject oversized dcid. len:%d, max:%d", len, kMaxConnectionLength);
+        return;
+    }
     destination_connection_id_length_ = len;
     if (id != nullptr) {
         memcpy(destination_connection_id_, id, len);

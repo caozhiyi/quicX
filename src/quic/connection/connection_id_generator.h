@@ -12,7 +12,9 @@ public:
     ConnectionIDGenerator();
     ~ConnectionIDGenerator();
 
-    void Generator(uint8_t* cid, uint32_t len);
+    // Fills cid with len cryptographically random bytes. Returns false and zeroes the
+    // buffer if the CSPRNG failed, so callers must not use the id on a false return.
+    bool Generator(uint8_t* cid, uint32_t len);
     uint64_t Hash(uint8_t* cid, uint32_t len);
 
 private:

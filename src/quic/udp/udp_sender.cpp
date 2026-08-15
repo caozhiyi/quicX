@@ -3,6 +3,7 @@
 #include <quicx/common/metrics_std.h>
 #include "common/log/log.h"
 #include "common/network/io_handle.h"
+#include "quic/config.h"
 
 #include <atomic>
 #include <chrono>
@@ -400,7 +401,7 @@ bool UdpSender::Send(std::shared_ptr<NetPacket>& pkt) {
 // Batch hot path (sendmmsg + UDP GSO)
 // ============================================================
 //
-// One sendmmsg(2) call replaces up to kMaxBatchSize sendto() calls. The win
+// One sendmmsg(2) call replaces up to kMaxPacketsPerRound sendto() calls. The win
 // comes from amortizing the userspace<->kernel transition and the per-call
 // UDP socket lock acquisition over the whole batch. On a 50MB loopback
 // file_transfer this is the lever that lifts the per-worker syscall rate
@@ -426,7 +427,7 @@ bool UdpSender::Send(std::shared_ptr<NetPacket>& pkt) {
 // Send so semantics stay identical):
 //   1. Fault injection is OFF. Drop / rate-limit / delay knobs need per-packet
 //      decisions, so we degrade to Send() to keep their behavior intact.
-//   2. The batch is non-empty and within kMaxBatchSize.
+//   2. The batch is non-empty and within kMaxPacketsPerRound.
 //   3. Every packet's destination Address already has a cached binary
 //      sockaddr (filled in by a prior Send/SendTo on that Address). The
 //      first Send() per Address populates the cache, so a brand-new
@@ -455,7 +456,7 @@ std::atomic<bool> g_gso_unsupported{false};
 
 // Linux UDP_MAX_SEGMENTS hard cap (drivers reject larger). 64 is the
 // historic kernel limit and is the safe ceiling across 4.18..6.x kernels.
-constexpr size_t kGsoMaxSegments = 64;
+// Now defined in quic/config.h as kGsoMaxSegments.
 
 // Per-thread scratch buffer for coalescing GSO segments. Sized for the
 // worst case kGsoMaxSegments * MTU (~1500). thread_local so concurrent
@@ -487,8 +488,7 @@ uint32_t UdpSender::SendBatch(std::vector<std::shared_ptr<NetPacket>>& batch) {
     // 1024 on Linux but 128 already amortizes ~99% of the per-syscall cost
     // (Worker drains <=128 per round anyway), and keeping the on-stack
     // arrays small keeps this function's stack footprint bounded.
-    constexpr size_t kMaxBatchSize = 128;
-    const size_t batch_n = n > kMaxBatchSize ? kMaxBatchSize : n;
+    const size_t batch_n = n > kMaxPacketsPerRound ? kMaxPacketsPerRound : n;
 
     // Probe the first packet for the canonical socket fd + cached family.
     // Every other packet must agree, otherwise we degrade to per-packet
@@ -542,8 +542,8 @@ uint32_t UdpSender::SendBatch(std::vector<std::shared_ptr<NetPacket>>& batch) {
     }
 
     // ---- assemble mmsghdr / iovec arrays on the stack ----
-    common::MMsghdr msgs[kMaxBatchSize];
-    common::Iovec iovs[kMaxBatchSize];
+    common::MMsghdr msgs[kMaxPacketsPerRound];
+    common::Iovec iovs[kMaxPacketsPerRound];
 
     size_t prepared = 0;
     for (; prepared < batch_n; prepared++) {

@@ -1,6 +1,7 @@
 #ifndef QUIC_CONNECTION_CONTROLER_SEND_MANAGER
 #define QUIC_CONNECTION_CONTROLER_SEND_MANAGER
 
+#include <atomic>
 #include <functional>
 #include <list>
 #include <memory>
@@ -32,6 +33,11 @@ public:
     ~SendManager();
 
     void UpdateConfig(const TransportParam& tp);
+
+    // Forward the connection's lifetime guard to SendControl so its PTO /
+    // retransmit timers are skipped once the connection is destroyed (see
+    // SendControl::Bind). Called from BaseConnection once it is owned.
+    void Bind(std::weak_ptr<void> self) { send_control_.Bind(self); }
 
     SendOperation GetSendOperation();
 
@@ -128,13 +134,56 @@ public:
 
     // ---- Anti-amplification (unvalidated path) ----
     // Reset anti-amplification budget when entering validation on a new path.
-    // Provide a small initial credit to allow sending a PATH_CHALLENGE even if
-    // no bytes have been received yet (implementation convenience for probe).
-    void ResetAmpBudget();
+    // The default initial credit lets a PATH_CHALLENGE go out even though no bytes
+    // have yet been received on the candidate path (an implementation convenience
+    // for probing). Pass 0 for a strict RFC 9000 §8.1 budget, which is what a
+    // server must use for a brand-new connection from an unvalidated address:
+    // there the client's Initial supplies the credit, and a non-zero starting
+    // credit would hand the attacker free amplification.
+    void ResetAmpBudget(uint64_t initial_credit = kProbeInitialCredit);
+    static constexpr uint64_t kProbeInitialCredit = 400;
     // Account bytes received on the candidate path to increase send budget.
     void OnCandidatePathBytesReceived(uint32_t bytes);
     // Check if should send Retry (approaching amplification limit)
     bool ShouldSendRetry() const;
+
+    /**
+     * @brief RFC 9000 §8.1 gate: may we put `bytes` more on the wire right now?
+     *
+     * Charges the budget on success. Must be called for the full UDP datagram
+     * length, not the payload length, since the limit is defined over datagrams.
+     * Returns true unconditionally once the peer address has been validated.
+     *
+     * Public because the enforcement point is DatagramEmitter (the single egress
+     * choke point), not SendManager itself.
+     */
+    bool CheckAndChargeAmpBudget(uint32_t bytes);
+
+    /**
+     * @brief Mark the peer address as validated, lifting the §8.1 budget.
+     *
+     * Called once the address is proven: for a server, on successfully processing
+     * a Handshake packet from the peer, or on a validated Retry token.
+     */
+    void MarkAddressValidated();
+
+    /**
+     * @brief Whether the last send attempt was refused by the §8.1 budget.
+     *
+     * The worker uses this to avoid spinning on a connection that cannot send
+     * until more bytes arrive from the peer.
+     */
+    bool IsAmpBlocked() const { return amp_blocked_; }
+
+    /**
+     * @brief Read-only view of the RFC 9000 §8.1 state, for tests only.
+     *
+     * The controller was previously instantiated but never entered, so every
+     * assertion about the limit had to be written against the controller in
+     * isolation and passed while the connection ignored it entirely. Tests need
+     * to reach the *connection's own* controller to catch that class of bug.
+     */
+    const AntiAmplificationController& GetAmpControllerForTest() const { return amp_controller_; }
 
     // ---- PMTU probing (skeleton) ----
     // Start a simple PMTU probe sequence after migration (skeleton only).
@@ -171,15 +220,18 @@ public:
     SendControl& GetSendControl() { return send_control_; }
 
 private:
-    bool CheckAndChargeAmpBudget(uint32_t bytes);
     bool IsAllowedOnUnvalidated(uint16_t type) const;
 
 private:
     SendControl send_control_;
     // packet number
     PacketNumber packet_number_;
-    SendFlowController* send_flow_controller_;  // Send-side flow controller
-    StreamManager* stream_manager_{nullptr};    // Stream manager for flow scheduling
+    // Both are owned by the enclosing BaseConnection and outlive this manager. They are
+    // wired in via SetSendFlowController/SetStreamManager after construction, so they
+    // must default to null: a non-null garbage value here would be indistinguishable
+    // from a wired-up pointer.
+    SendFlowController* send_flow_controller_{nullptr};  // Send-side flow controller
+    StreamManager* stream_manager_{nullptr};             // Stream manager for flow scheduling
     std::list<std::shared_ptr<IFrame>> wait_frame_list_;
 
     // connection id
@@ -196,6 +248,10 @@ private:
 
     // Anti-amplification controller for unvalidated path
     AntiAmplificationController amp_controller_;
+    // Set when CheckAndChargeAmpBudget() last refused a datagram; cleared as soon
+    // as fresh bytes from the peer restore some budget. Atomic because it is
+    // written on the send thread and read on the worker thread (IsAmpBlocked()).
+    std::atomic<bool> amp_blocked_{false};
 
     std::shared_ptr<common::ITimerScheduler> scheduler_;
     // Guards the pacing and flow-control callbacks, which capture a raw `this`.

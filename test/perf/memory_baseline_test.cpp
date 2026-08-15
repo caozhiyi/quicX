@@ -76,7 +76,7 @@ static size_t GetCurrentRSS() {
     FILE* f = fopen("/proc/self/statm", "r");
     if (!f) return 0;
     long pages = 0;
-    if (fscanf(f, "%*ld %ld", &pages) != 1) pages = 0;
+    if (fscanf(f, "%*d %ld", &pages) != 1) pages = 0;
     fclose(f);
     return pages * sysconf(_SC_PAGESIZE);
 #else

@@ -18,6 +18,7 @@
 #include "quic/connection/if_connection_event_sink.h"
 #include "quic/connection/transport_param.h"
 #include "quic/connection/util.h"
+#include "quic/config.h"
 #include "quic/frame/connection_close_frame.h"
 #include "quic/frame/crypto_frame.h"
 #include "quic/frame/max_data_frame.h"
@@ -348,7 +349,7 @@ bool FrameProcessor::OnMaxDataFrame(std::shared_ptr<IFrame> frame) {
     return true;
 }
 
-bool FrameProcessor::OnDataBlockFrame(std::shared_ptr<IFrame> frame) {
+bool FrameProcessor::OnDataBlockFrame(std::shared_ptr<IFrame> /*frame*/) {
     // Peer is blocked - send updated MAX_DATA
     std::shared_ptr<IFrame> send_frame;
     if (recv_flow_controller_ && recv_flow_controller_->ShouldSendMaxData(send_frame)) {
@@ -360,7 +361,7 @@ bool FrameProcessor::OnDataBlockFrame(std::shared_ptr<IFrame> frame) {
     return true;
 }
 
-bool FrameProcessor::OnStreamBlockFrame(std::shared_ptr<IFrame> frame) {
+bool FrameProcessor::OnStreamBlockFrame(std::shared_ptr<IFrame> /*frame*/) {
     // Peer is blocked on stream creation - send updated MAX_STREAMS
     // Note: Using 0 as stream_id is a special case to trigger MAX_STREAMS generation
     std::shared_ptr<IFrame> send_frame;
@@ -429,16 +430,15 @@ bool FrameProcessor::OnNewConnectionIDFrame(std::shared_ptr<IFrame> frame) {
     if (retire_prior_to > 0) {
         // Only retire CIDs that haven't been retired yet.
         // Limit the loop to avoid DoS from large retire_prior_to values.
-        static const uint64_t kMaxRetirePerFrame = 256;
-        uint64_t retire_count = std::min(retire_prior_to, kMaxRetirePerFrame);
+        uint64_t retire_count = std::min(retire_prior_to, kMaxRetireConnectionIdPerFrame);
         for (uint64_t seq = 0; seq < retire_count; ++seq) {
             auto retire = std::make_shared<RetireConnectionIDFrame>();
             retire->SetSequenceNumber(seq);
             event_sink_.OnFrameReady(retire);
         }
-        if (retire_prior_to > kMaxRetirePerFrame) {
+        if (retire_prior_to > kMaxRetireConnectionIdPerFrame) {
             LOG_WARN("NEW_CONNECTION_ID: retire_prior_to (%llu) capped at %llu to prevent DoS", retire_prior_to,
-                kMaxRetirePerFrame);
+                kMaxRetireConnectionIdPerFrame);
         }
         // Apply batch retirement to the *remote* CID pool (these are CIDs the peer
         // issued for us to use, and the peer is now telling us to retire all CIDs
@@ -450,6 +450,10 @@ bool FrameProcessor::OnNewConnectionIDFrame(std::shared_ptr<IFrame> frame) {
     ConnectionID id;
     new_cid_frame->GetConnectionID(id);
     cid_coordinator_.GetRemoteConnectionIDManager()->AddID(id);
+
+    // RFC 9000 §10.3.1: remember the token so a future Stateless Reset carrying it
+    // can be recognised.
+    cid_coordinator_.AddPeerStatelessResetToken(new_cid_frame->GetStatelessResetToken());
 
     // Log connection_id_updated event for new remote CID
     if (qlog_trace_) {

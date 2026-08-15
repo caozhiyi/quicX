@@ -23,9 +23,9 @@ Worker::Worker(const QuicConfig& config, std::shared_ptr<TLSCtx> ctx, std::share
     const QuicTransportParams& params, connection_state_callback connection_handler,
     std::shared_ptr<common::IEventLoop> event_loop):
     IWorker(),
-    ctx_(ctx),
     params_(params),
     sender_(sender),
+    ctx_(ctx),
     connection_handler_(connection_handler),
     event_loop_(event_loop) {
     ecn_enabled_ = config.enable_ecn_;

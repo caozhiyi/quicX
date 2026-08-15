@@ -36,8 +36,12 @@ jobs:
       CC: ${{ matrix.cc }}
       CXX: ${{ matrix.cxx }}
       CMAKE_BUILD_PARALLEL_LEVEL: 4
+      # Build version label for this CI run.
+      QUICX_VERSION: "1.0.0"
 
     steps:
+      - name: Show version
+        run: echo "QuicX CI version: ${QUICX_VERSION}"
       - name: Checkout (with submodules)
         uses: actions/checkout@v4
         with:
@@ -71,7 +75,8 @@ jobs:
             -DENABLE_INTERGRATION=ON \
             -DENABLE_INTEROP=OFF \
             -DENABLE_FUZZING=OFF \
-            -DBUILD_EXAMPLES=ON
+            -DBUILD_EXAMPLES=ON \
+            -DQUICX_WARNINGS_AS_ERRORS=ON
 
       - name: Build
         run: cmake --build build --parallel 4
@@ -87,7 +92,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: build-logs-${{ matrix.compiler }}-${{ matrix.build_type }}
+          name: build-logs-${{ env.QUICX_VERSION }}-${{ matrix.compiler }}-${{ matrix.build_type }}
           path: |
             build/CMakeFiles/CMakeOutput.log
             build/CMakeFiles/CMakeError.log

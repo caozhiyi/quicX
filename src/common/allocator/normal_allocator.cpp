@@ -31,7 +31,7 @@ void* NormalAllocator::MallocZero(uint32_t size) {
     return ret;
 }
 
-void NormalAllocator::Free(void*& data, uint32_t len) {
+void NormalAllocator::Free(void*& data, uint32_t /*len*/) {
     free(data);
     data = nullptr;
 }

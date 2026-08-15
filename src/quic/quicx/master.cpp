@@ -85,7 +85,7 @@ void Master::AddConnectionID(ConnectionID& cid, const std::string& worker_id) {
     cid_worker_map_[cid.Hash()] = worker_id;
 }
 
-void Master::RetireConnectionID(ConnectionID& cid, const std::string& worker_id) {
+void Master::RetireConnectionID(ConnectionID& cid, const std::string& /*worker_id*/) {
     std::lock_guard<std::mutex> lock(cid_map_mutex_);
     cid_worker_map_.erase(cid.Hash());
 }

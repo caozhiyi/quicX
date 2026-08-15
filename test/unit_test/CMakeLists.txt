@@ -1,4 +1,5 @@
 # Top of file
+add_compile_options(-Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function)
 cmake_minimum_required(VERSION 3.16)
 project(quicx_utest)
 

@@ -48,12 +48,15 @@ public:
      * @brief Get the underlying QUIC connection (for owner-side identity checks
      *        such as reverse-lookup in Http3 Client/Server connection maps when
      *        a kConnectionClose notification arrives without a routable key).
-     *        The returned shared_ptr aliases the same IQuicConnection that was
-     *        passed at construction time and MUST NOT be retained beyond the
-     *        immediate check — holding it would extend the per-connection
-     *        memory footprint that P4 is trying to reclaim.
+     *
+     * The connection is held weakly on purpose: a ServerConnection / ClientConnection
+     * is owned by the QUIC connection itself (via IQuicConnection::SetContext), so a
+     * strong back-reference here would form a reference cycle that leaks the
+     * connection. Callers MUST NOT retain the returned shared_ptr beyond the
+     * immediate check — it may already be expired, and holding it would extend
+     * the per-connection memory footprint that P4 is trying to reclaim.
      */
-    const std::shared_ptr<IQuicConnection>& GetQuicConnection() const { return quic_connection_; }
+    std::shared_ptr<IQuicConnection> GetQuicConnection() const { return quic_connection_.lock(); }
 
     /**
      * @brief Close the connection
@@ -234,7 +237,10 @@ protected:
     // and used when decoding incoming HEADERS blocks (Decode).
     std::shared_ptr<QpackEncoder> qpack_decoder_;
 
-    std::shared_ptr<IQuicConnection> quic_connection_;
+    // Held weakly on purpose: the QUIC connection owns this IConnection via
+    // IQuicConnection::SetContext, so a strong back-reference would form a
+    // reference cycle (see GetQuicConnection). Lock before use; may be expired.
+    std::weak_ptr<IQuicConnection> quic_connection_;
 
     // RFC 9114 Section 4.1: Track if peer SETTINGS frame has been received
     bool settings_received_ = false;

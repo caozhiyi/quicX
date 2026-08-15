@@ -59,6 +59,14 @@ DecodeResult HeadersFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool 
         return DecodeResult::kError;
     }
 
+    // Reject an implausible length before waiting on it, otherwise the check below
+    // returns kNeedMoreData forever while the stream buffer keeps growing.
+    if (length_ > kMaxFrameLength) {
+        LOG_ERROR("HeadersFrame::Decode: length %llu exceeds limit %llu", (unsigned long long)length_,
+            (unsigned long long)kMaxFrameLength);
+        return DecodeResult::kError;
+    }
+
     // Check if we have enough data
     if (wrapper.GetDataLength() < length_) {
         wrapper.CancelDecode();

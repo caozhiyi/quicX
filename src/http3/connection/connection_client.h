@@ -15,6 +15,8 @@
 namespace quicx {
 namespace http3 {
 
+class RequestStream;
+
 class ClientConnection: public IConnection {
 public:
     ClientConnection(const std::string& unique_id, const Http3Settings& settings,
@@ -66,6 +68,10 @@ private:
     // Helper to create and send RequestStream with IAsyncClientHandler
     void CreateAndSendRequestStream(std::shared_ptr<IRequest> request, std::shared_ptr<IQuicStream> stream,
         std::shared_ptr<IAsyncClientHandler> handler);
+
+    // Pushes our advertised SETTINGS_MAX_FIELD_SECTION_SIZE down to a new stream so
+    // the receive path can enforce it (RFC 9114 §4.2.2).
+    void ApplyMaxFieldSectionSize(const std::shared_ptr<RequestStream>& stream);
 
     void HandleStream(std::shared_ptr<IQuicStream> stream, uint32_t error) override;
     // Callback when stream type is identified (RFC 9114 Section 6.2)

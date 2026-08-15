@@ -28,8 +28,8 @@ ClientConnection::ClientConnection(const std::string& unique_id, const Http3Sett
     const std::function<bool(std::unordered_map<std::string, std::string>& headers)>& push_promise_handler,
     const http_response_handler& push_handler, uint64_t max_concurrent_streams, bool enable_push):
     IConnection(unique_id, quic_connection, error_handler),
-    push_promise_handler_(push_promise_handler),
     push_handler_(push_handler),
+    push_promise_handler_(push_promise_handler),
     pending_settings_(settings) {
     // Store local connection limits
     max_concurrent_streams_ = max_concurrent_streams;
@@ -44,10 +44,12 @@ void ClientConnection::Init() {
     // Wire base class first: stream-state callback + cleanup timer.
     IConnection::Init();
 
+    // Lock the (weakly-held) QUIC connection once for this setup pass.
+    auto qc = quic_connection_.lock();
     const Http3Settings& settings = pending_settings_;
 
     // create control stream
-    auto control_stream = quic_connection_->MakeStream(StreamDirection::kSend);
+    auto control_stream = qc ? qc->MakeStream(StreamDirection::kSend) : nullptr;
     control_sender_stream_ = std::make_shared<ControlClientSenderStream>(
         std::dynamic_pointer_cast<IQuicSendStream>(control_stream), MakeErrorHandler());
 
@@ -90,8 +92,8 @@ void ClientConnection::Init() {
     // NOTE: The QPACK decoder RECEIVER stream is NOT created here. It will be created
     // reactively via HandleStream() -> OnStreamTypeIdentified() when the server opens
     // its QPACK encoder unidirectional stream toward us.
-    auto qpack_enc_stream = quic_connection_->MakeStream(StreamDirection::kSend);
-    auto qpack_dec_sender_stream = quic_connection_->MakeStream(StreamDirection::kSend);
+    auto qpack_enc_stream = qc ? qc->MakeStream(StreamDirection::kSend) : nullptr;
+    auto qpack_dec_sender_stream = qc ? qc->MakeStream(StreamDirection::kSend) : nullptr;
 
     // Wire QPACK instruction sender to QPACK encoder stream
     auto encoder_sender = std::make_shared<QpackEncoderSenderStream>(
@@ -155,8 +157,12 @@ void ClientConnection::CreateAndSendRequestStream(
         std::move(push_promise_cb));
     request_stream->Init();  // Must be called after construction to set up callbacks
 
+    // RFC 9114 §4.2.2: enforce our advertised SETTINGS_MAX_FIELD_SECTION_SIZE.
+    ApplyMaxFieldSectionSize(request_stream);
+
     // Propagate qlog trace from QUIC connection to HTTP/3 stream
-    auto qlog_trace = quic_connection_->GetQlogTrace();
+    auto qc = quic_connection_.lock();
+    auto qlog_trace = qc ? qc->GetQlogTrace() : nullptr;
     if (qlog_trace) {
         request_stream->SetQlogTrace(qlog_trace);
     }
@@ -171,6 +177,13 @@ void ClientConnection::CreateAndSendRequestStream(
     request_start_times_[stream->GetStreamID()] = common::UTCTimeMsec();
 
     request_stream->SendRequest(request);
+}
+
+void ClientConnection::ApplyMaxFieldSectionSize(const std::shared_ptr<RequestStream>& stream) {
+    auto it = settings_.find(static_cast<uint16_t>(kMaxFieldSectionSize));
+    if (it != settings_.end()) {
+        stream->SetMaxFieldSectionSize(it->second);
+    }
 }
 
 void ClientConnection::CreateAndSendRequestStream(std::shared_ptr<IRequest> request,
@@ -189,8 +202,12 @@ void ClientConnection::CreateAndSendRequestStream(std::shared_ptr<IRequest> requ
         std::move(push_promise_cb));
     request_stream->Init();  // Must be called after construction to set up callbacks
 
+    // RFC 9114 §4.2.2: enforce our advertised SETTINGS_MAX_FIELD_SECTION_SIZE.
+    ApplyMaxFieldSectionSize(request_stream);
+
     // Propagate qlog trace from QUIC connection to HTTP/3 stream
-    auto qlog_trace = quic_connection_->GetQlogTrace();
+    auto qc = quic_connection_.lock();
+    auto qlog_trace = qc ? qc->GetQlogTrace() : nullptr;
     if (qlog_trace) {
         request_stream->SetQlogTrace(qlog_trace);
     }
@@ -229,8 +246,15 @@ bool ClientConnection::DoRequest(std::shared_ptr<IRequest> request, const http_r
     // serialised on the loop thread, so a user-thread read here would
     // race with the loop's writes — confirmed by TSan
     // (if_connection.cpp:213 _M_erase vs connection_client.cpp:193 size).
+    auto qc = quic_connection_.lock();
+    if (!qc) {
+        if (handler) {
+            handler(nullptr, Http3ErrorCode::kInternalError);
+        }
+        return false;
+    }
     auto weak_self = std::weak_ptr<IConnection>(shared_from_this());
-    return quic_connection_->MakeStreamAsync(
+    return qc->MakeStreamAsync(
         StreamDirection::kBidi, [weak_self, request, handler](std::shared_ptr<IQuicStream> stream) {
             auto self_base = weak_self.lock();
             if (!self_base) {
@@ -276,8 +300,15 @@ bool ClientConnection::DoRequest(std::shared_ptr<IRequest> request, std::shared_
 
     // See comment on the const-handler overload above: the streams_.size()
     // gate runs on the loop thread, not on the user thread.
+    auto qc = quic_connection_.lock();
+    if (!qc) {
+        if (handler) {
+            handler->OnError(Http3ErrorCode::kInternalError);
+        }
+        return false;
+    }
     auto weak_self = std::weak_ptr<IConnection>(shared_from_this());
-    return quic_connection_->MakeStreamAsync(
+    return qc->MakeStreamAsync(
         StreamDirection::kBidi, [weak_self, request, handler](std::shared_ptr<IQuicStream> stream) {
             auto self_base = weak_self.lock();
             if (!self_base) {
@@ -338,7 +369,10 @@ void ClientConnection::HandleStream(std::shared_ptr<IQuicStream> stream, uint32_
             LOG_ERROR(
                 "ClientConnection: received bidirectional stream from server (protocol violation), stream id: %llu",
                 stream_id);
-            quic_connection_->Reset(Http3ErrorCode::kStreamCreationError);
+            auto qc = quic_connection_.lock();
+            if (qc) {
+                qc->Reset(Http3ErrorCode::kStreamCreationError);
+            }
             return;
         } else {
             // This is a client-initiated stream that was already closed

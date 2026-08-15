@@ -255,7 +255,14 @@ void BaseSmartHandler::TrySendResponse(ConnectionContext& context) {
     // Route through subclass write path
     int bytes_sent = WriteData(context.socket, data_to_send);
 
-    if (bytes_sent >= data_to_send.size()) {
+    // WriteData reports failure as -1. Comparing that against an unsigned size would
+    // convert it to SIZE_MAX and report the response as fully sent, so bail out first.
+    if (bytes_sent < 0) {
+        LOG_ERROR("Failed to send response, write returned %d", bytes_sent);
+        return;
+    }
+
+    if (static_cast<size_t>(bytes_sent) >= data_to_send.size()) {
         LOG_INFO("Response sent completely (%zu bytes)", context.pending_response.size());
 
         context.pending_response.clear();

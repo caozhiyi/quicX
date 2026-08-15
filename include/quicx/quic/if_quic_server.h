@@ -79,6 +79,25 @@ struct QuicServerConfig {
     /** Retry token lifetime in seconds. */
     uint32_t retry_token_lifetime_ = 60;
 
+    /**
+     * @brief Maximum concurrent connections per worker thread. 0 disables the cap.
+     *
+     * Rate limiting and concurrency limiting solve different problems: the retry
+     * policy throttles how fast new connections arrive, but a client that stays
+     * under the rate threshold can still accumulate connections indefinitely and
+     * exhaust memory. This is the concurrency backstop.
+     *
+     * Multiply by the worker thread count for the process-wide ceiling.
+     */
+    uint32_t max_connections_per_worker_ = 65536;
+
+    /**
+     * @brief Maximum concurrent connections from a single source IP. 0 disables.
+     *
+     * Bounds the damage one abusive peer can do to the shared connection table.
+     */
+    uint32_t max_connections_per_ip_ = 1024;
+
     /** Transport/runtime knobs (threading, logging, congestion control, etc.). */
     QuicConfig config_;
 };

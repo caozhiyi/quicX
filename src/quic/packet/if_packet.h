@@ -122,7 +122,7 @@ public:
      *
      * @param payload Payload buffer span
      */
-    virtual void SetPayload(const common::SharedBufferSpan& payload) {}
+    virtual void SetPayload(const common::SharedBufferSpan& /*payload*/) {}
 
     /**
      * @brief Set the largest received packet number for PN recovery

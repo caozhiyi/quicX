@@ -9,7 +9,7 @@ RouterNodeWildcard::RouterNodeWildcard(
     RouterNode(RouterNodeType::RNT_WILDCARD, section, full_path, config) {}
 
 bool RouterNodeWildcard::Match(
-    const std::string& path, int path_offset, const std::string& cur_section, MatchResult& result) {
+    const std::string& /*path*/, int /*path_offset*/, const std::string& /*cur_section*/, MatchResult& result) {
     result.config = config_;
     result.is_match = true;
     return true;

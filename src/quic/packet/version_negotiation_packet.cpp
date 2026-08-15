@@ -40,7 +40,7 @@ bool VersionNegotiationPacket::Encode(std::shared_ptr<common::IBuffer> buffer) {
     return true;
 }
 
-bool VersionNegotiationPacket::DecodeWithoutCrypto(std::shared_ptr<common::IBuffer> buffer, bool with_flag) {
+bool VersionNegotiationPacket::DecodeWithoutCrypto(std::shared_ptr<common::IBuffer> buffer, bool /*with_flag*/) {
     common::BufferDecodeWrapper wrapper(buffer);
 
     // Decode Version (must be 0 for Version Negotiation)

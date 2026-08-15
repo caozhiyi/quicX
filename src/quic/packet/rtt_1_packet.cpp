@@ -90,7 +90,7 @@ bool Rtt1Packet::DecodeWithoutCrypto(std::shared_ptr<common::IBuffer> buffer, bo
     return true;
 }
 
-bool Rtt1Packet::DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) {
+bool Rtt1Packet::DecodeWithCrypto(std::shared_ptr<common::IBuffer> /*buffer*/) {
     auto span = packet_src_data_;
     uint8_t* cur_pos = span.GetStart();
     uint8_t* end = span.GetEnd();

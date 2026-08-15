@@ -25,8 +25,8 @@ namespace quicx {
 namespace quic {
 
 UdpReceiver::UdpReceiver(std::shared_ptr<common::IEventLoop> event_loop):
-    event_loop_(event_loop),
-    ecn_enabled_(false) {}
+    ecn_enabled_(false),
+    event_loop_(event_loop) {}
 
 UdpReceiver::~UdpReceiver() {
     // Close only those UDP sockets that we created ourselves (via

@@ -9,9 +9,9 @@ RouterNodeStaticPath::RouterNodeStaticPath(
     RouterNode(type, section, full_path, config) {}
 
 bool RouterNodeStaticPath::Match(
-    const std::string& path, int path_offset, const std::string& cur_section, MatchResult& result) {
+    const std::string& path, int path_offset, const std::string& /*cur_section*/, MatchResult& result) {
     // check match done
-    if (path_offset >= path.length()) {
+    if (path_offset < 0 || static_cast<size_t>(path_offset) >= path.length()) {
         // match done, current node is the last node
         if (type_ == RouterNodeType::RNT_STATIC_PATH) {
             result.config = config_;

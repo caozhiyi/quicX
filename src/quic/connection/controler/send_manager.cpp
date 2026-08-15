@@ -2,6 +2,7 @@
 #include <quicx/common/metrics_std.h>
 #include "common/log/log.h"
 #include "common/util/time.h"
+#include "quic/config.h"
 
 #include "quic/connection/connection_stream_manager.h"
 #include "quic/connection/controler/send_manager.h"
@@ -14,8 +15,8 @@ namespace quic {
 
 SendManager::SendManager(std::shared_ptr<common::ITimerScheduler> scheduler):
     send_control_(scheduler),
-    send_flow_controller_(nullptr),
     packet_number_(),
+    send_flow_controller_(nullptr),
     scheduler_(scheduler) {
     send_control_.SetPacketLostCallback([this](std::shared_ptr<IPacket> packet) {
         LOG_WARN("SendManager: packet %llu lost, triggering retransmission sc=%p", packet->GetPacketNumber(),
@@ -172,15 +173,36 @@ void SendManager::ClearRetransmissionData() {
 }
 
 bool SendManager::CheckAndChargeAmpBudget(uint32_t bytes) {
-    if (!streams_allowed_) {
-        if (!amp_controller_.CanSend(bytes)) {
-            return false;
-        }
-        amp_controller_.OnBytesSent(bytes);
+    // Keyed off the controller's own state rather than streams_allowed_. The two
+    // are distinct concerns: streams_allowed_ gates stream *scheduling* during path
+    // validation, while the amplification budget applies to every datagram,
+    // including the handshake ones sent long before any stream exists. Gating the
+    // budget on streams_allowed_ (as this previously did) silently disabled the
+    // RFC 9000 §8.1 limit for the entire handshake.
+    //
+    // TryCharge() atomically checks AND debits in a single CAS, so concurrent
+    // datagram emissions cannot both pass the check and over-debit past the 3x
+    // budget (the old CanSend()+OnBytesSent() pair had a TOCTOU window under
+    // kMultiThread).
+    if (amp_controller_.TryCharge(bytes)) {
         return true;
     }
-    // When streams are allowed, path is validated; disable amp limit
-    return true;
+    amp_blocked_ = true;
+    LOG_WARN("anti-amplification budget exhausted. want:%u, remaining:%llu, recv:%llu, sent:%llu", bytes,
+        (unsigned long long)amp_controller_.GetRemainingBudget(),
+        (unsigned long long)amp_controller_.GetBytesReceived(),
+        (unsigned long long)amp_controller_.GetBytesSent());
+    return false;
+}
+
+void SendManager::MarkAddressValidated() {
+    if (!amp_controller_.IsUnvalidated()) {
+        return;
+    }
+    amp_controller_.ExitUnvalidatedState();
+    amp_blocked_ = false;
+    streams_allowed_ = true;
+    LOG_DEBUG("peer address validated; anti-amplification limit lifted.");
 }
 
 bool SendManager::IsAllowedOnUnvalidated(uint16_t type) const {
@@ -205,13 +227,25 @@ bool SendManager::IsAllowedOnUnvalidated(uint16_t type) const {
     return false;
 }
 
-void SendManager::ResetAmpBudget() {
-    amp_controller_.EnterUnvalidatedState();
+void SendManager::ResetAmpBudget(uint64_t initial_credit) {
+    amp_controller_.EnterUnvalidatedState(initial_credit);
+    amp_blocked_ = false;
 }
 
 void SendManager::OnCandidatePathBytesReceived(uint32_t bytes) {
-    if (!streams_allowed_) {
-        amp_controller_.OnBytesReceived(bytes);
+    if (!amp_controller_.IsUnvalidated()) {
+        return;
+    }
+    amp_controller_.OnBytesReceived(bytes);
+
+    // Fresh credit arrived: let the connection retry the send it had to drop,
+    // otherwise a datagram refused by the budget would never be re-attempted and
+    // the handshake would stall until idle timeout.
+    if (amp_blocked_) {
+        amp_blocked_ = false;
+        if (send_retry_cb_) {
+            send_retry_cb_();
+        }
     }
 }
 
@@ -279,7 +313,6 @@ void SendManager::SetFlowControlBlocked() {
     // rather than CPU or network". We deliberately collapse both call sites
     // into one counter for dashboard simplicity.
     common::Metrics::CounterInc(common::MetricsStd::DiagFlowControlBlocked);
-    static constexpr uint32_t kFlowControlRecheckIntervalMs = 100;
     if (!flow_control_recheck_scheduled_ && scheduler_) {
         flow_control_recheck_scheduled_ = true;
         ArmFlowControlRecheckTimer();
@@ -309,7 +342,6 @@ void SendManager::ArmFlowControlRecheckTimer() {
     // exhausted, all in-flight packets already acked, peer not forthcoming with
     // MAX_DATA) gets removed from the worker's active set and never re-examined
     // until idle timeout fires.
-    static constexpr uint32_t kFlowControlRecheckIntervalMs = 100;
     if (flow_control_recheck_timer_.Rearm(kFlowControlRecheckIntervalMs)) {
         return;
     }

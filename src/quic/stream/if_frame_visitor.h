@@ -35,7 +35,7 @@ public:
     // flow contrel
     virtual void SetStreamDataSizeLimit(uint32_t size) = 0;
     virtual uint32_t GetLeftStreamDataSize() = 0;
-    virtual void AddStreamDataSize(uint32_t size) {}
+    virtual void AddStreamDataSize(uint32_t /*size*/) {}
     virtual uint64_t GetStreamDataSize() = 0;
 
     // Remaining writable bytes in the visitor's underlying packet buffer.

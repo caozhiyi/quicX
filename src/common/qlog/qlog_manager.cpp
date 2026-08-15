@@ -34,6 +34,7 @@ QlogManager::~QlogManager() {
 void QlogManager::Enable(bool enabled) {
     std::lock_guard<std::mutex> lock(config_mutex_);
     config_.enabled = enabled;
+    enabled_.store(enabled, std::memory_order_release);
 
     if (enabled && !initialized_) {
         // init writer
@@ -56,6 +57,7 @@ void QlogManager::SetConfig(const QlogConfig& config) {
     std::unique_lock<std::mutex> lock(config_mutex_);
     bool was_enabled = config_.enabled;
     config_ = config;
+    enabled_.store(config_.enabled, std::memory_order_release);
 
     // if state changes, reinitialize
     if (was_enabled != config_.enabled) {

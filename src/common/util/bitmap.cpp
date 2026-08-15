@@ -7,6 +7,16 @@ namespace common {
 static const uint32_t kStepSize = sizeof(int64_t) * 8;
 static const uint64_t kSetpBase = 1;
 
+namespace {
+// Index of the lowest set bit. Isolating it with x & -x yields an exact power of two,
+// which float represents without rounding, so log2f is safe up to 2^63 here.
+// Callers must reject zero first: log2f(0) is -inf and converting that to an unsigned
+// index is undefined behaviour.
+uint32_t LowestSetBitIndex(uint64_t bits) {
+    return (uint32_t)std::log2f(float(bits & (~bits + 1)));
+}
+}  // namespace
+
 Bitmap::Bitmap():
     vec_bitmap_(0) {}
 
@@ -74,8 +84,10 @@ int32_t Bitmap::GetMinAfter(uint32_t index) {
 
     // find current uint64_t have next 1?
     if (bitmap_[bitmap_index] != 0) {
-        int64_t cur_bitmap = bitmap_[bitmap_index];
-        int32_t cur_step = index - ret;
+        // Unsigned: an arithmetic right shift of a word with bit 63 set would smear
+        // sign bits into the high end and make the "no more bits" test unreliable.
+        uint64_t cur_bitmap = (uint64_t)bitmap_[bitmap_index];
+        uint32_t cur_step = index - ret;
         cur_bitmap = cur_bitmap >> cur_step;
 
         // don't have next 1
@@ -85,7 +97,7 @@ int32_t Bitmap::GetMinAfter(uint32_t index) {
             // find next 1
         } else {
             ret += cur_step;
-            ret += (uint32_t)std::log2f(float(cur_bitmap & (-cur_bitmap)));
+            ret += LowestSetBitIndex(cur_bitmap);
             return ret;
         }
 
@@ -93,21 +105,22 @@ int32_t Bitmap::GetMinAfter(uint32_t index) {
         ret += kStepSize;
     }
 
-    // find next used vector index
-    int32_t temp_vec_bitmap = vec_bitmap_ >> bitmap_index;
+    // Find the next used vector. Bit 0 refers to the current vector, which either has
+    // no bits at all or only bits at/before `index` (both rejected above), so mask it
+    // off: leaving it in would make the scan resolve back to the current vector.
+    uint32_t temp_vec_bitmap = (vec_bitmap_ >> bitmap_index) & ~1u;
     if (temp_vec_bitmap == 0) {
         return -1;
     }
 
-    uint32_t next_vec_index = (uint32_t)std::log2f(float(temp_vec_bitmap & (-temp_vec_bitmap) + 1));
+    // Guaranteed >= 1 because bit 0 was masked off above.
+    uint32_t next_vec_index = LowestSetBitIndex(temp_vec_bitmap);
     uint32_t target_vec_index = next_vec_index + bitmap_index;
-    if (target_vec_index == bitmap_index) {
-        return -1;
-    }
 
-    int64_t cur_bitmap = bitmap_[target_vec_index];
+    // Here we want the genuine lowest set bit of the target vector, including bit 0.
+    uint64_t cur_bitmap = (uint64_t)bitmap_[target_vec_index];
     ret += (next_vec_index - 1) * kStepSize;
-    ret += (uint32_t)std::log2f(float(cur_bitmap & (-cur_bitmap) + 1));
+    ret += LowestSetBitIndex(cur_bitmap);
 
     return ret;
 }
@@ -118,7 +131,9 @@ bool Bitmap::Empty() {
 
 void Bitmap::Clear() {
     while (vec_bitmap_ != 0) {
-        int32_t next_vec_index = (int32_t)std::log2f(float(vec_bitmap_ & (-(int32_t)vec_bitmap_) + 1));
+        // The true lowest set bit is wanted here: every flagged vector must be cleared,
+        // including vector 0.
+        uint32_t next_vec_index = LowestSetBitIndex(vec_bitmap_);
         bitmap_[next_vec_index] = 0;
         vec_bitmap_ = vec_bitmap_ & (vec_bitmap_ - 1);
     }

@@ -118,7 +118,7 @@ static size_t ReadRssBytes() {
     FILE* f = std::fopen("/proc/self/statm", "r");
     if (!f) return 0;
     long pages = 0;
-    if (std::fscanf(f, "%*ld %ld", &pages) != 1) pages = 0;
+    if (std::fscanf(f, "%*d %ld", &pages) != 1) pages = 0;
     std::fclose(f);
     return static_cast<size_t>(pages) * static_cast<size_t>(sysconf(_SC_PAGESIZE));
 #else

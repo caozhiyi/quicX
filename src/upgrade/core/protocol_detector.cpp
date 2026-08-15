@@ -113,7 +113,6 @@ bool ProtocolDetector::IsHTTP2(const std::vector<uint8_t>& data) {
         uint32_t length = (static_cast<uint32_t>(data[0]) << 16) | (static_cast<uint32_t>(data[1]) << 8) |
                           (static_cast<uint32_t>(data[2]));
         uint8_t type = data[3];
-        uint8_t /*flags*/ _flags = data[4];
         uint32_t stream_id = (static_cast<uint32_t>(data[5]) << 24) | (static_cast<uint32_t>(data[6]) << 16) |
                              (static_cast<uint32_t>(data[7]) << 8) | (static_cast<uint32_t>(data[8]));
         bool reserved_bit_set = (stream_id & 0x80000000u) != 0;

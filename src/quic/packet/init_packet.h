@@ -59,14 +59,6 @@ private:
     uint32_t token_length_;
     uint8_t* token_raw_;                   // Non-owning pointer (used during decode, lifetime tied to packet buffer)
     common::SharedBufferSpan token_span_;  // Owning span (used when token is explicitly set with ownership)
-    // Backing store for SetToken(uint8_t*, uint32_t). Senders pass a pointer
-    // into memory they own (typically the per-build packet context), but a sent
-    // packet outlives that context: it is retained for loss recovery and
-    // re-encoded on retransmission. Keeping only the caller's pointer meant the
-    // retransmitted Initial read freed heap and shipped a corrupted Retry
-    // token, which the server silently discards. Owning a copy ties the token's
-    // lifetime to the packet that needs it.
-    std::vector<uint8_t> token_owned_;
 
     uint32_t length_;
     common::SharedBufferSpan payload_;

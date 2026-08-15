@@ -29,6 +29,16 @@ ServerConnection::ServerConnection(std::shared_ptr<TLSCtx> ctx, std::shared_ptr<
 
     // Set HANDSHAKE_DONE frame handler callback (returns bool)
     frame_processor_->SetHandshakeDoneCallback([this](auto a) { return HandleHandshakeDoneFrame(a); });
+
+    // RFC 9000 §8.1, secure by default: a server connection is born from an
+    // Initial whose source address could be spoofed, so start under the 3x
+    // budget and make the caller opt out via MarkAddressValidated() once the
+    // address is actually proven (a valid Retry token). The inverse default --
+    // start unrestricted and rely on the accepting worker to remember to
+    // restrict -- is what let the limit sit dead in the first place: a dropped
+    // call there is silently insecure, whereas a dropped MarkAddressValidated()
+    // merely throttles and shows up immediately in tests.
+    EnterUnvalidatedAddressState();
 }
 
 ServerConnection::~ServerConnection() {
@@ -86,7 +96,7 @@ void ServerConnection::AddRemoteConnectionId(ConnectionID& id) {
     }
 }
 
-bool ServerConnection::HandleHandshakeDoneFrame(std::shared_ptr<IFrame> frame) {
+bool ServerConnection::HandleHandshakeDoneFrame(std::shared_ptr<IFrame> /*frame*/) {
     // RFC 9000 §19.20: "A server MUST treat receipt of a HANDSHAKE_DONE
     // frame as a connection error of type PROTOCOL_VIOLATION."
     LOG_ERROR("Server received HANDSHAKE_DONE frame from client - PROTOCOL_VIOLATION");
@@ -183,7 +193,7 @@ void ServerConnection::WriteCryptoData(std::shared_ptr<IBufferRead> buffer, int3
 }
 
 void ServerConnection::SSLAlpnSelect(
-    const unsigned char** out, unsigned char* outlen, const unsigned char* in, unsigned int inlen, void* arg) {
+    const unsigned char** out, unsigned char* outlen, const unsigned char* in, unsigned int inlen, void* /*arg*/) {
     // parse client alpn list
     // ALPN format: [length1][protocol1][length2][protocol2]...
     std::vector<std::string> client_protos;

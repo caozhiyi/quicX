@@ -22,10 +22,19 @@ int main() {
 
     client->Init(config);
 
-    // wait for response
-    std::mutex mtx;
-    std::condition_variable cv;
-    std::atomic<bool> response_received{false};
+    // wait for response. Keep the synchronisation objects on a shared_ptr so
+    // they outlive BOTH the main thread and the QUIC worker thread that runs
+    // the response callback: the callback captures a copy of `sync` and the
+    // worker may still be inside cv.notify_one() when main() returns and would
+    // otherwise destroy the stack-local cv/mtx — a ThreadSanitizer data race
+    // (pthread_cond_destroy vs pthread_cond_signal). The shared_ptr keeps them
+    // alive until the callback's captured copy is released.
+    struct Sync {
+        std::mutex mtx;
+        std::condition_variable cv;
+        std::atomic<bool> response_received{false};
+    };
+    auto sync = std::make_shared<Sync>();
 
     // record request start time
     auto start_time = std::chrono::high_resolution_clock::now();
@@ -33,7 +42,7 @@ int main() {
     auto request = quicx::IRequest::Create();
     request->AppendBody(std::string("hello world"));
     client->DoRequest("https://127.0.0.1:7001/hello", quicx::HttpMethod::kGet, request,
-        [&](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
+        [sync, start_time](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
             // Calculate request latency
             auto end_time = std::chrono::high_resolution_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
@@ -50,16 +59,16 @@ int main() {
 
             // notify main thread response received
             {
-                std::lock_guard<std::mutex> lock(mtx);
-                response_received = true;
+                std::lock_guard<std::mutex> lock(sync->mtx);
+                sync->response_received = true;
             }
-            cv.notify_one();
+            sync->cv.notify_one();
         });
 
     // wait for response, max wait 10 seconds
     {
-        std::unique_lock<std::mutex> lock(mtx);
-        if (!cv.wait_for(lock, std::chrono::seconds(10), [&] { return response_received.load(); })) {
+        std::unique_lock<std::mutex> lock(sync->mtx);
+        if (!sync->cv.wait_for(lock, std::chrono::seconds(10), [&] { return sync->response_received.load(); })) {
             std::cout << "Request timeout after 10 seconds" << std::endl;
         }
     }

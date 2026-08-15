@@ -3,8 +3,10 @@
 
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <string>
 
+#include <quicx/common/if_event_loop.h>
 #include <quicx/quic/type.h>
 
 #include "common/network/address.h"
@@ -72,7 +74,8 @@ public:
     using LocalAddressUpdatedCallback = std::function<void(const common::Address&)>;
 
     MigrationController(ConnectionStateMachine& state_machine, PathManager& path_manager,
-        TransportParam& transport_param, DatagramEmitter& emitter);
+        TransportParam& transport_param, DatagramEmitter& emitter,
+        std::weak_ptr<common::IEventLoop> event_loop);
 
     ~MigrationController() = default;
 
@@ -82,17 +85,35 @@ public:
     /**
      * @brief Start a client-initiated migration to a new local address.
      *
+     * @param owner      Weak handle to the owning connection (type-erased). Used
+     *                   to skip the deferred task if the connection is destroyed
+     *                   while the request sits in the loop's queue — without it
+     *                   a queued task could run against a freed `this`.
      * @param local_ip   New local IP.
      * @param local_port New local port; 0 lets the system choose.
+     *
+     * @note Thread-safe. Migration state (paths, CIDs, sockets, timers) is owned
+     *       by the connection's event-loop thread; if called from another thread
+     *       the work is dispatched onto that loop and the call blocks until the
+     *       loop reports the outcome. From inside a loop callback it runs inline.
+     *       Returns kFailedTimeout if the loop never picks the request up,
+     *       kFailedInvalidState if the connection has no loop.
      */
-    MigrationResult InitiateMigrationTo(const std::string& local_ip, uint16_t local_port);
+    MigrationResult InitiateMigrationTo(std::weak_ptr<void> owner, const std::string& local_ip,
+        uint16_t local_port);
 
     /**
      * @brief Convenience wrapper: migrate to the same IP on a fresh port.
      *
-     * Used by interop tests so they exercise the production code path.
+     * Used by interop tests so they exercise the production code path. Resolves
+     * the local address family on the loop thread (see the gate in
+     * InitiateMigration()), so it never races the cached local/peer addresses.
+     *
+     * @param owner      Weak handle to the owning connection (see above).
+     *
+     * @note Thread-safe with the same dispatch semantics as InitiateMigrationTo().
      */
-    bool InitiateMigration(const std::string& current_ip);
+    bool InitiateMigration(std::weak_ptr<void> owner);
 
     bool IsMigrationSupported() const;
     bool IsMigrationInProgress() const;
@@ -102,6 +123,21 @@ public:
     void SetLocalAddressUpdatedCallback(LocalAddressUpdatedCallback cb) { local_addr_updated_cb_ = std::move(cb); }
 
     void SetRegisterSocketCallback(std::function<bool(int32_t)> cb) { register_socket_cb_ = std::move(cb); }
+
+    /**
+     * @brief Supplies the controller with the connection's local-address
+     *        resolver. Called on the loop thread during InitiateMigration(), so
+     *        reading the connection's cached address is race-free.
+     */
+    void SetLocalAddressResolver(std::function<void(std::string&, uint32_t&)> cb) {
+        local_addr_resolver_ = std::move(cb);
+    }
+
+    /**
+     * @brief Supplies the controller with the connection's peer-address getter,
+     *        used to pick the migration address family. Runs on the loop thread.
+     */
+    void SetPeerAddressResolver(std::function<common::Address()> cb) { peer_addr_resolver_ = std::move(cb); }
 
     /**
      * @brief Remove a socket from the receiver's poll set.
@@ -124,15 +160,34 @@ private:
     // site in the connection layer.
     void RetireSocket(int32_t fd, const char* reason);
 
+    // Run `task` on the connection's loop thread, blocking for its result. If
+    // called from the loop thread it runs inline; otherwise the task is posted
+    // and the call waits (bounded by kMigrationDispatchTimeoutMs). `owner` is a
+    // type-erased weak handle to the connection: if it has gone away while the
+    // task was queued the task returns the supplied failure value instead of
+    // touching a freed `this`.
+    bool GateBool(std::weak_ptr<void> owner, std::function<bool()> task);
+    MigrationResult GateResult(std::weak_ptr<void> owner, std::function<MigrationResult()> task);
+
+    // Resolves the local address family and delegates to InitiateMigrationToImpl().
+    // Only ever runs on the loop thread.
+    bool InitiateMigrationImpl();
+
+    // Core migration logic. Only ever runs on the loop thread.
+    MigrationResult InitiateMigrationToImpl(const std::string& local_ip, uint16_t local_port);
+
     ConnectionStateMachine& state_machine_;
     PathManager& path_manager_;
     TransportParam& transport_param_;
     DatagramEmitter& emitter_;
+    std::weak_ptr<common::IEventLoop> event_loop_;
 
     MigrationFinishedCallback migration_finished_cb_;
     LocalAddressUpdatedCallback local_addr_updated_cb_;
     std::function<bool(int32_t)> register_socket_cb_;
     std::function<bool(int32_t)> unregister_socket_cb_;
+    std::function<void(std::string&, uint32_t&)> local_addr_resolver_;
+    std::function<common::Address()> peer_addr_resolver_;
 
     bool callbacks_installed_{false};
 };

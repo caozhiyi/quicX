@@ -32,7 +32,10 @@ bool EventLoop::Init() {
     // Declare the serialisation domain of the (deliberately lock-free) timer
     // engine. This is what lets Timer::Cancel() decide between unlinking the
     // node synchronously and queueing the cancel for this thread to apply.
-    timer_core_.BindLoopThread(thread_id_);
+    // Allocate on the heap via shared_ptr: Timer handles hold a weak_ptr to this
+    // core, so they stay safe even if destroyed after this EventLoop is gone.
+    timer_core_ = std::make_shared<TimerCore>();
+    timer_core_->BindLoopThread(thread_id_);
 
     // Register this event loop for the current thread (for lock-free pool operations)
     // In test environments EventLoop may be stack-allocated, so we need to handle that case
@@ -75,9 +78,9 @@ void EventLoop::AssertInLoopThread() {
 
 int EventLoop::Wait() {
     uint64_t now = UTCTimeMsec();
-    timer_core_.Run(now);
+    timer_core_->Run(now);
 
-    int32_t next_ms = timer_core_.MinTime(now);
+    int32_t next_ms = timer_core_->MinTime(now);
     int timeout_ms = next_ms >= 0 ? static_cast<int>(next_ms) : 1000;
 
     // Check if same-thread wakeup requested (e.g., from AddTimer/PostTask)
@@ -138,7 +141,7 @@ int EventLoop::Wait() {
     // only when prompted by I/O (e.g. unit tests, idle servers) it can be
     // delayed indefinitely. This was part of the same family of bugs as
     // the AddTimer-Wakeup() issue fixed above.
-    timer_core_.Run(UTCTimeMsec());
+    timer_core_->Run(UTCTimeMsec());
 
     // handle events
     for (int i = 0; i < n; i++) {
@@ -265,7 +268,7 @@ void EventLoop::ClearAllTimers() {
     // This used to walk an unordered_set of every id ever returned by AddTimer,
     // synthesising a probe TimerTask per id -- O(cumulative timers). TimerCore
     // owns its nodes, so it can drop them all directly.
-    timer_core_.Clear();
+    timer_core_->Clear();
 
     // Also drain any posted tasks that were RunInLoop()'d from a different
     // thread. Each posted task may capture shared_ptr<Stream>/<Connection>
@@ -280,7 +283,7 @@ void EventLoop::ClearAllTimers() {
 Timer EventLoop::AddTimer(std::weak_ptr<void> owner, std::function<void()> cb, uint32_t delay_ms) {
     AssertInLoopThread();
     uint32_t gen = 0;
-    uint32_t index = timer_core_.Arm(
+    uint32_t index = timer_core_->Arm(
         std::move(cb), std::move(owner), /*has_owner=*/true, delay_ms, /*interval_ms=*/0, UTCTimeMsec(), gen);
     if (index == TimerCore::kNoEntry) {
         LOG_ERROR("EventLoop::AddTimer: timer slab exhausted");
@@ -299,7 +302,7 @@ Timer EventLoop::AddTimer(std::weak_ptr<void> owner, std::function<void()> cb, u
     // silence in the PTO path -- every outgoing packet re-armed pto_timer_, and
     // the resulting flag turned every Wait() into a 0-timeout poll, so the wheel
     // was never advanced enough to fire the 88 ms PTO when no I/O was pending.
-    return Timer(&timer_core_, index, gen);
+    return Timer(timer_core_, index, gen);
 }
 
 Timer EventLoop::AddRepeatTimer(std::weak_ptr<void> owner, std::function<void()> cb, uint32_t interval_ms) {
@@ -310,18 +313,18 @@ Timer EventLoop::AddRepeatTimer(std::weak_ptr<void> owner, std::function<void()>
     }
     uint32_t gen = 0;
     uint32_t index =
-        timer_core_.Arm(std::move(cb), std::move(owner), /*has_owner=*/true, interval_ms, interval_ms, UTCTimeMsec(), gen);
+        timer_core_->Arm(std::move(cb), std::move(owner), /*has_owner=*/true, interval_ms, interval_ms, UTCTimeMsec(), gen);
     if (index == TimerCore::kNoEntry) {
         LOG_ERROR("EventLoop::AddRepeatTimer: timer slab exhausted");
         return Timer();
     }
-    return Timer(&timer_core_, index, gen);
+    return Timer(timer_core_, index, gen);
 }
 
 void EventLoop::PostDelayed(std::function<void()> cb, uint32_t delay_ms) {
     AssertInLoopThread();
     // No handle, hence no slab entry and nothing for the caller to keep alive.
-    timer_core_.ArmDetached(std::move(cb), delay_ms, UTCTimeMsec());
+    timer_core_->ArmDetached(std::move(cb), delay_ms, UTCTimeMsec());
 }
 
 void EventLoop::PostTask(std::function<void()> fn) {

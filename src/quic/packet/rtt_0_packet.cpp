@@ -23,10 +23,10 @@ Rtt0Packet::Rtt0Packet():
 }
 
 Rtt0Packet::Rtt0Packet(uint8_t flag):
+    header_(flag),
     length_(0),
     payload_offset_(0),
-    packet_num_offset_(0),
-    header_(flag) {
+    packet_num_offset_(0) {
     header_.GetLongHeaderFlag().SetPacketType(PacketType::k0RttPacketType);
 }
 
@@ -44,9 +44,6 @@ bool Rtt0Packet::Encode(std::shared_ptr<common::IBuffer> buffer) {
     uint8_t* end = span.GetEnd();
 
     // encode length
-    auto len = payload_.GetLength();
-    auto len1 = header_.GetPacketNumberLength();
-    auto len2 = crypto_grapher_ ? crypto_grapher_->GetTagLength() : 0;
     length_ = payload_.GetLength() + header_.GetPacketNumberLength() +
               (crypto_grapher_ ? crypto_grapher_->GetTagLength() : 0);
     cur_pos = common::EncodeVarint(cur_pos, end, length_);
@@ -129,7 +126,7 @@ bool Rtt0Packet::DecodeWithoutCrypto(std::shared_ptr<common::IBuffer> buffer, bo
     return true;
 }
 
-bool Rtt0Packet::DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) {
+bool Rtt0Packet::DecodeWithCrypto(std::shared_ptr<common::IBuffer> /*buffer*/) {
     auto span = packet_src_data_;
     uint8_t* cur_pos = span.GetStart();
     uint8_t* end = span.GetEnd();

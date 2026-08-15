@@ -16,7 +16,7 @@ UnidentifiedStream::UnidentifiedStream(const std::shared_ptr<IQuicRecvStream>& s
     LOG_DEBUG("UnidentifiedStream created for stream %llu", stream_->GetStreamID());
 }
 
-void UnidentifiedStream::OnData(std::shared_ptr<IBufferRead> data, bool is_last, uint32_t error) {
+void UnidentifiedStream::OnData(std::shared_ptr<IBufferRead> data, bool /*is_last*/, uint32_t error) {
     if (error != 0) {
         LOG_ERROR("UnidentifiedStream::OnData error: %d on stream %llu", error, stream_->GetStreamID());
         error_handler_(stream_->GetStreamID(), error);

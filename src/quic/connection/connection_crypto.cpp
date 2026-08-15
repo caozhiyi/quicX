@@ -6,6 +6,7 @@
 
 #include "quic/common/version.h"
 #include "quic/connection/connection_crypto.h"
+#include "quic/connection/error.h"
 #include "quic/crypto/hkdf.h"
 #include "quic/crypto/if_cryptographer.h"
 #include "quic/crypto/type.h"
@@ -33,16 +34,18 @@ const char* EncryptionLevelToKeyType(EncryptionLevel level) {
 }  // anonymous namespace
 
 ConnectionCrypto::ConnectionCrypto():
-    cur_encryption_level_(kInitial),
     transport_param_done_(false),
+    cur_encryption_level_(kInitial),
     quic_version_(GetDefaultVersion()) {
-    memset(cryptographers_, 0, sizeof(std::shared_ptr<ICryptographer>) * kNumEncryptionLevels);
+    // cryptographers_ holds shared_ptrs, which are already default constructed to null.
+    // The memset that used to live here overwrote their internals and was undefined
+    // behaviour on a non-trivial type.
 }
 
 ConnectionCrypto::~ConnectionCrypto() {}
 
 void ConnectionCrypto::SetReadSecret(
-    SSL* ssl, EncryptionLevel level, const SSL_CIPHER* cipher, const uint8_t* secret, size_t secret_len) {
+    SSL* /*ssl*/, EncryptionLevel level, const SSL_CIPHER* cipher, const uint8_t* secret, size_t secret_len) {
     std::shared_ptr<ICryptographer> cryptographer = cryptographers_[level];
     if (cryptographer == nullptr) {
         cryptographer = MakeCryptographer(cipher);
@@ -63,7 +66,7 @@ void ConnectionCrypto::SetReadSecret(
 }
 
 void ConnectionCrypto::SetWriteSecret(
-    SSL* ssl, EncryptionLevel level, const SSL_CIPHER* cipher, const uint8_t* secret, size_t secret_len) {
+    SSL* /*ssl*/, EncryptionLevel level, const SSL_CIPHER* cipher, const uint8_t* secret, size_t secret_len) {
     std::shared_ptr<ICryptographer> cryptographer = cryptographers_[level];
     if (cryptographer == nullptr) {
         cryptographer = MakeCryptographer(cipher);
@@ -113,7 +116,7 @@ void ConnectionCrypto::SendAlert(EncryptionLevel level, uint8_t alert) {
     }
 }
 
-void ConnectionCrypto::OnTransportParams(EncryptionLevel level, const uint8_t* tp, size_t tp_len) {
+void ConnectionCrypto::OnTransportParams(EncryptionLevel /*level*/, const uint8_t* tp, size_t tp_len) {
     if (transport_param_done_) {
         return;
     }
@@ -121,8 +124,16 @@ void ConnectionCrypto::OnTransportParams(EncryptionLevel level, const uint8_t* t
 
     TransportParam remote_tp;
     common::BufferSpan buffer((uint8_t*)tp, (uint32_t)tp_len);
-    if (!remote_tp.Decode(buffer)) {
+    if (!remote_tp.Decode(buffer, is_server_)) {
+        // RFC 9000 §7.4: malformed or out-of-range transport parameters are a
+        // connection error of type TRANSPORT_PARAMETER_ERROR. Previously this only
+        // logged and returned, leaving the connection running with default (or
+        // partially overwritten) parameters.
         LOG_ERROR("decode remote transport failed.");
+        if (handshake_error_cb_) {
+            handshake_error_cb_(static_cast<uint64_t>(QuicErrorCode::kTransportParameterError),
+                "invalid transport parameters");
+        }
         return;
     }
     if (transport_param_cb_) {

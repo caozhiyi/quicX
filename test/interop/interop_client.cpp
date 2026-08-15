@@ -532,11 +532,20 @@ public:
     }
 
     bool InitiateMigration() {
-        std::lock_guard<std::mutex> lock(conn_mtx_);
-        if (!conn_) {
+        // Take a reference under the lock, then drop it before calling in.
+        // InitiateMigration() hands the work to the connection's event loop
+        // and waits for the answer; that loop also runs OnConnection(), which
+        // takes conn_mtx_. Holding the lock across the call would deadlock the
+        // two against each other.
+        std::shared_ptr<IQuicConnection> conn;
+        {
+            std::lock_guard<std::mutex> lock(conn_mtx_);
+            conn = conn_;
+        }
+        if (!conn) {
             return false;
         }
-        return conn_->InitiateMigration();
+        return conn->InitiateMigration();
     }
 
     void Shutdown() {
@@ -715,6 +724,19 @@ int main(int argc, char* argv[]) {
         urls = ParseUrls(requests_env);
     }
 
+    // Interop version-negotiation test: the runner injects PREFERRED_VERSION (a
+    // grease/unsupported version such as 0x1a2a3a4a). Use it as the version we
+    // attempt so the peer answers with a Version Negotiation packet and we fall
+    // back to a supported version per RFC 9000 §6.2. Only applied when no explicit
+    // --quic-version was given.
+    if (quic_version == 0) {
+        if (const char* preferred_env = std::getenv("PREFERRED_VERSION")) {
+            quic_version = static_cast<uint32_t>(std::strtoul(preferred_env, nullptr, 0));
+            std::cout << "Interop PREFERRED_VERSION=" << preferred_env
+                      << " -> attempting version 0x" << std::hex << quic_version << std::dec << std::endl;
+        }
+    }
+
     // If server not specified, extract from first URL
     if (server.empty() && !urls.empty()) {
         // Parse first URL to extract server and port
@@ -781,17 +803,6 @@ int main(int argc, char* argv[]) {
     }
 
     bool is_migration_test = testcase_env && (strcmp(testcase_env, "connectionmigration") == 0);
-    if (!is_migration_test) {
-        // Official TestCaseConnectionMigration sends TESTCASE="transfer" to the
-        // client and distinguishes the test via the "server46" hostname (see
-        // official testcases_quic.py TestCaseConnectionMigration.urlprefix()).
-        for (const auto& u : urls) {
-            if (u.find("server46") != std::string::npos) {
-                is_migration_test = true;
-                break;
-            }
-        }
-    }
 
     std::cout << "========================================" << std::endl;
     std::cout << "quicX hq-interop Client" << std::endl;
@@ -1028,35 +1039,6 @@ int main(int argc, char* argv[]) {
         }
         client2.Shutdown();
         std::cout << "Client finished successfully (two connections)" << std::endl;
-        return 0;
-    }
-
-    // Multiconnect (official TestCaseHandshakeLoss): the official runner expects
-    // `_num_runs` (50) independent handshakes. Each file must be downloaded over
-    // its own connection (not multiplexed on a single connection).
-    if (testcase_env && strcmp(testcase_env, "multiconnect") == 0) {
-        std::cout << "*** Multiconnect test: " << urls.size() << " independent connections ***" << std::endl;
-        int succeeded = 0;
-        for (const auto& url : urls) {
-            HqInteropClient mc_client(downloads_dir, qlog_dir);
-            if (!mc_client.Init()) {
-                return 1;
-            }
-            if (!mc_client.Connect(server, port)) {
-                mc_client.Shutdown();
-                std::cerr << "Connection failed for " << url << std::endl;
-                continue;
-            }
-            if (mc_client.DownloadAll({url})) {
-                succeeded++;
-            }
-            mc_client.Shutdown();
-        }
-        std::cout << "Multiconnect: " << succeeded << "/" << urls.size() << " connections succeeded" << std::endl;
-        if (succeeded != static_cast<int>(urls.size())) {
-            return 1;
-        }
-        std::cout << "Client finished successfully (multiconnect)" << std::endl;
         return 0;
     }
 

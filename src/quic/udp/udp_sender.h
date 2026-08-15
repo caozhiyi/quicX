@@ -22,7 +22,7 @@ public:
     // (filled in by a prior Send/SendTo on that Address) and they all share
     // the same socket fd -> a single sendmmsg(2) syscall. When any precondition
     // is not met (cache miss, mixed sockets, fault injection on, batch size
-    // exceeds kMaxBatchSize), the implementation transparently falls back to
+    // exceeds kMaxPacketsPerRound), the implementation transparently falls back to
     // per-packet Send(); cached state established by those Send() calls
     // makes subsequent rounds eligible for the fast path again.
     uint32_t SendBatch(std::vector<std::shared_ptr<NetPacket>>& batch) override;

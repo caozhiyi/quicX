@@ -2,12 +2,13 @@
 #include <cstring>
 #include <sstream>
 
-#include <openssl/rand.h>
+#include <openssl/mem.h>  // CRYPTO_memcmp
 
 #include "common/log/log.h"
 #include "common/qlog/qlog.h"
 
 #include "quic/connection/connection_id_coordinator.h"
+#include "quic/connection/stateless_reset_token_generator.h"
 #include "quic/connection/controler/send_manager.h"
 #include "quic/frame/new_connection_id_frame.h"
 #include "quic/frame/retire_connection_id_frame.h"
@@ -30,13 +31,42 @@ std::string CIDToHexString(const ConnectionID& cid) {
 }
 }  // anonymous namespace
 
-bool ConnectionIDCoordinator::GenerateStatelessResetToken(uint8_t* out, uint32_t len) {
-    if (out == nullptr || len == 0) {
+void ConnectionIDCoordinator::AddPeerStatelessResetToken(const uint8_t* token) {
+    if (token == nullptr) {
+        return;
+    }
+
+    std::array<uint8_t, 16> entry{};
+    memcpy(entry.data(), token, entry.size());
+
+    // Ignore duplicates so repeated NEW_CONNECTION_ID frames carrying the same
+    // token cannot fill the table.
+    for (const auto& existing : peer_reset_tokens_) {
+        if (existing == entry) {
+            return;
+        }
+    }
+
+    if (peer_reset_tokens_.size() >= kMaxPeerResetTokens) {
+        // Drop the oldest: the peer has moved on to newer CIDs, and an unbounded
+        // table is a memory-growth primitive for a hostile peer.
+        peer_reset_tokens_.erase(peer_reset_tokens_.begin());
+    }
+    peer_reset_tokens_.push_back(entry);
+}
+
+bool ConnectionIDCoordinator::IsPeerStatelessResetToken(const uint8_t* token) const {
+    if (token == nullptr) {
         return false;
     }
-    // RAND_bytes is the same CSPRNG ConnectionIDGenerator and RetryTokenManager
-    // use; it returns 1 on success.
-    return RAND_bytes(out, len) == 1;
+
+    // Accumulate over every entry rather than returning early, so the time taken
+    // does not reveal which entry matched or how far the scan got.
+    unsigned matched = 0;
+    for (const auto& existing : peer_reset_tokens_) {
+        matched |= (CRYPTO_memcmp(existing.data(), token, existing.size()) == 0) ? 1u : 0u;
+    }
+    return matched != 0;
 }
 
 ConnectionIDCoordinator::ConnectionIDCoordinator(std::shared_ptr<common::IEventLoop> event_loop,
@@ -133,11 +163,13 @@ void ConnectionIDCoordinator::CheckAndReplenishLocalCIDPool() {
         frame->SetRetirePriorTo(0);  // Don't force retirement of older IDs
         frame->SetConnectionID(const_cast<uint8_t*>(new_cid.GetID()), new_cid.GetLength());
 
-        // Stateless reset token (RFC 9000 §10.3): must be hard to guess, or a
-        // peer can forge a Stateless Reset and drop the connection.
+        // Stateless reset token (RFC 9000 §10.3). Derived from the CID with the
+        // static key rather than drawn at random: the token we advertise here must
+        // still be computable after this process has forgotten the connection
+        // entirely, which is precisely when a Stateless Reset needs to be sent.
         uint8_t reset_token[kStatelessResetTokenLength];
-        if (!GenerateStatelessResetToken(reset_token, kStatelessResetTokenLength)) {
-            LOG_ERROR("ConnectionIDCoordinator: CSPRNG failed, not advertising this CID");
+        if (!StatelessResetTokenGenerator::Instance().Generate(new_cid.GetID(), new_cid.GetLength(), reset_token)) {
+            LOG_ERROR("ConnectionIDCoordinator: reset token derivation failed, not advertising this CID");
             break;
         }
         frame->SetStatelessResetToken(reset_token);

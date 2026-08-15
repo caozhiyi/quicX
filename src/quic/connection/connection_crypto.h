@@ -126,6 +126,10 @@ public:
     typedef std::function<void(uint64_t error, const std::string& reason)> HandshakeErrorCB;
     void SetHandshakeErrorCB(HandshakeErrorCB cb) { handshake_error_cb_ = cb; }
 
+    // Role of the owning connection. Needed when validating the peer's transport
+    // parameters, because RFC 9000 §18.2 reserves several parameters for servers only.
+    void SetIsServer(bool is_server) { is_server_ = is_server; }
+
     // RFC 9001 Section 6: Key Update
     // Trigger a key update on the Application level cryptographer
     // Returns true if key update was successful
@@ -153,6 +157,7 @@ public:
 
 private:
     bool transport_param_done_;
+    bool is_server_{false};
     RemoteTransportParamCB transport_param_cb_;
     EarlyDataReadyCB early_data_ready_cb_;
     HandshakeErrorCB handshake_error_cb_;

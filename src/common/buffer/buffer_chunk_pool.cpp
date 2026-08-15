@@ -72,10 +72,23 @@ std::shared_ptr<BufferChunk> BufferChunkPool::Acquire(const std::shared_ptr<Bloc
 
     auto& tls = Tls();
     BufferChunk* raw = nullptr;
-    if (!tls.chunks.empty()) {
-        raw = tls.chunks.back();
+    // A cached chunk holds a block belonging to whichever pool created it. Since
+    // shared_ptr<BufferChunk> can migrate across threads (worker -> user callback),
+    // a chunk allocated on thread A may be recycled into thread B's free list.
+    // Handing it back for a different pool would return the block to the wrong
+    // pool (or use it after the origin pool is destroyed), so only reuse an entry
+    // whose origin pool matches the requested one.
+    while (!tls.chunks.empty()) {
+        BufferChunk* cached = tls.chunks.back();
         tls.chunks.pop_back();
-    } else {
+        if (cached->GetPool() == pool) {
+            raw = cached;
+            break;
+        }
+        // Mismatched origin: drop it, which routes the block back to its own pool.
+        delete cached;
+    }
+    if (raw == nullptr) {
         raw = new BufferChunk(pool);
         if (!raw->Valid()) {
             // ctor logged the failure already; surface as nullptr so callers

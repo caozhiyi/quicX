@@ -29,8 +29,22 @@ public:
      * serialization and deserialization operations
      */
     bool Encode(const common::BufferSpan& buffer, size_t& bytes_written);
-    bool Decode(const common::BufferSpan& buffer);
+    // Decodes the peer's transport parameters and enforces the RFC 9000 §7.4 / §18.2
+    // syntax and value-range rules. Returns false on any violation; the caller must
+    // then close the connection with TRANSPORT_PARAMETER_ERROR.
+    // @param received_by_server true when we are the server and these parameters came
+    //        from the client, which makes the server-only parameters illegal (§18.2).
+    bool Decode(const common::BufferSpan& buffer, bool received_by_server = false);
     uint32_t EncodeSize();
+
+    // RFC 9000 §18.2 value bounds for peer-supplied parameters.
+    static constexpr uint64_t kMaxAckDelayExponent = 20;
+    static constexpr uint64_t kMaxAckDelayLimitMs = 1ULL << 14;  // max_ack_delay must be < 2^14
+    static constexpr uint64_t kMinMaxUdpPayloadSize = 1200;
+    static constexpr uint64_t kMinActiveConnectionIdLimit = 2;
+    static constexpr uint64_t kMaxStreamsLimit = 1ULL << 60;
+    static constexpr size_t kStatelessResetTokenLength = 16;
+    static constexpr size_t kMaxTransportParamCidLength = 20;
 
     /**
      * get transmission parameter interface cluster
@@ -62,6 +76,13 @@ public:
     void SetPreferredAddress(const std::string& addr) { preferred_address_ = addr; }
     const std::string& GetInitialSourceConnectionId() const { return initial_source_connection_id_; }
     const std::string& GetRetrySourceConnectionId() const { return retry_source_connection_id_; }
+
+    // Server-only: RFC 9000 §7.3 requires the server to echo the Destination Connection ID
+    // of the client's *first* Initial packet. Normally the accepting worker knows this value
+    // before the connection object exists and passes it through QuicTransportParams; this
+    // setter lets BaseConnection back-fill it from the first Initial when the caller did not,
+    // so the parameter is never silently omitted.
+    void SetOriginalDestinationConnectionId(const std::string& id) { original_destination_connection_id_ = id; }
 
     // RFC 9368 Compatible Version Negotiation: version_information transport parameter (id 0x11)
     // chosen_version:     the version that the sender is using for this connection

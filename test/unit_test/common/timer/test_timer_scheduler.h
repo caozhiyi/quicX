@@ -35,22 +35,22 @@ public:
     Timer AddTimer(std::weak_ptr<void> owner, std::function<void()> cb, uint32_t delay_ms) override {
         ++arm_count_;
         uint32_t gen = 0;
-        uint32_t index = core_.Arm(std::move(cb), std::move(owner), /*has_owner=*/true, delay_ms, /*interval_ms=*/0,
+        uint32_t index = core_->Arm(std::move(cb), std::move(owner), /*has_owner=*/true, delay_ms, /*interval_ms=*/0,
             Now(), gen);
-        return Timer(&core_, index, gen);
+        return Timer(core_, index, gen);
     }
 
     Timer AddRepeatTimer(std::weak_ptr<void> owner, std::function<void()> cb, uint32_t interval_ms) override {
         ++arm_count_;
         uint32_t gen = 0;
         uint32_t index =
-            core_.Arm(std::move(cb), std::move(owner), /*has_owner=*/true, interval_ms, interval_ms, Now(), gen);
-        return Timer(&core_, index, gen);
+            core_->Arm(std::move(cb), std::move(owner), /*has_owner=*/true, interval_ms, interval_ms, Now(), gen);
+        return Timer(core_, index, gen);
     }
 
     void PostDelayed(std::function<void()> cb, uint32_t delay_ms) override {
         ++arm_count_;
-        core_.ArmDetached(std::move(cb), delay_ms, Now());
+        core_->ArmDetached(std::move(cb), delay_ms, Now());
     }
 
     // ---- test controls ----
@@ -58,28 +58,28 @@ public:
     /// Move the clock forward and fire everything that becomes due.
     void Advance(uint64_t ms) {
         now_ = Now() + ms;
-        core_.Run(now_);
+        core_->Run(now_);
     }
 
     /// Fire anything already due without moving the clock.
-    void RunDue() { core_.Run(Now()); }
+    void RunDue() { core_->Run(Now()); }
 
     /// Number of Add*/PostDelayed calls seen so far.
     uint32_t ArmCount() const { return arm_count_; }
     /// Timers currently armed (fired or cancelled ones are not counted).
-    uint32_t PendingCount() const { return core_.PendingCount(); }
-    bool Empty() const { return core_.Empty(); }
-    int32_t MinTime() { return core_.MinTime(Now()); }
+    uint32_t PendingCount() const { return core_->PendingCount(); }
+    bool Empty() const { return core_->Empty(); }
+    int32_t MinTime() { return core_->MinTime(Now()); }
 
     uint64_t Now() const {
         uint64_t real = UTCTimeMsec();
         return real > now_ ? real : now_;
     }
 
-    TimerCore& Core() { return core_; }
+    TimerCore& Core() { return *core_; }
 
 private:
-    TimerCore core_;
+    std::shared_ptr<TimerCore> core_ = std::make_shared<TimerCore>();
     uint64_t now_;
     uint32_t arm_count_ = 0;
 };

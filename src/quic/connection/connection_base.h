@@ -187,6 +187,9 @@ public:
     bool CompatVnCompletedForTest() const { return version_negotiator_->IsCompatVnCompleted(); }
     const TransportParam& GetLocalTransportParamForTest() const { return transport_param_; }
     const std::string& GetInitialSecretDcidForTest() const { return connection_crypto_.GetInitialSecretDcid(); }
+    // Lets tests assert the RFC 9000 §8.1 budget is engaged on the real send
+    // path rather than on a stand-alone controller instance.
+    SendManager& GetSendManagerForTest() { return send_manager_; }
     // ==================== End Test-Only Accessors ====================
 
     // IConnectionStateListener
@@ -234,6 +237,40 @@ protected:
     bool ValidateAndMaybeUpgradeByRemoteTP(const TransportParam& remote_tp) {
         return version_negotiator_->ValidateAndMaybeUpgradeByRemoteTP(remote_tp);
     }
+
+    // RFC 9000 §7.3: cross-checks the connection IDs the peer authenticated inside
+    // its transport parameters against the ones we actually observed on the wire.
+    // This is what stops an off-path attacker from steering either endpoint onto a
+    // connection ID it never chose (and, on the client, from forging a Retry).
+    // Returns false when the connection has been closed as a violation.
+    // The base implementation covers initial_source_connection_id, which both roles
+    // must verify; ClientConnection extends it with the server-only IDs.
+    virtual bool ValidatePeerConnectionIds(const TransportParam& remote_tp);
+
+    /**
+     * @brief Detect an RFC 9000 §10.3 Stateless Reset in a datagram we failed to
+     *        process, and tear the connection down if so.
+     *
+     * A Stateless Reset is how a peer that has lost our connection state (restart,
+     * crash, LB reroute) tells us to stop. Without this the connection sits
+     * retransmitting until the idle timeout.
+     *
+     * Only called once normal processing has failed, since a reset is by design
+     * indistinguishable from a 1-RTT packet until the token is matched.
+     *
+     * @return true if a reset was recognised and the connection terminated.
+     */
+    bool CheckStatelessReset(const std::vector<std::shared_ptr<IPacket>>& packets);
+
+    // Shortest datagram that could carry a Stateless Reset: 5 unpredictable bytes
+    // plus the 16-byte token (RFC 9000 §10.3).
+    static constexpr uint32_t kMinStatelessResetSize = 21;
+
+    // Peer's Source Connection ID as seen in the first long-header packet it sent.
+    // Captured verbatim because the CID managers rotate over the connection's life,
+    // while §7.3 compares against this first observation.
+    const std::string& GetPeerInitialScid() const { return peer_initial_scid_; }
+    void RecordPeerInitialScid(const uint8_t* id, uint8_t len);
 
 private:
     // Encode the local TransportParam |tp| into a 1024-byte stack buffer and
@@ -330,6 +367,30 @@ public:
     // iteration so lifetime is trivially correct.
     void SetSendSink(std::vector<std::shared_ptr<NetPacket>>* sink) override { emitter_->SetBatchSink(sink); }
 
+    /**
+     * @brief Put the connection under the RFC 9000 §8.1 anti-amplification budget.
+     *
+     * A server MUST call this for every connection created from an Initial packet
+     * whose source address is not yet validated (i.e. one that did not carry a
+     * valid Retry token). Until validation the connection may send at most three
+     * times the bytes it has received, which is what stops a spoofed-source Initial
+     * from eliciting a multi-kilobyte certificate chain at an attacker's victim.
+     *
+     * The budget is lifted automatically once a Handshake packet from the peer is
+     * processed (see DispatchByType).
+     */
+    void EnterUnvalidatedAddressState() { send_manager_.ResetAmpBudget(/*initial_credit=*/0); }
+
+    /**
+     * @brief Lift the §8.1 budget because the peer address is proven.
+     *
+     * Normally driven automatically by processing a Handshake packet; the
+     * accepting worker also calls it directly when the client echoed a valid
+     * Retry token, which validates the address before the handshake completes
+     * (RFC 9000 §8.1.2).
+     */
+    void MarkAddressValidated() { send_manager_.MarkAddressValidated(); }
+
 protected:
     virtual void ThreadTransferBefore() override;
     virtual void ThreadTransferAfter() override;
@@ -379,14 +440,6 @@ protected:
 
     // Full migration API (production use - specify new local address)
     virtual MigrationResult InitiateMigrationTo(const std::string& local_ip, uint16_t local_port = 0) override;
-
-    // Runs the actual migration work on the connection's event-loop thread.
-    // InitiateMigration/InitiateMigrationTo may be called from any thread
-    // (e.g. an application/test migration thread); the migration path touches
-    // per-connection state owned by the event-loop thread (DatagramEmitter
-    // sockets, EventLoop timers, PathManager probe socket), so the work must
-    // be marshaled onto that thread. Mirrors UdpReceiver's RunInLoop pattern.
-    bool InitiateMigrationOnLoop();
 
     // Set callback for migration events
     virtual void SetMigrationCallback(migration_callback cb) override;
@@ -527,6 +580,10 @@ protected:
     // state, so it stays here rather than inside VersionNegotiator — the send
     // path needs it (client first flight must pad to 1200 B, RFC 9000 §14.1).
     const bool is_server_;
+
+    // See GetPeerInitialScid(). Recorded once, on the peer's first long-header packet.
+    std::string peer_initial_scid_;
+    bool peer_initial_scid_recorded_{false};
 };
 
 }  // namespace quic

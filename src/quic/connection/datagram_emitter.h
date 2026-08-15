@@ -60,6 +60,20 @@ public:
      */
     using AddressProvider = std::function<common::Address()>;
 
+    /**
+     * @brief Anti-amplification gate consulted before every outbound datagram.
+     *
+     * RFC 9000 §8.1 requires a server to send at most three times as many bytes
+     * as it has received from an unvalidated address. Because this class is the
+     * sole egress point (see invariant 2 above), enforcing the limit here is what
+     * makes the limit unavoidable rather than advisory: there is no other way for
+     * bytes to reach the wire.
+     *
+     * Receives the full UDP datagram length. Returns false to drop the datagram;
+     * a false return also charges nothing against the budget.
+     */
+    using AmpBudgetCheck = std::function<bool(uint32_t datagram_bytes)>;
+
     DatagramEmitter(SendControl& send_control, AddressProvider addr_provider,
         std::shared_ptr<common::QlogTrace> qlog_trace);
 
@@ -112,6 +126,11 @@ public:
     [[nodiscard]] Scope Open();
 
     void SetSender(std::shared_ptr<ISender> sender) { sender_ = std::move(sender); }
+
+    /**
+     * @brief Install the RFC 9000 §8.1 budget gate. Absent gate == no limit.
+     */
+    void SetAmpBudgetCheck(AmpBudgetCheck cb) { amp_budget_check_ = std::move(cb); }
 
     /**
      * @brief Install the qlog trace. Traces are created after the connection is
@@ -190,6 +209,7 @@ private:
     SendControl& send_control_;
     AddressProvider addr_provider_;
     std::shared_ptr<common::QlogTrace> qlog_trace_;
+    AmpBudgetCheck amp_budget_check_;
 
     std::shared_ptr<ISender> sender_;
     std::vector<std::shared_ptr<NetPacket>>* send_sink_{nullptr};

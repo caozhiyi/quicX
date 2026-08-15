@@ -52,7 +52,7 @@ protected:
     void HandleNegotiationTimeout(uint32_t fd);
 
     // Get negotiated protocol (for HTTPS connections)
-    virtual std::string GetNegotiatedProtocol(std::shared_ptr<ITcpSocket> socket) const { return ""; }
+    virtual std::string GetNegotiatedProtocol(std::shared_ptr<ITcpSocket> /*socket*/) const { return ""; }
 
     // Try to send pending response (handles partial sends)
     void TrySendResponse(ConnectionContext& context);

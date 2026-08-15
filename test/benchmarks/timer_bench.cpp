@@ -1,6 +1,7 @@
 #if defined(QUICX_ENABLE_BENCHMARKS)
 #include <benchmark/benchmark.h>
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 #include <quicx/common/if_timer_scheduler.h>
@@ -36,10 +37,10 @@ namespace common {
 namespace {
 
 // Arm a timer on the core and wrap it in the handle callers actually use.
-inline Timer ArmHandle(TimerCore& core, uint32_t delay_ms, uint64_t now) {
+inline Timer ArmHandle(std::shared_ptr<TimerCore> core, uint32_t delay_ms, uint64_t now) {
     uint32_t gen = 0;
-    uint32_t index = core.Arm([]() {}, {}, /*has_owner=*/false, delay_ms, /*interval_ms=*/0, now, gen);
-    return Timer(&core, index, gen);
+    uint32_t index = core->Arm([]() {}, {}, /*has_owner=*/false, delay_ms, /*interval_ms=*/0, now, gen);
+    return Timer(core, index, gen);
 }
 
 }  // namespace
@@ -62,7 +63,7 @@ static void BM_TreeMap_AddRemove(benchmark::State& state) {
 BENCHMARK(BM_TreeMap_AddRemove);
 
 static void BM_Core_AddRemove(benchmark::State& state) {
-    TimerCore core;
+    auto core = std::make_shared<TimerCore>();
     uint64_t now = UTCTimeMsec();
     for (auto _ : state) {
         Timer t = ArmHandle(core, 100, now);
@@ -96,7 +97,7 @@ static void BM_TreeMap_Reschedule(benchmark::State& state) {
 BENCHMARK(BM_TreeMap_Reschedule);
 
 static void BM_Core_Rearm(benchmark::State& state) {
-    TimerCore core;
+    auto core = std::make_shared<TimerCore>();
     uint64_t now = UTCTimeMsec();
     Timer t = ArmHandle(core, 100, now);
     uint32_t i = 0;
@@ -134,7 +135,7 @@ static void BM_Core_BulkAdd(benchmark::State& state) {
     uint64_t now = UTCTimeMsec();
     for (auto _ : state) {
         state.PauseTiming();
-        TimerCore core;
+        auto core = std::make_shared<TimerCore>();
         std::vector<Timer> handles;
         handles.reserve(N);
         state.ResumeTiming();
@@ -142,7 +143,7 @@ static void BM_Core_BulkAdd(benchmark::State& state) {
         for (int i = 0; i < N; ++i) {
             handles.push_back(ArmHandle(core, static_cast<uint32_t>(10 + (i % 500)), now));
         }
-        benchmark::DoNotOptimize(core.Empty());
+        benchmark::DoNotOptimize(core->Empty());
 
         state.PauseTiming();
         handles.clear();
@@ -180,15 +181,15 @@ static void BM_Core_RunFire(benchmark::State& state) {
     uint64_t now = UTCTimeMsec();
     for (auto _ : state) {
         state.PauseTiming();
-        TimerCore core;
+        auto core = std::make_shared<TimerCore>();
         // Detached timers: no handle, which is what PostDelayed uses and what
         // makes this measure firing rather than handle bookkeeping.
         for (int i = 0; i < N; ++i) {
-            core.ArmDetached([]() {}, 0, now);
+            core->ArmDetached([]() {}, 0, now);
         }
         state.ResumeTiming();
 
-        core.Run(now);  // fires all N
+        core->Run(now);  // fires all N
     }
     state.SetItemsProcessed(state.iterations() * N);
 }
@@ -215,13 +216,13 @@ BENCHMARK(BM_TreeMap_MinTime)->Arg(100)->Arg(1000)->Arg(10000);
 
 static void BM_Core_MinTime(benchmark::State& state) {
     const int N = static_cast<int>(state.range(0));
-    TimerCore core;
+    auto core = std::make_shared<TimerCore>();
     uint64_t now = UTCTimeMsec();
     for (int i = 0; i < N; ++i) {
-        core.ArmDetached([]() {}, static_cast<uint32_t>(10 + (i % 500)), now);
+        core->ArmDetached([]() {}, static_cast<uint32_t>(10 + (i % 500)), now);
     }
     for (auto _ : state) {
-        benchmark::DoNotOptimize(core.MinTime(now));
+        benchmark::DoNotOptimize(core->MinTime(now));
     }
 }
 BENCHMARK(BM_Core_MinTime)->Arg(100)->Arg(1000)->Arg(10000);
@@ -269,13 +270,13 @@ static void BM_Core_Scatter(benchmark::State& state) {
     uint64_t now = UTCTimeMsec();
     for (auto _ : state) {
         state.PauseTiming();
-        TimerCore core;
+        auto core = std::make_shared<TimerCore>();
         state.ResumeTiming();
 
         for (int i = 0; i < N; ++i) {
-            core.ArmDetached([]() {}, ScatterDelay(i), now);
+            core->ArmDetached([]() {}, ScatterDelay(i), now);
         }
-        benchmark::DoNotOptimize(core.MinTime(now));
+        benchmark::DoNotOptimize(core->MinTime(now));
     }
     state.SetItemsProcessed(state.iterations() * N);
 }
@@ -309,18 +310,18 @@ BENCHMARK(BM_TreeMap_MixedTick)->Arg(100)->Arg(1000)->Arg(10000);
 static void BM_Core_MixedTick(benchmark::State& state) {
     const int N = static_cast<int>(state.range(0));
     uint64_t now = UTCTimeMsec();
-    TimerCore core;
+    auto core = std::make_shared<TimerCore>();
     for (int i = 0; i < N; ++i) {
-        core.ArmDetached([]() {}, static_cast<uint32_t>(5 + (i % 20)), now);
+        core->ArmDetached([]() {}, static_cast<uint32_t>(5 + (i % 20)), now);
     }
 
     for (auto _ : state) {
         now += 10;
-        core.Run(now);
+        core->Run(now);
         for (int i = 0; i < N / 10; ++i) {
-            core.ArmDetached([]() {}, static_cast<uint32_t>(5 + (i % 20)), now);
+            core->ArmDetached([]() {}, static_cast<uint32_t>(5 + (i % 20)), now);
         }
-        benchmark::DoNotOptimize(core.MinTime(now));
+        benchmark::DoNotOptimize(core->MinTime(now));
     }
 }
 BENCHMARK(BM_Core_MixedTick)->Arg(100)->Arg(1000)->Arg(10000);

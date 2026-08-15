@@ -45,6 +45,15 @@ public:
     // Set qlog trace for HTTP/3 frame events
     void SetQlogTrace(std::shared_ptr<common::QlogTrace> trace);
 
+    /**
+     * @brief Apply the SETTINGS_MAX_FIELD_SECTION_SIZE we advertised to the peer.
+     *
+     * RFC 9114 §4.2.2 lets a peer send a field section larger than the advertised
+     * limit, so the value is only meaningful if the receiver actually enforces it.
+     * 0 means "no limit".
+     */
+    void SetMaxFieldSectionSize(uint64_t size) { max_field_section_size_ = size; }
+
     virtual void OnData(std::shared_ptr<IBufferRead> data, bool is_last, uint32_t error);
 
 protected:
@@ -93,7 +102,15 @@ private:
     // false when it is still blocked. Safe to call repeatedly.
     void DrainPendingFrames();
 
+    // RFC 9114 §4.2.2 field section size: sum over fields of
+    // (name length + value length + 32). Returns false and reports the error when
+    // the decoded section exceeds our advertised limit.
+    bool EnforceFieldSectionSize();
+
 protected:
+    // SETTINGS_MAX_FIELD_SECTION_SIZE we advertised; 0 disables the check.
+    uint64_t max_field_section_size_{0};
+
     uint64_t header_block_key_{0};
     uint32_t next_section_number_{0};
     std::shared_ptr<QpackEncoder> qpack_encoder_;  // For encoding outgoing headers

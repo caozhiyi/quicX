@@ -276,7 +276,7 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor, Encryptio
         // the STREAM header (worst case: type<=2B + stream_id<=8B + offset
         // <=8B + length<=2B = 20B; round to 24B for safety). This replaces
         // the historical hardcoded 1300 cap which was ~120B smaller than
-        // the visitor's real budget (kVisitorBudget=1420), causing each
+        // the visitor's real budget (kMaxFramePayload=1420), causing each
         // 1500B send_buffer chunk to be split into 1300+200 fragments and
         // halving steady-state datagram payload.
         constexpr uint32_t kStreamHeaderReserve = 24;

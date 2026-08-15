@@ -38,8 +38,15 @@ public:
 
     /**
      * @brief Internal constructor. Use ITimerScheduler::AddTimer instead.
+     *
+     * Takes a shared_ptr to the TimerCore so the handle can hold a *weak*
+     * reference to it. This is what makes the "any thread may destroy or cancel
+     * the handle" contract actually safe: when the owning EventLoop (and thus
+     * its TimerCore) is torn down before a handle is cancelled, the weak_ptr
+     * simply expires and Cancel()/Rearm()/IsActive() become safe no-ops instead
+     * of dereferencing a freed core.
      */
-    Timer(TimerCore* core, uint32_t index, uint32_t gen) noexcept;
+    Timer(std::shared_ptr<TimerCore> core, uint32_t index, uint32_t gen) noexcept;
 
     ~Timer();
 
@@ -67,7 +74,10 @@ public:
     bool Rearm(uint32_t delay_ms, uint64_t now = 0) noexcept;
 
 private:
-    TimerCore* core_ = nullptr;
+    // Weak, not shared: the handle observes the core but must not keep it alive.
+    // The EventLoop owns the core via shared_ptr; once the loop (and therefore
+    // the core) is gone, lock() returns null and every operation is a no-op.
+    std::weak_ptr<TimerCore> core_;
     uint32_t index_ = 0;
     uint32_t gen_ = 0;
 };

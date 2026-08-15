@@ -119,15 +119,15 @@ uint8_t* DecodeVarint(uint8_t* start, uint8_t* end, uint64_t& value) {
 
     value = *p++ & 0x3f;
 
-    if ((size_t)(uend - p) < (len - 1)) {
+    if ((size_t)(uend - p) < (size_t)(len - 1)) {
         return nullptr;
     }
 
+    // The bounds check above already guarantees the remaining len-1 bytes are
+    // available, so the loop must not bail out early: returning a success pointer
+    // mid-way would hand the caller a partially filled value.
     while (--len) {
         value = (value << 8) + *p++;
-        if (p >= end) {
-            return (uint8_t*)p;
-        }
     }
 
     return (uint8_t*)p;

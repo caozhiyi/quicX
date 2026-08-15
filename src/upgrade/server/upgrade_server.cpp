@@ -60,10 +60,7 @@ bool UpgradeServer::AddListener(UpgradeSettings& settings) {
         if (port == 0) {
             return true;  // not requested, skip silently
         }
-        if (port > 65535) {
-            LOG_ERROR("Invalid %s listen port: %u", label, port);
-            return false;
-        }
+        // No upper-bound check: port is uint16_t, so 65535 is already its maximum.
         auto handler = SmartHandlerFactory::CreateHandler(settings, loop, kind);
         if (!handler) {
             LOG_ERROR("Failed to create %s handler", label);

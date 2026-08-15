@@ -165,17 +165,6 @@ std::vector<uint8_t> VersionNegotiator::GenerateHTTP2UpgradeData(const UpgradeSe
         buf.push_back(static_cast<uint8_t>(stream_id & 0xFF));
     };
 
-    // HPACK: literal header field without indexing, name from static table
-    //   first byte: 0000 NNNN where NNNN is the static index (must be < 15);
-    //   followed by value-len (7-bit, H=0) and value bytes.
-    auto append_lit_indexed_name = [](std::vector<uint8_t>& buf, uint8_t static_index, const std::string& value) {
-        // 0x0F = 15, max representable in the 4-bit prefix without overflow
-        // marker; all indexes we use are <= 8 so a single byte is fine.
-        buf.push_back(static_cast<uint8_t>(0x00 | (static_index & 0x0F)));
-        buf.push_back(static_cast<uint8_t>(value.size() & 0x7F));
-        buf.insert(buf.end(), value.begin(), value.end());
-    };
-
     // HPACK: literal header field without indexing, name as literal string
     //   first byte: 0000 0000
     //   then name-len(7bit) name-bytes, value-len(7bit) value-bytes
@@ -206,11 +195,9 @@ std::vector<uint8_t> VersionNegotiator::GenerateHTTP2UpgradeData(const UpgradeSe
     //      8  -> :status: 200
     //      31 -> content-type
     //      28 -> content-length
-    //    But our `append_lit_indexed_name` only encodes 4-bit indexes
-    //    (<=14) in a single byte. For :status:200 we use index 8 directly
-    //    (this becomes "indexed header field representation" 0x88 -- even
-    //    simpler than literal).  For content-type and content-length we
-    //    fall back to literal-name form to keep the encoder trivial.
+    //    For :status:200 we emit index 8 directly, which is the "indexed header
+    //    field representation" 0x88. content-type and content-length use the
+    //    literal-name form to keep the encoder trivial.
 
     std::vector<uint8_t> hdr_block;
     hdr_block.reserve(96);

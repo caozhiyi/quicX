@@ -12,24 +12,24 @@ namespace common {
 namespace {
 
 // Small helper mirroring what EventLoop::AddTimer will do in Task 12.
-Timer Arm(TimerCore& core, std::function<void()> cb, uint32_t delay_ms, uint64_t now) {
+Timer Arm(std::shared_ptr<TimerCore> core, std::function<void()> cb, uint32_t delay_ms, uint64_t now) {
     uint32_t gen = 0;
-    uint32_t index = core.Arm(std::move(cb), {}, false, delay_ms, 0, now, gen);
-    return Timer(&core, index, gen);
+    uint32_t index = core->Arm(std::move(cb), {}, false, delay_ms, 0, now, gen);
+    return Timer(core, index, gen);
 }
 
 TEST(TimerHandleTest, DestructionCancels) {
-    TimerCore core;
-    core.BindLoopThread(std::this_thread::get_id());
+    auto core = std::make_shared<TimerCore>();
+    core->BindLoopThread(std::this_thread::get_id());
     uint64_t now = 1000000;
     int fired = 0;
     {
         Timer timer = Arm(core, [&fired]() { ++fired; }, 50, now);
         EXPECT_TRUE(timer.IsActive());
     }
-    core.Run(now + 100);
+    core->Run(now + 100);
     EXPECT_EQ(0, fired) << "~Timer must cancel the timer";
-    EXPECT_TRUE(core.Empty());
+    EXPECT_TRUE(core->Empty());
 }
 
 TEST(TimerHandleTest, EmptyHandleIsInertAndSafeToCancel) {
@@ -40,8 +40,8 @@ TEST(TimerHandleTest, EmptyHandleIsInertAndSafeToCancel) {
 }
 
 TEST(TimerHandleTest, MoveTransfersOwnership) {
-    TimerCore core;
-    core.BindLoopThread(std::this_thread::get_id());
+    auto core = std::make_shared<TimerCore>();
+    core->BindLoopThread(std::this_thread::get_id());
     uint64_t now = 1000000;
     int fired = 0;
 
@@ -50,13 +50,13 @@ TEST(TimerHandleTest, MoveTransfersOwnership) {
     EXPECT_FALSE(a.IsActive()) << "the moved-from handle must be empty";
     EXPECT_TRUE(b.IsActive());
 
-    core.Run(now + 10);
+    core->Run(now + 10);
     EXPECT_EQ(1, fired) << "moving must not cancel the timer";
 }
 
 TEST(TimerHandleTest, MoveAssignmentCancelsThePreviouslyOwnedTimer) {
-    TimerCore core;
-    core.BindLoopThread(std::this_thread::get_id());
+    auto core = std::make_shared<TimerCore>();
+    core->BindLoopThread(std::this_thread::get_id());
     uint64_t now = 1000000;
     int old_fired = 0;
     int new_fired = 0;
@@ -64,14 +64,14 @@ TEST(TimerHandleTest, MoveAssignmentCancelsThePreviouslyOwnedTimer) {
     Timer holder = Arm(core, [&old_fired]() { ++old_fired; }, 10, now);
     holder = Arm(core, [&new_fired]() { ++new_fired; }, 10, now);
 
-    core.Run(now + 10);
+    core->Run(now + 10);
     EXPECT_EQ(0, old_fired) << "the overwritten timer must have been cancelled";
     EXPECT_EQ(1, new_fired);
 }
 
 TEST(TimerHandleTest, CancelIsIdempotentAndDisablesRearm) {
-    TimerCore core;
-    core.BindLoopThread(std::this_thread::get_id());
+    auto core = std::make_shared<TimerCore>();
+    core->BindLoopThread(std::this_thread::get_id());
     uint64_t now = 1000000;
     int fired = 0;
 
@@ -81,13 +81,13 @@ TEST(TimerHandleTest, CancelIsIdempotentAndDisablesRearm) {
     EXPECT_FALSE(timer.IsActive());
     EXPECT_FALSE(timer.Rearm(10, now)) << "a cancelled handle must not be revivable";
 
-    core.Run(now + 100);
+    core->Run(now + 100);
     EXPECT_EQ(0, fired);
 }
 
 TEST(TimerHandleTest, RearmKeepsTheHandleUsable) {
-    TimerCore core;
-    core.BindLoopThread(std::this_thread::get_id());
+    auto core = std::make_shared<TimerCore>();
+    core->BindLoopThread(std::this_thread::get_id());
     uint64_t now = 1000000;
     int fired = 0;
 
@@ -95,15 +95,15 @@ TEST(TimerHandleTest, RearmKeepsTheHandleUsable) {
     ASSERT_TRUE(timer.Rearm(1000, now));
     EXPECT_TRUE(timer.IsActive());
 
-    core.Run(now + 999);
+    core->Run(now + 999);
     EXPECT_EQ(0, fired);
-    core.Run(now + 1000);
+    core->Run(now + 1000);
     EXPECT_EQ(1, fired);
 }
 
 TEST(TimerHandleTest, DestructionFromAnotherThreadIsSafe) {
-    TimerCore core;
-    core.BindLoopThread(std::this_thread::get_id());
+    auto core = std::make_shared<TimerCore>();
+    core->BindLoopThread(std::this_thread::get_id());
     uint64_t now = 1000000;
     int fired = 0;
 
@@ -114,21 +114,21 @@ TEST(TimerHandleTest, DestructionFromAnotherThreadIsSafe) {
     // use-after-free). With the handle it is just a destructor.
     std::thread([&timer]() { timer.reset(); }).join();
 
-    core.Run(now + 100);
+    core->Run(now + 100);
     EXPECT_EQ(0, fired) << "cross-thread destruction must still cancel";
-    EXPECT_TRUE(core.Empty());
+    EXPECT_TRUE(core->Empty());
 }
 
 TEST(TimerHandleTest, HandleOutlivingClearDegradesToNoOp) {
-    TimerCore core;
-    core.BindLoopThread(std::this_thread::get_id());
+    auto core = std::make_shared<TimerCore>();
+    core->BindLoopThread(std::this_thread::get_id());
     uint64_t now = 1000000;
 
     Timer timer = Arm(core, []() {}, 50, now);
-    core.Clear();
+    core->Clear();
     EXPECT_FALSE(timer.IsActive());
     timer.Cancel();  // must not corrupt the recycled slot
-    EXPECT_TRUE(core.Empty());
+    EXPECT_TRUE(core->Empty());
 }
 
 }  // namespace

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cstring>
 
 #include "common/log/log.h"
@@ -13,8 +14,8 @@ namespace quicx {
 namespace quic {
 
 RecvControl::RecvControl(std::shared_ptr<common::ITimerScheduler> scheduler):
-    scheduler_(scheduler),
     set_timer_(false),
+    scheduler_(scheduler),
     max_ack_delay_(10) {
     memset(pkt_num_largest_recvd_, 0, sizeof(pkt_num_largest_recvd_));
     memset(largest_recv_time_, 0, sizeof(largest_recv_time_));
@@ -41,18 +42,8 @@ void RecvControl::OnPacketRecv(uint64_t time, std::shared_ptr<IPacket> packet) {
     auto ns = CryptoLevel2PacketNumberSpace(packet->GetCryptoLevel());
     uint64_t pkt_num = packet->GetPacketNumber();
 
-    // Update largest received packet number and its receive time.
-    // NOTE: QUIC packet numbers start at 0, but pkt_num_largest_recvd_[ns] is
-    // initialized to 0. The first received packet in a space therefore has
-    // `0 < 0` == false and its receive time was never recorded, leaving
-    // largest_recv_time_[ns] == 0. BuildAckFrame then computed
-    // ack_delay = now - 0 = now (a full epoch-ms timestamp), which overflows
-    // the peer's varint-int decoder ("value too large"). Fix: also record the
-    // time for the very first ACK-eliciting packet in the space (queue empty
-    // before this insert), without changing pkt_num_largest_recvd_'s init value
-    // (which is relied upon by PN recovery in connection_base.cpp).
-    bool is_first_in_space = wait_ack_packet_numbers_[ns].empty();
-    if (is_first_in_space || pkt_num_largest_recvd_[ns] < pkt_num) {
+    // Update largest received packet number
+    if (pkt_num_largest_recvd_[ns] < pkt_num) {
         pkt_num_largest_recvd_[ns] = pkt_num;
         largest_recv_time_[ns] = time;
     }
@@ -179,8 +170,6 @@ std::shared_ptr<IFrame> RecvControl::MayGenerateAckFrame(uint64_t now, PacketNum
     // Limit number of ranges to prevent oversized ACK frames
     // RFC 9000 doesn't specify a hard limit, but we need to fit in MTU
     // 64 ranges is a safe upper bound (approx 64 * 16 bytes = 1KB)
-    const size_t kMaxAckRanges = 64;
-
     if (nums.empty()) {
         return nullptr;
     }
@@ -208,7 +197,7 @@ std::shared_ptr<IFrame> RecvControl::MayGenerateAckFrame(uint64_t now, PacketNum
             if (runs.size() >= kMaxAckRanges) {
                 // Stop collecting ranges if we hit the limit
                 // The remaining packets will be ACKed in the next frame
-                LOG_WARN("RecvControl::MayGenerateAckFrame: hit max ACK ranges limit (%zu), deferring remaining ACKs",
+                LOG_WARN("RecvControl::MayGenerateAckFrame: hit max ACK ranges limit (%u), deferring remaining ACKs",
                     kMaxAckRanges);
                 break;
             }
@@ -324,7 +313,9 @@ std::shared_ptr<IFrame> RecvControl::MayGenerateAckFrame(uint64_t now, PacketNum
 
 void RecvControl::UpdateConfig(const TransportParam& tp) {
     max_ack_delay_ = static_cast<uint32_t>(tp.GetMaxAckDelay());
-    ack_delay_exponent_ = static_cast<uint32_t>(tp.GetackDelayExponent());
+    // Defence in depth against a shift overflow; see SendControl::UpdateConfig.
+    ack_delay_exponent_ = static_cast<uint32_t>(
+        std::min<uint64_t>(tp.GetackDelayExponent(), TransportParam::kMaxAckDelayExponent));
 }
 
 // RFC 9000 Section 13.2.1: Determine if immediate ACK is required

@@ -85,6 +85,19 @@ void DatagramEmitter::CloseBracketAndLog() {
 }
 
 bool DatagramEmitter::Emit(std::shared_ptr<common::IBuffer> buffer, bool bypass_batch) {
+    // RFC 9000 §8.1: enforce the 3x anti-amplification budget before anything
+    // else. Checked ahead of CloseBracketAndLog() so a dropped datagram is not
+    // reported to qlog as sent, while the bracket is still closed on this path
+    // (otherwise the next datagram would inherit a stale datagram_id).
+    if (amp_budget_check_ && buffer && buffer->GetDataLength() > 0) {
+        if (!amp_budget_check_(buffer->GetDataLength())) {
+            LOG_WARN("DatagramEmitter::Emit: blocked %u bytes by anti-amplification limit",
+                buffer->GetDataLength());
+            (void)send_control_.EndSendDatagram();
+            return false;
+        }
+    }
+
     // Close the qlog bracket first, unconditionally — even if the send below
     // fails, the datagram must not stay open.
     CloseBracketAndLog();
@@ -146,7 +159,6 @@ bool DatagramEmitter::Emit(std::shared_ptr<common::IBuffer> buffer, bool bypass_
 
 int32_t DatagramEmitter::SwitchToProbeSocket() {
     const int32_t retired = sockfd_;
-    const int32_t probe = probe_sockfd_;
     sockfd_ = probe_sockfd_;
     probe_sockfd_ = 0;
     return retired;

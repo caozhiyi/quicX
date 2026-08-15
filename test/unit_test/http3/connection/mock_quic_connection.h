@@ -23,6 +23,9 @@ public:
     virtual void SetUserData(void* user_data) { user_data_ = user_data; }
     virtual void* GetUserData() { return user_data_; }
 
+    virtual void SetContext(std::shared_ptr<void> context) { context_ = context; }
+    virtual std::shared_ptr<void> GetContext() { return context_; }
+
     virtual void GetLocalAddr(std::string& addr, uint32_t& port) {}
     virtual void GetRemoteAddr(std::string& addr, uint32_t& port) {}
 
@@ -56,6 +59,7 @@ public:
 
 private:
     void* user_data_;
+    std::shared_ptr<void> context_;
     stream_state_callback stream_state_cb_;
 
     std::weak_ptr<MockQuicConnection> peer_;

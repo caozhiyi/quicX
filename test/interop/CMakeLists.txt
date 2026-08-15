@@ -1,6 +1,7 @@
 # CMakeLists.txt for QUIC interop test programs
 
 cmake_minimum_required(VERSION 3.10)
+add_compile_options(-Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function)
 
 # Interop Server (links http3 library for HTTP/3 support)
 add_executable(interop_server

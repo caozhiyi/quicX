@@ -79,7 +79,15 @@ private:
     // from "stream id 0 was processed" — for fresh connections we emit
     // GOAWAY id 0 to mean "I will process nothing further", per §5.2.
     uint64_t max_seen_bidi_stream_id_ = static_cast<uint64_t>(-1);
-    std::shared_ptr<IQuicServer> quic_server_;
+    // Held weakly on purpose: the QuicServer owns this ServerConnection (via the
+    // IQuicConnection's context_ shared_ptr), so a strong back-reference here
+    // would form a reference cycle (QuicServer -> connection -> ServerConnection
+    // -> QuicServer). That cycle keeps the QuicServer alive until a worker thread
+    // tears down the last connection and then destroys the QuicServer from inside
+    // that worker thread; its destructor then joins the very thread it is running
+    // on -- a self-join that throws "Resource deadlock avoided" (EDEADLK). Lock
+    // before use; it may already be expired (in which case the push timer is moot).
+    std::weak_ptr<IQuicServer> quic_server_;
     // pending settings captured at construction, applied during Init()
     Http3Settings pending_settings_;
     // push responses, push id -> response

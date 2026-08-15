@@ -27,20 +27,14 @@ Server::Server(const Http3Settings& settings):
 Server::~Server() {
     // Synchronously wait for the underlying quic server's master thread
     // to finish before dropping any http-level state. Otherwise the master
-    // thread may still be executing an event-loop callback (e.g. a close/
-    // draining timer fired for a server connection) that transitively
-    // touches conn_map_ / router_ / ServerConnection objects while we are
-    // already in the middle of destroying them.
+    // thread may still be executing an event-loop callback that transitively
+    // touches router_ / ServerConnection objects while we are already in the
+    // middle of destroying them. With the master thread joined we know no
+    // more callbacks will run. ServerConnection objects are owned by their
+    // QUIC connection (via SetContext) and are released when those are
+    // destroyed, so there is nothing to clear here.
     Stop();
     Join();
-    // With the master thread joined we know no more callbacks will run on
-    // our ServerConnection entries. Explicitly drop them so the
-    // shared_ptr<IQuicConnection> chain collapses here, before ~QuicServer
-    // runs and releases the last strong references on the worker side.
-    {
-        std::lock_guard<std::mutex> lock(conn_map_mu_);
-        conn_map_.clear();
-    }
 }
 
 bool Server::Init(const Http3ServerConfig& config) {
@@ -99,7 +93,7 @@ void Server::AddHandler(HttpMethod method, const std::string& path, std::shared_
     router_->AddRoute(method, path, config);
 }
 
-void Server::AddMiddleware(HttpMethod method, MiddlewarePosition mp, const http_handler& handler) {
+void Server::AddMiddleware(HttpMethod /*method*/, MiddlewarePosition mp, const http_handler& handler) {
     if (mp == MiddlewarePosition::kBefore) {
         before_middlewares_.push_back(handler);
     } else {
@@ -113,50 +107,21 @@ void Server::OnConnection(
     uint32_t port;
     conn->GetRemoteAddr(addr, port);
     // unique_id is purely a human-readable label (used by HandleError logging
-    // and the user-facing error_handler_); it MUST NOT be used as the
-    // conn_map_ key because under benchmark workloads many concurrent QUIC
-    // connections legitimately share the same (peer_addr:peer_port) tuple
-    // (loopback ephemeral-port reuse, NAT, multi-stream client). Keying by
-    // the address-string caused two cascading-close bugs in long perf runs
-    // (see analysis 2026-05-29):
-    //   * Insert path: a fresh handshake with the same addr/port silently
-    //     dropped the previous shared_ptr<ServerConnection>.
-    //   * Erase path: a watchdog-fired handshake-timeout close erased the
-    //     wrong, perfectly healthy connection that happened to share the
-    //     same addr/port string, instantly tearing down all in-flight
-    //     business connections on that worker — observable as the 5-10s
-    //     stall + "connection close. error: 0, reason:" storm.
-    // We now key conn_map_ by the underlying IQuicConnection raw pointer,
-    // which is process-uniquely identifying for the lifetime of the QUIC
-    // connection. This mirrors the reverse-lookup-by-pointer fix already in
-    // http3::Client (see client.cpp:230-236).
+    // and the user-facing error_handler_). Per-connection state lives on the
+    // QUIC connection itself: Server::OnConnection binds a shared_ptr<
+    // ServerConnection> to IQuicConnection::SetContext() on connect, so the
+    // transport connection owns the HTTP/3 state for its whole lifetime —
+    // no central per-server map, no cross-thread hashtable races, and no
+    // re-entrant teardown hazard.
     std::string unique_id = addr + ":" + std::to_string(port);
-    void* conn_key = conn.get();
 
-    // Release connections retired by an earlier close callback. This runs
-    // before anything else so the destructors execute on a stack frame that
-    // cannot belong to any of the connections being freed (see the
-    // closing_conns_ comment in server.h).
-    {
-        std::vector<std::shared_ptr<ServerConnection>> reaped;
-        {
-            std::lock_guard<std::mutex> lock(conn_map_mu_);
-            reaped.swap(closing_conns_);
-        }
-    }
 
     if (operation == ConnectionOperation::kConnectionClose) {
         LOG_INFO("connection close. error: %d, reason: %s", error, reason.c_str());
-        // Do NOT let the map erase drop the last reference here: this callback
-        // is routinely reached from inside a ServerConnection method (e.g.
-        // HandleGoaway -> Shutdown -> Close), so destroying now would unwind
-        // into freed memory. Park it for deferred release instead.
-        std::lock_guard<std::mutex> lock(conn_map_mu_);
-        auto it = conn_map_.find(conn_key);
-        if (it != conn_map_.end()) {
-            closing_conns_.push_back(std::move(it->second));
-            conn_map_.erase(it);
-        }
+        // The ServerConnection is owned by the QUIC connection via
+        // SetContext(); it is released when the QUIC connection object is
+        // destroyed — after this callback returns — so there is no map to
+        // erase and nothing to defer. No re-entrant teardown hazard.
         return;
     }
 
@@ -168,34 +133,19 @@ void Server::OnConnection(
     // Initialize connection (starts timers)
     server_conn->Init();
 
-    {
-        std::lock_guard<std::mutex> lock(conn_map_mu_);
-        conn_map_[conn_key] = server_conn;
-    }
+    // Own the ServerConnection from the QUIC connection itself. This ties its
+    // lifetime to the transport connection and removes the need for a central
+    // per-server map (and the races / re-entrant deadlock that came with it).
+    // On close the QUIC connection releases this shared_ptr after
+    // OnConnection(kConnectionClose) has returned.
+    conn->SetContext(std::static_pointer_cast<void>(server_conn));
 }
 
 void Server::HandleError(const std::string& unique_id, uint32_t error_code) {
     LOG_ERROR("handle error. unique_id: %s, error_code: %d", unique_id.c_str(), error_code);
-    // Reverse-lookup: HandleError still uses the human-readable unique_id
-    // string so the user-supplied error_handler_ keeps a stable identity,
-    // but conn_map_ is now keyed by IQuicConnection pointer (see
-    // OnConnection above for why). Walk the map and erase by matching the
-    // ServerConnection's stored unique_id. We hold the lock for the whole
-    // walk so a concurrent OnConnection insert/erase from another worker
-    // thread cannot invalidate our iterator mid-traversal.
-    // Same reasoning as the close path in OnConnection: the error callback is
-    // raised from inside ServerConnection code, so the erase must not be
-    // allowed to run the destructor here. Park the entry for deferred release.
-    {
-        std::lock_guard<std::mutex> lock(conn_map_mu_);
-        for (auto it = conn_map_.begin(); it != conn_map_.end(); ++it) {
-            if (it->second && it->second->GetUniqueId() == unique_id) {
-                closing_conns_.push_back(std::move(it->second));
-                conn_map_.erase(it);
-                break;
-            }
-        }
-    }
+    // The ServerConnection owns the QUIC connection weakly and is itself
+    // owned by the QUIC connection via SetContext(); there is no central map
+    // to walk or erase here. Just forward to the user-supplied error handler.
     if (error_handler_) {
         error_handler_(unique_id, error_code);
     }
@@ -225,7 +175,7 @@ void Server::AfterHandlerProcess(std::shared_ptr<IRequest> request, std::shared_
     }
 }
 
-void Server::OnNotFound(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response) {
+void Server::OnNotFound(std::shared_ptr<IRequest> /*request*/, std::shared_ptr<IResponse> response) {
     response->SetStatusCode(404);
     response->AppendBody(std::string("Not Found"));
 }

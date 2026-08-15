@@ -1,3 +1,5 @@
+#include <thread>
+
 #include "quic/quicx/global_resource.h"
 
 namespace quicx {
@@ -12,11 +14,11 @@ GlobalResource::GlobalResource() {}
 std::shared_ptr<common::BlockMemoryPool> GlobalResource::GetThreadLocalBlockPool() {
     if (!pool_) {
         pool_ = MakeDefaultPool();
-        // Set event loop if already registered for this thread
-        auto loop = thread_event_loop_.lock();
-        if (loop) {
-            pool_->SetEventLoop(loop);
-        }
+        // The pool is thread-local, so this thread is its owner. Mark it so that
+        // cross-thread frees (e.g. a packet buffer allocated here but released on
+        // a worker thread) are deferred to the lock-free handback stack instead of
+        // corrupting the free list.
+        pool_->SetOwnerThread(std::this_thread::get_id());
     }
     return pool_;
 }
@@ -30,9 +32,11 @@ std::shared_ptr<quic::IPacketAllocator> GlobalResource::GetThreadLocalPacketAllo
 
 void GlobalResource::RegisterThreadEventLoop(std::shared_ptr<common::IEventLoop> event_loop) {
     thread_event_loop_ = event_loop;
-    // Also set it on the pool if already created
+    // The pool (if already created) is owned by this thread, which is the one
+    // registering its event loop. Mark ownership so cross-thread frees defer to
+    // the handback stack.
     if (pool_) {
-        pool_->SetEventLoop(event_loop);
+        pool_->SetOwnerThread(std::this_thread::get_id());
     }
 }
 

@@ -89,13 +89,16 @@ private:
     Http3ClientConfig config_;  // Store config for connection timeout
 
     // Track connections that are in closing state
-    bool is_closing_ = false;
+    // These three are touched by both the caller thread (Client::Close) and the
+    // QUIC worker/event-loop thread (connection-close callbacks and the
+    // fallback timer), so they are atomic to avoid TSan data races.
+    std::atomic<bool> is_closing_{false};
     // Number of quic-connections still pending kConnectionClose callback while
     // the client is in graceful-shutdown. When this reaches 0 we can Destroy()
     // the underlying quic client immediately instead of waiting for the
     // kConnectionCloseDestroyTimeoutMs fallback timer.
-    uint32_t pending_close_count_ = 0;
-    bool destroy_scheduled_ = false;
+    std::atomic<uint32_t> pending_close_count_{0};
+    std::atomic<bool> destroy_scheduled_{false};
 
     // Migration callback to forward to all connections
     migration_callback migration_cb_;
@@ -128,6 +131,12 @@ private:
     // This allows multiple requests to wait for the same connection to be established
     // host => queue of waiting requests
     std::unordered_map<std::string, std::queue<WaitRequestContext>> wait_request_map_;
+    // Guards wait_request_map_. Mutated by DoRequest() on the caller (user)
+    // thread AND by the QUIC event-loop/worker thread inside OnConnection()/
+    // OnConnectionComplete() (find/erase/pop) AND cleared by the destructor.
+    // Without a lock the unordered_map's internal state races (hash-table
+    // rehash mid-read, etc.) — a ThreadSanitizer data race.
+    std::mutex wait_request_map_mu_;
 };
 
 }  // namespace http3

@@ -26,6 +26,7 @@ public:
     Address();
     Address(AddressType at);
     Address(const Address& addr);
+    Address& operator=(const Address&) = default;
     Address(const std::string& ip, uint16_t port);
     ~Address();
 

@@ -589,7 +589,21 @@ void TimerCore::FireSlot(uint32_t c0) {
         // Park the node so its handle stays valid across the fire.
         DetachArmed(index, /*destroy=*/false);
 
-        bool skip = slab_[index].it->has_owner && slab_[index].it->owner.expired();
+        // Lock the owner and keep it alive for the whole duration of the callback.
+    // This is the documented contract of the owner guard (if_timer_scheduler.h):
+    // it is what makes it safe for a callback to reference its owning object.
+    // Concretely, even if another thread drops the last external reference to
+    // the owner (e.g. the connection) while this callback is in flight, the
+    // owner cannot be destroyed — and its vptr/state torn — until the callback
+    // returns. Without this, TSan reports a dtor-vs-callback data race.
+    std::shared_ptr<void> owner_guard;
+    bool skip = false;
+    if (slab_[index].it->has_owner) {
+        owner_guard = slab_[index].it->owner.lock();
+        if (!owner_guard) {
+            skip = true;
+        }
+    }
         uint32_t interval = slab_[index].it->interval;
         // Snapshot the release token: if the callback releases this entry and a
         // nested Arm() recycles the slot, the post-fire bookkeeping below must
