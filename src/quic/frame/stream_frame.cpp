@@ -26,10 +26,15 @@ bool StreamFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
         return false;
     }
 
-    // Set length flag when encoding (QUIC typically includes length for proper frame parsing)
-    if (length_ > 0) {
-        frame_type_ |= kLenFlag;
-    }
+    // Always set the Length flag when encoding.
+    // RFC 9000 §19.8: a STREAM frame without a Length field carries data up to
+    // the end of the packet and MUST therefore be the last frame in the packet.
+    // quicx frequently places a zero-length FIN STREAM frame before other frames
+    // (e.g. ACK/PADDING) within the same 1-RTT packet, so omitting the Length
+    // field causes the peer (e.g. quic-go) to mis-parse those trailing bytes as
+    // stream data. Forcing the Length field (even when it is 0) makes the frame
+    // self-delimiting and is fully RFC-compliant.
+    frame_type_ |= kLenFlag;
 
     common::BufferEncodeWrapper wrapper(buffer);
     CHECK_ENCODE_ERROR(wrapper.EncodeVarint(frame_type_), "failed to encode frame type");
@@ -80,11 +85,10 @@ bool StreamFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type
 }
 
 uint32_t StreamFrame::EncodeSize() {
-    // Pre-calculate frame_type with flags that Encode() will set
+    // Pre-calculate frame_type with flags that Encode() will set.
+    // Always include the Length flag (see Encode() for the rationale).
     uint16_t effective_type = frame_type_;
-    if (length_ > 0) {
-        effective_type |= kLenFlag;
-    }
+    effective_type |= kLenFlag;
 
     // frame type encoded as varint
     uint32_t size = common::GetEncodeVarintLength(effective_type);

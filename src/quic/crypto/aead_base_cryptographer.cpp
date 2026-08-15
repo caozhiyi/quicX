@@ -359,7 +359,11 @@ ICryptographer::Result AeadBaseCryptographer::EncryptPacket(uint64_t pkt_number,
     if (EVP_AEAD_CTX_seal(raw, out_span.GetStart(), &out_length, out_span.GetLength(), nonce, write_secret_.iv_.size(),
             plaintext.GetStart(), plaintext.GetLength(), associated_data.GetStart(),
             associated_data.GetLength()) != 1) {
-        LOG_ERROR("EVP_AEAD_CTX_seal failed");
+        // The most common cause is insufficient output space, so report the
+        // budget alongside what the ciphertext plus tag actually needs.
+        LOG_ERROR("EVP_AEAD_CTX_seal failed. pn=%llu max_out=%u inlen=%u needed=%u ad_len=%u",
+            (unsigned long long)pkt_number, (uint32_t)out_span.GetLength(), (uint32_t)plaintext.GetLength(),
+            (uint32_t)(plaintext.GetLength() + aead_tag_length_), (uint32_t)associated_data.GetLength());
         return Result::kEncryptFailed;
     }
     out_ciphertext->MoveWritePt(out_length);
@@ -367,7 +371,7 @@ ICryptographer::Result AeadBaseCryptographer::EncryptPacket(uint64_t pkt_number,
 }
 
 ICryptographer::Result AeadBaseCryptographer::DecryptHeader(common::BufferSpan& ciphertext, common::BufferSpan& sample,
-    uint8_t pn_offset, uint8_t& out_packet_num_len, bool is_short) {
+    uint32_t pn_offset, uint8_t& out_packet_num_len, bool is_short) {
     if (read_secret_.hp_.empty()) {
         LOG_ERROR("decrypt header but not install hp secret");
         return Result::kNotInitialized;
@@ -412,7 +416,7 @@ ICryptographer::Result AeadBaseCryptographer::DecryptHeader(common::BufferSpan& 
 }
 
 ICryptographer::Result AeadBaseCryptographer::EncryptHeader(common::BufferSpan& plaintext, common::BufferSpan& sample,
-    uint8_t pn_offset, size_t pkt_number_len, bool is_short) {
+    uint32_t pn_offset, size_t pkt_number_len, bool is_short) {
     if (write_secret_.hp_.empty()) {
         LOG_ERROR("encrypt header but not install hp secret");
         return Result::kNotInitialized;

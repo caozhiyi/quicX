@@ -1193,9 +1193,26 @@ void BaseConnection::CheckAndReplenishLocalCIDPool() {
 }
 
 bool BaseConnection::InitiateMigration() {
+    // May be invoked from any thread (e.g. a test/application migration
+    // thread). The migration path touches per-connection state owned by the
+    // event-loop thread (DatagramEmitter sockets, EventLoop timers, PathManager
+    // probe socket); running it off-loop races with the worker thread and trips
+    // EventLoop's AssertInLoopThread. Marshal the whole operation onto that
+    // thread, mirroring UdpReceiver::AddReceiver's RunInLoop pattern.
+    auto loop = GetEventLoop();
+    if (!loop) return false;
+    if (loop->IsInLoopThread()) {
+        return InitiateMigrationOnLoop();
+    }
+    loop->RunInLoop([self = shared_from_this()]() { self->InitiateMigrationOnLoop(); });
+    return true;  // async: real outcome reported via the migration callback
+}
+
+bool BaseConnection::InitiateMigrationOnLoop() {
     // RFC 9000 §9 convenience wrapper for interop tests: keep the local IP but
     // let the system pick a fresh ephemeral port. Address-family resolution
     // stays here because it needs peer_addr_ and the cached local address.
+    // Always invoked on the connection's event-loop thread (see InitiateMigration).
     LOG_INFO("InitiateMigration: delegating to MigrationController");
 
     std::string current_ip;
@@ -1220,7 +1237,18 @@ bool BaseConnection::InitiateMigration() {
 }
 
 MigrationResult BaseConnection::InitiateMigrationTo(const std::string& local_ip, uint16_t local_port) {
-    return migration_controller_->InitiateMigrationTo(local_ip, local_port);
+    // Same cross-thread concern as InitiateMigration: the migration path must
+    // run on the connection's event-loop thread. Marshal it there; the real
+    // outcome is also delivered via the migration callback.
+    auto loop = GetEventLoop();
+    if (!loop) return MigrationResult::kFailedInvalidState;
+    if (loop->IsInLoopThread()) {
+        return migration_controller_->InitiateMigrationTo(local_ip, local_port);
+    }
+    loop->RunInLoop([self = shared_from_this(), local_ip, local_port]() {
+        self->migration_controller_->InitiateMigrationTo(local_ip, local_port);
+    });
+    return MigrationResult::kSuccess;  // async: queued onto the event loop
 }
 
 void BaseConnection::SetMigrationCallback(migration_callback cb) {

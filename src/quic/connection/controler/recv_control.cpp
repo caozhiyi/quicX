@@ -41,8 +41,18 @@ void RecvControl::OnPacketRecv(uint64_t time, std::shared_ptr<IPacket> packet) {
     auto ns = CryptoLevel2PacketNumberSpace(packet->GetCryptoLevel());
     uint64_t pkt_num = packet->GetPacketNumber();
 
-    // Update largest received packet number
-    if (pkt_num_largest_recvd_[ns] < pkt_num) {
+    // Update largest received packet number and its receive time.
+    // NOTE: QUIC packet numbers start at 0, but pkt_num_largest_recvd_[ns] is
+    // initialized to 0. The first received packet in a space therefore has
+    // `0 < 0` == false and its receive time was never recorded, leaving
+    // largest_recv_time_[ns] == 0. BuildAckFrame then computed
+    // ack_delay = now - 0 = now (a full epoch-ms timestamp), which overflows
+    // the peer's varint-int decoder ("value too large"). Fix: also record the
+    // time for the very first ACK-eliciting packet in the space (queue empty
+    // before this insert), without changing pkt_num_largest_recvd_'s init value
+    // (which is relied upon by PN recovery in connection_base.cpp).
+    bool is_first_in_space = wait_ack_packet_numbers_[ns].empty();
+    if (is_first_in_space || pkt_num_largest_recvd_[ns] < pkt_num) {
         pkt_num_largest_recvd_[ns] = pkt_num;
         largest_recv_time_[ns] = time;
     }

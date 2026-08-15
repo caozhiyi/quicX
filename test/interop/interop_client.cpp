@@ -781,6 +781,17 @@ int main(int argc, char* argv[]) {
     }
 
     bool is_migration_test = testcase_env && (strcmp(testcase_env, "connectionmigration") == 0);
+    if (!is_migration_test) {
+        // Official TestCaseConnectionMigration sends TESTCASE="transfer" to the
+        // client and distinguishes the test via the "server46" hostname (see
+        // official testcases_quic.py TestCaseConnectionMigration.urlprefix()).
+        for (const auto& u : urls) {
+            if (u.find("server46") != std::string::npos) {
+                is_migration_test = true;
+                break;
+            }
+        }
+    }
 
     std::cout << "========================================" << std::endl;
     std::cout << "quicX hq-interop Client" << std::endl;
@@ -1017,6 +1028,35 @@ int main(int argc, char* argv[]) {
         }
         client2.Shutdown();
         std::cout << "Client finished successfully (two connections)" << std::endl;
+        return 0;
+    }
+
+    // Multiconnect (official TestCaseHandshakeLoss): the official runner expects
+    // `_num_runs` (50) independent handshakes. Each file must be downloaded over
+    // its own connection (not multiplexed on a single connection).
+    if (testcase_env && strcmp(testcase_env, "multiconnect") == 0) {
+        std::cout << "*** Multiconnect test: " << urls.size() << " independent connections ***" << std::endl;
+        int succeeded = 0;
+        for (const auto& url : urls) {
+            HqInteropClient mc_client(downloads_dir, qlog_dir);
+            if (!mc_client.Init()) {
+                return 1;
+            }
+            if (!mc_client.Connect(server, port)) {
+                mc_client.Shutdown();
+                std::cerr << "Connection failed for " << url << std::endl;
+                continue;
+            }
+            if (mc_client.DownloadAll({url})) {
+                succeeded++;
+            }
+            mc_client.Shutdown();
+        }
+        std::cout << "Multiconnect: " << succeeded << "/" << urls.size() << " connections succeeded" << std::endl;
+        if (succeeded != static_cast<int>(urls.size())) {
+            return 1;
+        }
+        std::cout << "Client finished successfully (multiconnect)" << std::endl;
         return 0;
     }
 

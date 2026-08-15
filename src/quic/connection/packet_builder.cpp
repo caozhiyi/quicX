@@ -4,6 +4,7 @@
 #include <cstdio>
 
 #include "common/buffer/single_block_buffer.h"
+#include "common/decode/decode.h"
 #include "common/log/log.h"
 #include "common/util/time.h"
 #include "quicx/common/metrics.h"
@@ -27,6 +28,89 @@
 
 namespace quicx {
 namespace quic {
+
+namespace {
+
+constexpr uint32_t kAeadTagLength = 16;
+// Narrowest packet-number encoding the builder may choose.
+constexpr uint32_t kMinPacketNumberLength = 1;
+
+// Estimate the number of bytes this packet's header occupies ahead of the
+// encrypted payload.
+//
+// `pn_length` is the packet-number encoding to assume. When the caller must
+// clear a lower bound such as the 1200 B floor of RFC 9000 §14.1, pass the
+// narrowest (kMinPacketNumberLength): under-estimating the header only makes
+// us pad *more*, which is safe, whereas over-estimating it would shrink the
+// padding and let the datagram fall below the floor, where the peer silently
+// drops it.
+uint32_t EstimateHeaderOverhead(const PacketBuilder::DataPacketContext& ctx, uint32_t pn_length) {
+    uint32_t dcid_length = 0;
+    if (ctx.remote_cid_manager) {
+        dcid_length = ctx.remote_cid_manager->GetCurrentID().GetLength();
+    }
+    // 1-RTT short header: 1 B flags + DCID (not length-prefixed; the peer
+    // already knows its own CID length) + packet number.
+    if (ctx.level == kApplication) {
+        return 1 + dcid_length + pn_length;
+    }
+
+    uint32_t scid_length = 0;
+    if (ctx.local_cid_manager) {
+        scid_length = ctx.local_cid_manager->GetCurrentID().GetLength();
+    }
+    // Long header: 1 B flags + 4 B version + DCID (1 B len + id) + SCID
+    // (1 B len + id) + 2 B Length varint (payloads here always exceed the
+    // 63 B single-byte range) + packet number.
+    uint32_t overhead = 1 + 4 + 1 + dcid_length + 1 + scid_length + 2 + pn_length;
+    // Only Initial packets carry a token, prefixed by its own varint length.
+    // Post-Retry this dominates the header (e.g. aioquic issues 256 B tokens).
+    if (ctx.level == kInitial) {
+        const uint64_t token_length = ctx.token.length();
+        overhead += common::GetEncodeVarintLength(token_length) + static_cast<uint32_t>(token_length);
+    }
+    return overhead;
+}
+
+// Append a PADDING frame so the encoded datagram reaches the RFC 9000 §14.1
+// on-wire floor `ctx.min_size`.
+//
+// The header estimate, the AEAD tag, and any bytes already in the datagram
+// (`pre_size`, for coalesced packets) form the non-payload part; the rest must
+// be filled by plaintext frames. The PADDING frame itself costs one type byte
+// and is bounded by the payload buffer's `visitor_budget`, so we add only as
+// much padding as actually fits. One extra byte of padding is intentionally
+// kept as headroom against header-size estimation error. When the floor is
+// unreachable we pad to the buffer limit rather than overflowing it.
+void PadToMinSize(const PacketBuilder::DataPacketContext& ctx, FixBufferFrameVisitor& visitor,
+                  uint32_t current_size, uint32_t visitor_budget, uint32_t pre_size) {
+    const uint32_t header_overhead = EstimateHeaderOverhead(ctx, kMinPacketNumberLength);
+    const uint32_t non_payload = pre_size + header_overhead + kAeadTagLength;
+    // Plaintext bytes still needed so the datagram reaches the floor (the +1
+    // headroom lives in the resulting padding below).
+    const int64_t needed = static_cast<int64_t>(ctx.min_size) - static_cast<int64_t>(non_payload) -
+                           static_cast<int64_t>(current_size);
+    if (needed <= 0) {
+        return;  // Already at or above the floor.
+    }
+    // Only (visitor_budget - current_size - 1) bytes of padding content fit
+    // once the PADDING type byte is reserved.
+    const uint32_t room = visitor_budget > current_size + 1 ? visitor_budget - current_size - 1 : 0;
+    const uint32_t padding_length = std::min<uint32_t>(static_cast<uint32_t>(needed), room);
+    if (padding_length == 0) {
+        return;
+    }
+    auto padding_frame = std::make_shared<PaddingFrame>();
+    padding_frame->SetPaddingLength(padding_length);
+    if (!visitor.HandleFrame(padding_frame)) {
+        LOG_WARN("PacketBuilder::BuildDataPacket: failed to add padding frame");
+    } else {
+        LOG_DEBUG("PacketBuilder::BuildDataPacket: added %u bytes padding to reach %u-byte floor (level=%d)",
+            padding_length, ctx.min_size, ctx.level);
+    }
+}
+
+}  // namespace
 
 PacketBuilder::BuildResult PacketBuilder::BuildPacket(const BuildContext& ctx) {
     BuildResult result;
@@ -292,17 +376,7 @@ PacketBuilder::BuildResult PacketBuilder::BuildDataPacket(const DataPacketContex
     // unchanged because they continue to pass add_padding=true with
     // min_size=kMinInitialPacketSize.
     if (ctx.add_padding) {
-        uint32_t current_size = payload_buffer->GetDataLength();
-        if (current_size < ctx.min_size) {
-            auto padding_frame = std::make_shared<PaddingFrame>();
-            padding_frame->SetPaddingLength(ctx.min_size - current_size);
-            if (!visitor.HandleFrame(padding_frame)) {
-                LOG_WARN("PacketBuilder::BuildDataPacket: failed to add padding frame");
-            } else {
-                LOG_DEBUG("PacketBuilder::BuildDataPacket: added %u bytes padding to reach %u bytes (level=%d)",
-                    ctx.min_size - current_size, ctx.min_size, ctx.level);
-            }
-        }
+        PadToMinSize(ctx, visitor, payload_buffer->GetDataLength(), visitor_budget, pre_size);
     }
 
     // 6b. RFC 9001 §5.4.2 minimum-payload guarantee for protected packets.
@@ -408,27 +482,6 @@ PacketBuilder::BuildResult PacketBuilder::BuildDataPacket(const DataPacketContex
     // 13. Set frame type bit for ACK-eliciting detection
     packet->AddFrameTypeBit(static_cast<FrameTypeBit>(visitor.GetFrameTypeBit()));
 
-    // [DIAG-RTX] Snapshot payload bytes BEFORE first-send Encode.
-    // Helps confirm whether the SharedBufferSpan held by `packet->payload_`
-    // still points to the same plaintext bytes when this packet is later
-    // retransmitted (cf. TrySendRetransmit). Format:
-    //   "first-send pn=<pn> level=<lvl> payload_len=<n> chunk=<ptr> head=<hex16>"
-    //
-    // Gated behind QUICX_DIAG_RTX because LOG_INFO + snprintf×16 on every
-    // built data packet costs ~5µs/packet, which dominates BuildDataPacket
-    // at 27k pkts/s. Enable explicitly during retransmit-debug sessions.
-#ifdef QUICX_DIAG_RTX
-    {
-        auto pl = payload_buffer->GetSharedReadableSpan();
-        char head[64] = {0};
-        uint32_t dump_len = pl.GetLength() < 16 ? pl.GetLength() : 16;
-        for (uint32_t i = 0; i < dump_len; ++i) {
-            std::snprintf(head + i * 3, sizeof(head) - i * 3, "%02x ", pl.GetStart()[i]);
-        }
-        LOG_INFO("[DIAG-RTX] first-send pn=%llu level=%d payload_len=%u chunk=%p head=%s", (unsigned long long)pn,
-            ctx.level, pl.GetLength(), (void*)pl.GetChunk().get(), head);
-    }
-#endif
 
     // 14. Encode packet to output buffer
     const uint64_t t2 = common::Metrics::NowUs();
