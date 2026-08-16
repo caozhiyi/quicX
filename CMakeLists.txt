@@ -154,10 +154,18 @@ if(UNIX AND NOT APPLE)
     endif()
 endif()
 
+# Windows system libraries (sockets, crypto, threading primitives).
+# These resolve symbols like __imp__socket, __imp__WSAStartup, __imp__GetLastError,
+# __imp__InitializeSRWLock, __imp__LoadLibraryW, etc. that BoringSSL and quicx use.
+if(WIN32)
+    set(QUICX_WIN_LIBS ws2_32 crypt32 advapi32 user32 gdi32 kernel32)
+endif()
+
 target_link_libraries(quicx
     PUBLIC
         Threads::Threads
         ${FILESYSTEM_LIBRARY}
+        ${QUICX_WIN_LIBS}
     PRIVATE
         crypto
         ssl
@@ -212,6 +220,24 @@ else()
     message(STATUS "qlog support: DISABLED")
 endif()
 
+# Examples and test targets intentionally relax unused-* warnings.
+# GCC/Clang and MSVC use different flag spellings, and (because this function is
+# called from multiple subdirectories that also pull in third-party code such as
+# GoogleTest/Google Benchmark) the wrong flag must never reach MSVC's `cl`.
+# Use generator expressions so the correct spelling is selected per compiler
+# regardless of how MSVC/clang-cl detection resolves at configure time.
+function(quicx_suppress_example_test_unused_warnings)
+    # MSVC (cl.exe) and clang-cl both accept the /wd#### spelling, while GCC and
+    # plain Clang/AppleClang need the -Wno-* spelling. Use generator expressions
+    # keyed on the compiler id / frontend variant so the wrong flag can never
+    # reach MSVC's `cl` (which would fail with D8021). CXX_COMPILER_FRONTEND_VARIANT
+    # is "MSVC" for clang-cl, so it is routed to the /wd branch correctly.
+    add_compile_options(
+        "$<$<OR:$<CXX_COMPILER_ID:MSVC>,$<STREQUAL:$<CXX_COMPILER_FRONTEND_VARIANT>,MSVC>>:/wd4101;/wd4189;/wd4505>"
+        "$<$<AND:$<NOT:$<CXX_COMPILER_ID:MSVC>>,$<NOT:$<STREQUAL:$<CXX_COMPILER_FRONTEND_VARIANT>,MSVC>>>:-Wno-unused-variable;-Wno-unused-but-set-variable;-Wno-unused-function>"
+    )
+endfunction()
+
 # Build examples
 option(BUILD_EXAMPLES "Build examples" ON)
 if(BUILD_EXAMPLES)
@@ -227,7 +253,7 @@ if(ENABLE_TESTING)
 endif()
 
 # Benchmarks
-option(ENABLE_BENCHMARKS "Enable building benchmarks" ON)
+option(ENABLE_BENCHMARKS "Enable building benchmarks" OFF)
 if(ENABLE_BENCHMARKS)
     add_subdirectory(test/benchmarks)
 endif()
@@ -257,7 +283,7 @@ if(ENABLE_INTEROP)
 endif()
 
 # Performance / baseline tests (CPU hotspots, memory baselines, protocol micro-benchmarks)
-option(ENABLE_PERF_TESTS "Enable building perf (test/perf) targets" ON)
+option(ENABLE_PERF_TESTS "Enable building perf (test/perf) targets" OFF)
 if(ENABLE_PERF_TESTS)
     add_subdirectory(test/perf)
 endif()
