@@ -24,8 +24,16 @@ bool RetryPacket::Encode(std::shared_ptr<common::IBuffer> buffer) {
     auto span = buffer->GetWritableSpan();
     uint8_t* start_pos = span.GetStart();
     uint8_t* cur_pos = start_pos;
+    uint8_t* end = span.GetEnd();
 
     // encode retry token
+    // The token length is only bounded by the received packet size, so the
+    // write must be checked against the output buffer capacity.
+    uint32_t need = (retry_token_.Valid() ? retry_token_.GetLength() : 0) + kRetryIntegrityTagLength;
+    if (cur_pos + need > end) {
+        LOG_ERROR("retry packet too large for buffer. need:%u, free:%td", need, end - cur_pos);
+        return false;
+    }
     if (retry_token_.Valid()) {
         std::memcpy(cur_pos, retry_token_.GetStart(), retry_token_.GetLength());
         cur_pos += retry_token_.GetLength();

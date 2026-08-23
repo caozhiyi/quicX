@@ -115,6 +115,9 @@ inline bool ConnectionProcess(std::shared_ptr<IConnection> send_conn, std::share
         return false;
     }
 
+    // Save datagram size BEFORE DecodePackets (which advances read pointer)
+    uint32_t datagram_size = buffer->GetDataLength();
+
     // Decode packets
     std::vector<std::shared_ptr<IPacket>> packets;
     if (!DecodePackets(buffer, packets)) {
@@ -122,7 +125,7 @@ inline bool ConnectionProcess(std::shared_ptr<IConnection> send_conn, std::share
     }
 
     // Deliver to receiver
-    recv_conn->OnPackets(0, packets);
+    recv_conn->OnPackets(0, packets, datagram_size);
     return true;
 }
 

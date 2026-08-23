@@ -131,7 +131,7 @@ uint64_t Deliver(const std::shared_ptr<common::IBuffer>& datagram, const std::sh
     if (!DecodePackets(datagram, packets)) {
         return 0;
     }
-    to->OnPackets(0, packets);
+    to->OnPackets(0, packets, bytes);
     return bytes;
 }
 

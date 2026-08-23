@@ -12,6 +12,19 @@ namespace quicx {
 namespace quic {
 
 class TransportParamConfig;
+
+// RFC 9000 §18.2 preferred_address binary format:
+//   IPv4 (4) + IPv4 port (2) + IPv6 (16) + IPv6 port (2)
+//   + CID length (1) + CID (0-20) + stateless reset token (16)
+struct PreferredAddress {
+    uint8_t ipv4[4] = {0, 0, 0, 0};
+    uint16_t ipv4_port = 0;
+    uint8_t ipv6[16] = {0};
+    uint16_t ipv6_port = 0;
+    std::string cid;                    // 0-20 bytes
+    std::string stateless_reset_token;  // exactly 16 bytes
+};
+
 class TransportParam {
 public:
     TransportParam();
@@ -67,13 +80,40 @@ public:
     uint64_t GetackDelayExponent() const { return ack_delay_exponent_; }
     uint64_t GetMaxAckDelay() const { return max_ack_delay_; }
     bool GetDisableActiveMigration() const { return disable_active_migration_; }
+    // True when the PEER declared disable_active_migration (set by Merge()).
+    // A client consults this to decide whether it may actively migrate to a
+    // new path (RFC 9000 §9.4); it is deliberately separate from
+    // GetDisableActiveMigration(), which reflects OUR local declaration that
+    // we encode on the wire.
+    bool GetPeerDisableActiveMigration() const { return peer_disable_active_migration_; }
+    // Raw wire bytes of the received preferred_address transport parameter
+    // (client side; parse them with ParsePreferredAddressBinary from util.h).
     const std::string& GetPreferredAddress() const { return preferred_address_; }
+    // Local configuration (not negotiated on the wire): client-side periodic
+    // PING keep-alive, RFC 9000 §10.1.2. Interval derives from the negotiated
+    // idle timeout.
+    bool GetEnableKeepAlive() const { return enable_keep_alive_; }
+    // Explicitly configured keep-alive cadence in ms; 0 = derive from the
+    // negotiated idle timeout (max(idle/2, 1 s)).
+    uint32_t GetKeepAliveInterval() const { return keep_alive_interval_ms_; }
     uint64_t GetActiveConnectionIdLimit() const { return active_connection_id_limit_; }
 
-    // Server-only: Set preferred address for client migration suggestion
-    // Format: "ip:port" (e.g., "192.168.1.100:8443")
-    // The server advertises this address to suggest the client migrate to it
-    void SetPreferredAddress(const std::string& addr) { preferred_address_ = addr; }
+    // Client-only: the connection ID carried inside the RFC 9000 §18.2 binary
+    // preferred_address structure. Per §9.6 the client MUST use this CID as the
+    // DCID on the path to the preferred address. Empty unless a binary
+    // preferred_address was received and successfully parsed.
+    void SetPreferredAddressCID(const std::string& cid) { preferred_address_cid_ = cid; }
+    const std::string& GetPreferredAddressCID() const { return preferred_address_cid_; }
+    bool HasPreferredAddressCID() const { return !preferred_address_cid_.empty(); }
+
+    // RFC 9000 §18.2 binary preferred_address (decoded from wire or prepared for encoding).
+    const PreferredAddress& GetPreferredAddressBinary() const { return preferred_address_binary_; }
+    bool HasPreferredAddressBinary() const { return has_preferred_address_binary_; }
+    void SetPreferredAddressBinary(const PreferredAddress& addr) {
+        preferred_address_binary_ = addr;
+        has_preferred_address_binary_ = true;
+    }
+
     const std::string& GetInitialSourceConnectionId() const { return initial_source_connection_id_; }
     const std::string& GetRetrySourceConnectionId() const { return retry_source_connection_id_; }
 
@@ -107,6 +147,10 @@ private:
     uint8_t* DecodeString(uint8_t* start, uint8_t* end, std::string& value);
     uint8_t* DecodeBool(uint8_t* start, uint8_t* end, bool& value);
 
+    // Parse a human-readable "host:port" or "[host]:port" string into the
+    // RFC 9000 §18.2 binary PreferredAddress fields (IPv4/IPv6 + port).
+    bool ParsePreferredAddressString(const std::string& addr_str, PreferredAddress& out);
+
 private:
     std::string original_destination_connection_id_;
     uint64_t max_idle_timeout_;
@@ -126,7 +170,16 @@ private:
     uint64_t ack_delay_exponent_;  // no client
     uint64_t max_ack_delay_;       // no client
     bool disable_active_migration_;
-    std::string preferred_address_;  // no client
+    std::string preferred_address_;  // client: raw wire bytes of the received preferred_address param
+    std::string preferred_address_cid_;  // no client: CID inside binary preferred_address
+    PreferredAddress preferred_address_binary_;
+    bool has_preferred_address_binary_ = false;
+    bool enable_keep_alive_ = false;  // local only, never encoded on the wire
+    uint32_t keep_alive_interval_ms_ = 0;  // local only; 0 = derive from idle timeout
+    // Peer's declared disable_active_migration (captured by Merge()). Kept
+    // separate from disable_active_migration_ (our own wire declaration) so
+    // receiving a peer value can never pollute what we encode.
+    bool peer_disable_active_migration_ = false;
     uint64_t active_connection_id_limit_;
     std::string initial_source_connection_id_;  // no client
     std::string retry_source_connection_id_;    // no client

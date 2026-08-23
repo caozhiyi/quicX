@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.16)
-add_compile_options(-Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function)
+# MSVC / clang-cl reject GCC-style -Wno-* flags (D8021); route to /wd#### instead.
+add_compile_options(
+    "$<$<OR:$<CXX_COMPILER_ID:MSVC>,$<STREQUAL:$<CXX_COMPILER_FRONTEND_VARIANT>,MSVC>>:/wd4101;/wd4189;/wd4505>"
+    "$<$<AND:$<NOT:$<CXX_COMPILER_ID:MSVC>>,$<NOT:$<STREQUAL:$<CXX_COMPILER_FRONTEND_VARIANT>,MSVC>>>:-Wno-unused-variable;-Wno-unused-but-set-variable;-Wno-unused-function>"
+)
 
 # ===========================================================================
 # Performance test targets for quicX
@@ -8,13 +12,14 @@ add_compile_options(-Wno-unused-variable -Wno-unused-but-set-variable -Wno-unuse
 
 include(FetchContent)
 
-# Fetch Google Benchmark (shared with test/benchmarks/)
+# Fetch Google Benchmark via release tarball (no git required — avoids
+# 'Failed to get the hash for HEAD' failures on Windows CI).
 FetchContent_Declare(
   googlebenchmark
-  GIT_REPOSITORY https://github.com/google/benchmark.git
-  GIT_TAG v1.8.3
+  URL https://github.com/google/benchmark/archive/refs/tags/v1.8.3.tar.gz
 )
 set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+set(BENCHMARK_ENABLE_GTEST_TESTS OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googlebenchmark)
 
 # Common compile settings for perf tests

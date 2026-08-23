@@ -13,8 +13,8 @@ namespace quicx {
 namespace quic {
 
 ServerConnection::ServerConnection(std::shared_ptr<TLSCtx> ctx, std::shared_ptr<common::IEventLoop> loop,
-    const std::string& alpn, const ConnectionCallbacks& callbacks):
-    BaseConnection(StreamIDGenerator::StreamStarter::kServer, false, loop, callbacks),
+    const std::string& alpn, const ConnectionCallbacks& callbacks, bool ecn_enabled):
+    BaseConnection(StreamIDGenerator::StreamStarter::kServer, ecn_enabled, loop, callbacks),
     server_alpn_(alpn) {
     tls_connection_ = std::make_shared<TLSServerConnection>(ctx, &connection_crypto_, this);
     if (!tls_connection_->Init()) {

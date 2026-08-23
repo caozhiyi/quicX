@@ -66,6 +66,7 @@ public:
 
     // RFC 9001 Section 6: Key Update support
     void SetKeyUpdateEnabled(bool enabled) { key_update_trigger_.SetEnabled(enabled); }
+    void SetKeyUpdateForced(bool forced) { key_update_trigger_.SetForce(forced); }
     bool TriggerKeyUpdate() { return connection_crypto_.TriggerKeyUpdate(); }
 
     // RFC 9369 / RFC 9368 / RFC 9000 §6: version state lives in
@@ -114,8 +115,16 @@ public:
     // @return true if successfully sent
     bool SendImmediateAck(PacketNumberSpace ns);
 
+    // Send a single-frame probe packet (e.g. PATH_CHALLENGE for path
+    // validation) immediately in 1-RTT, bypassing the send queue and the
+    // end-of-round batch flush. Used when the packet must be the first one
+    // a new path sees, so it cannot wait behind queued frames.
+    // @param frame probe frame to send (PATH_CHALLENGE / PATH_RESPONSE)
+    // @return true if the packet was built and sent
+    bool SendImmediateProbe(const std::shared_ptr<IFrame>& frame);
+
     // handle packets
-    virtual void OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket>>& packets) override;
+    virtual void OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket>>& packets, uint32_t datagram_size) override;
     virtual void SetPendingEcn(uint8_t ecn) override { pending_ecn_ = ecn; }
     virtual EncryptionLevel GetCurEncryptionLevel() override;
 
@@ -155,28 +164,6 @@ public:
     }
     ConnectionStateType GetConnectionStateForTest() const { return state_machine_.GetState(); }
 
-    // Parse a preferred_address transport-parameter value of the form
-    // "host:port", or "[ipv6]:port" for IPv6.
-    //
-    // This value comes off the wire from the peer (TransportParam::Merge
-    // replaces our copy with theirs, and the decoder only bounds-checks the
-    // bytes), so it is attacker-controlled and gets no benefit of the doubt.
-    // The previous implementation,
-    //     std::stoi(pref.substr(pref.find(':') + 1))
-    // threw on ordinary input -- including a legitimate bare IPv6 literal such
-    // as "::1:4433", since find() lands on the first colon -- and nothing in
-    // the connection path catches, so the process aborted.
-    //
-    // A bare (unbracketed) IPv6 literal is rejected rather than guessed at:
-    // "::1:4433" could equally be host "::1" port 4433, or host "::1:4433"
-    // with no port, and picking one silently would be worse than refusing.
-    //
-    // Public and static so it can be tested directly; it needs no connection.
-    //
-    // @return true, and fills |out|, only if the entire string is a non-empty
-    //         host plus a port in [1, 65535].
-    static bool ParsePreferredAddress(const std::string& value, common::Address& out);
-
     uint32_t GetQuicVersionForTest() const { return version_negotiator_->GetVersion(); }
     // The versionConnectionCrypto holds. This is the copy the send path
     // actually reads, so it drifting from GetQuicVersionForTest() would put the
@@ -198,6 +185,13 @@ public:
     virtual void OnStateToClosing() override;
     virtual void OnStateToDraining() override;
     virtual void OnStateToClosed() override;
+
+    // Called from OnPackets after a 1-RTT (application-data) packet is
+    // successfully decrypted and dispatched. The client overrides this to
+    // confirm the handshake per RFC 9000 §4.1.2 (a client MUST consider the
+    // handshake confirmed upon receiving a 1-RTT packet), which is essential
+    // when the HANDSHAKE_DONE frame is lost under packet corruption/loss.
+    virtual void OnApplicationDataPacketProcessed() {}
 
     // IConnectionEventSink - Event interface to replace callbacks
     virtual void OnStreamDataReady(std::shared_ptr<IStream> stream) override;
@@ -567,6 +561,13 @@ protected:
 
     // Sole owner of socket lifecycle across migration (RFC 9000 §9).
     std::unique_ptr<MigrationController> migration_controller_;
+
+    // Preferred address advertised by the server while the connection was
+    // still handshaking; the migration is launched at handshake completion
+    // (see ClientConnection::HandleHandshakeDoneFrame). Valid only while the
+    // string is non-empty.
+    common::Address pending_preferred_addr_;
+    bool has_pending_preferred_addr_ = false;
 
     // Key Update trigger (RFC 9001 Section 6)
     KeyUpdateTrigger key_update_trigger_;

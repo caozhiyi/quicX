@@ -36,6 +36,19 @@ CubicCongestionControl::CubicCongestionControl() {
     Configure({});
 }
 
+void CubicCongestionControl::Reset() {
+    // RFC 9000 §9.4 on path migration: reset to initial window. Preserve
+    // bytes_in_flight_ (those packets are still unacked on the new path) and
+    // the smoothed RTT (pacing needs a sane rate immediately); everything
+    // else (cwnd, recovery, CUBIC epoch, HyStart) restarts from scratch.
+    uint64_t bif = bytes_in_flight_;
+    uint64_t srtt = srtt_us_;
+    Configure(cfg_);
+    bytes_in_flight_ = bif;
+    srtt_us_ = srtt;
+    if (pacer_) pacer_->OnPacingRateUpdated(GetPacingRateBytesPerSec());
+}
+
 void CubicCongestionControl::Configure(const CcConfigV2& cfg) {
     cfg_ = cfg;
     cwnd_bytes_ = cfg_.initial_cwnd_bytes;

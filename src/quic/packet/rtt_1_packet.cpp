@@ -30,14 +30,24 @@ bool Rtt1Packet::Encode(std::shared_ptr<common::IBuffer> buffer) {
     auto span = buffer->GetWritableSpan();
     uint8_t* start_pos = span.GetStart();
     uint8_t* cur_pos = start_pos;
+    uint8_t* end = span.GetEnd();
 
     // encode packet number
+    if (cur_pos + header_.GetPacketNumberLength() > end) {
+        LOG_ERROR("no space for packet number. free:%td", end - cur_pos);
+        return false;
+    }
     cur_pos = PacketNumber::Encode(cur_pos, header_.GetPacketNumberLength(), packet_number_);
 
     // encode payload
     if (!crypto_grapher_) {
         payload_offset_ = cur_pos - start_pos;
         if (payload_.Valid()) {
+            if (cur_pos + payload_.GetLength() > end) {
+                LOG_ERROR("payload too large for buffer. payload_len:%u, free:%td", payload_.GetLength(),
+                    end - cur_pos);
+                return false;
+            }
             std::memcpy(cur_pos, payload_.GetStart(), payload_.GetLength());
             cur_pos += payload_.GetLength();
         }

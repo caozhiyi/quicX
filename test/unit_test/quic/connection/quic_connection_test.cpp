@@ -82,7 +82,7 @@ TEST(QuicConnectionTest, handshake) {
     auto server_sender = AttachMockSender(server_conn);
 
     // Drain each side rather than assume a fixed datagram count: the server
-    // coalesces Initial+Handshake into one datagram (RFC 9000 §12.2).
+    // coalesces Initial+Handshake into one datagram (RFC 9000 ï¿½12.2).
     // client -------init-----> server
     DrainInto(client_conn, server_conn, client_sender);
     // client <--init+handshake-- server
@@ -104,10 +104,12 @@ TEST(QuicConnectionTest, handshake) {
             auto buffer = server_sender->GetLastSentBuffer();
             if (buffer && buffer->GetDataLength() > 0) {
                 std::vector<std::shared_ptr<IPacket>> pkts;
+                uint32_t dgram = buffer->GetDataLength();
                 if (DecodePackets(buffer, pkts)) {
                     for (auto& pkt : pkts) {
                         std::vector<std::shared_ptr<IPacket>> pkt_vec = {pkt};
-                        client_conn->OnPackets(0, pkt_vec);
+                        client_conn->OnPackets(0, pkt_vec, dgram);
+                        dgram = 0; // credit only once per datagram
                     }
                 }
             }
@@ -119,10 +121,12 @@ TEST(QuicConnectionTest, handshake) {
             auto buffer = client_sender->GetLastSentBuffer();
             if (buffer && buffer->GetDataLength() > 0) {
                 std::vector<std::shared_ptr<IPacket>> pkts;
+                uint32_t dgram = buffer->GetDataLength();
                 if (DecodePackets(buffer, pkts)) {
                     for (auto& pkt : pkts) {
                         std::vector<std::shared_ptr<IPacket>> pkt_vec = {pkt};
-                        server_conn->OnPackets(0, pkt_vec);
+                        server_conn->OnPackets(0, pkt_vec, dgram);
+                        dgram = 0; // credit only once per datagram
                     }
                 }
             }
@@ -161,7 +165,7 @@ TEST(QuicConnectionTest, resume_0rtt_basic) {
     auto server_sender = AttachMockSender(server_conn);
 
     // Drain each side rather than assume a fixed datagram count: the server
-    // coalesces Initial+Handshake into one datagram (RFC 9000 §12.2).
+    // coalesces Initial+Handshake into one datagram (RFC 9000 ï¿½12.2).
     // client -------init-----> server
     ASSERT_GT(DrainInto(client_conn, server_conn, client_sender), 0);
     // client <--init+handshake-- server
@@ -206,6 +210,7 @@ TEST(QuicConnectionTest, resume_0rtt_basic) {
     auto buffer1 = client_sender2->GetLastSentBuffer();
     ASSERT_NE(buffer1, nullptr);
     ASSERT_GT(buffer1->GetDataLength(), 0);
+    uint32_t dgram1 = buffer1->GetDataLength();
     std::vector<std::shared_ptr<IPacket>> pkts1;
     ASSERT_TRUE(DecodePackets(buffer1, pkts1));
     ASSERT_FALSE(pkts1.empty());
@@ -215,7 +220,7 @@ TEST(QuicConnectionTest, resume_0rtt_basic) {
     EXPECT_TRUE(packet_type == PacketType::kInitialPacketType || packet_type == PacketType::k0RttPacketType);
 
     // Deliver to server to let it process ClientHello and set up 0-RTT keys
-    server_conn2->OnPackets(0, pkts1);
+    server_conn2->OnPackets(0, pkts1, dgram1);
 
     // Next flight from client should contain 0-RTT (if keys available and stream data queued)
     bool found_0rtt = false;
@@ -229,6 +234,7 @@ TEST(QuicConnectionTest, resume_0rtt_basic) {
         if (!buffern || buffern->GetDataLength() == 0) {
             break;
         }
+        uint32_t dgramn = buffern->GetDataLength();
         std::vector<std::shared_ptr<IPacket>> pktsn;
         ASSERT_TRUE(DecodePackets(buffern, pktsn));
         for (auto& p : pktsn) {
@@ -238,7 +244,9 @@ TEST(QuicConnectionTest, resume_0rtt_basic) {
             }
         }
         // feed to server to advance state even if 0-RTT not yet present
-        if (!pktsn.empty()) server_conn2->OnPackets(0, pktsn);
+        if (!pktsn.empty()) {
+            server_conn2->OnPackets(0, pktsn, dgramn);
+        }
     }
     EXPECT_TRUE(found_0rtt);
     // Drain remaining handshake flights in both directions until server reaches application level
@@ -249,9 +257,10 @@ TEST(QuicConnectionTest, resume_0rtt_basic) {
             if ((server_conn2->TrySendBurst(1) > 0)) {
                 auto buffer = server_sender2->GetLastSentBuffer();
                 if (buffer && buffer->GetDataLength() > 0) {
+                    uint32_t dgram = buffer->GetDataLength();
                     std::vector<std::shared_ptr<IPacket>> pkts;
                     if (DecodePackets(buffer, pkts) && !pkts.empty()) {
-                        client_conn2->OnPackets(0, pkts);
+                        client_conn2->OnPackets(0, pkts, dgram);
                     }
                 }
             }
@@ -262,9 +271,10 @@ TEST(QuicConnectionTest, resume_0rtt_basic) {
             if ((client_conn2->TrySendBurst(1) > 0)) {
                 auto buffer = client_sender2->GetLastSentBuffer();
                 if (buffer && buffer->GetDataLength() > 0) {
+                    uint32_t dgram = buffer->GetDataLength();
                     std::vector<std::shared_ptr<IPacket>> pkts;
                     if (DecodePackets(buffer, pkts) && !pkts.empty()) {
-                        server_conn2->OnPackets(0, pkts);
+                        server_conn2->OnPackets(0, pkts, dgram);
                     }
                 }
             }
@@ -299,7 +309,7 @@ TEST(QuicConnectionTest, reject_0rtt_basic) {
     auto server_sender = AttachMockSender(server_conn);
 
     // Drain each side rather than assume a fixed datagram count: the server
-    // coalesces Initial+Handshake into one datagram (RFC 9000 §12.2).
+    // coalesces Initial+Handshake into one datagram (RFC 9000 ï¿½12.2).
     // client -------init-----> server
     ASSERT_GT(DrainInto(client_conn, server_conn, client_sender), 0);
     // client <--init+handshake-- server
@@ -347,6 +357,7 @@ TEST(QuicConnectionTest, reject_0rtt_basic) {
     auto buffer1 = client_sender2->GetLastSentBuffer();
     ASSERT_NE(buffer1, nullptr);
     ASSERT_GT(buffer1->GetDataLength(), 0);
+    uint32_t dgram1 = buffer1->GetDataLength();
     std::vector<std::shared_ptr<IPacket>> pkts1;
     ASSERT_TRUE(DecodePackets(buffer1, pkts1));
     ASSERT_FALSE(pkts1.empty());
@@ -356,7 +367,7 @@ TEST(QuicConnectionTest, reject_0rtt_basic) {
     EXPECT_TRUE(packet_type == PacketType::kInitialPacketType || packet_type == PacketType::k0RttPacketType);
 
     // Deliver to server to let it process ClientHello and set up 0-RTT keys
-    server_conn2->OnPackets(0, pkts1);
+    server_conn2->OnPackets(0, pkts1, dgram1);
 
     // Next flight from client should contain 0-RTT (if keys available and stream data queued)
     bool found_0rtt = false;
@@ -370,6 +381,7 @@ TEST(QuicConnectionTest, reject_0rtt_basic) {
         if (!buffern || buffern->GetDataLength() == 0) {
             break;
         }
+        uint32_t dgramn = buffern->GetDataLength();
         std::vector<std::shared_ptr<IPacket>> pktsn;
         ASSERT_TRUE(DecodePackets(buffern, pktsn));
         for (auto& p : pktsn) {
@@ -379,7 +391,9 @@ TEST(QuicConnectionTest, reject_0rtt_basic) {
             }
         }
         // feed to server to advance state even if 0-RTT not yet present
-        if (!pktsn.empty()) server_conn2->OnPackets(0, pktsn);
+        if (!pktsn.empty()) {
+            server_conn2->OnPackets(0, pktsn, dgramn);
+        }
     }
     EXPECT_TRUE(found_0rtt);
     EXPECT_NE(server_conn2->GetCurEncryptionLevel(), kApplication);

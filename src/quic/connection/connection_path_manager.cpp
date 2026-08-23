@@ -26,6 +26,7 @@ PathManager::PathManager(Deps deps):
     transport_param_(*deps.transport_param),
     peer_addr_(*deps.peer_addr),
     to_send_frame_cb_(std::move(deps.to_send_frame_cb)),
+    send_probe_now_cb_(std::move(deps.send_probe_now_cb)),
     active_send_cb_(std::move(deps.active_send_cb)),
     set_peer_addr_cb_(std::move(deps.set_peer_addr_cb)),
     path_probe_inflight_(false),
@@ -68,6 +69,11 @@ void PathManager::StartPathValidationProbeInternal(bool dcid_pre_rotated) {
     auto challenge = std::make_shared<PathChallengeFrame>();
     if (!challenge->MakeData()) {
         // Without an unpredictable token the probe proves nothing, so do not send one.
+        // Known edge (accepted): when reached from InitiateMigrationToPeer*
+        // the probe socket is already handed off/registered and the migration
+        // flags are set, leaving a stalled half-state until the connection
+        // closes. Only reachable on RAND_bytes failure (~never); fixing it
+        // would need a controller-level socket-revoke callback.
         LOG_ERROR("PathManager: cannot start path validation, failed to generate challenge token");
         return;
     }
@@ -78,7 +84,19 @@ void PathManager::StartPathValidationProbeInternal(bool dcid_pre_rotated) {
     // Reset anti-amplification budget on send manager
     send_manager_.ResetAmpBudget();
 
-    to_send_frame_cb_(challenge);
+    LOG_DEBUG("PathManager: path validation challenge ready (candidate %s:%d)",
+        candidate_peer_addr_.GetIp().c_str(), candidate_peer_addr_.GetPort());
+    // The PATH_CHALLENGE must be the first packet sent on the new path
+    // (interop runners assert this; RFC 9000 §9 expects path validation
+    // before the path carries data). Send it synchronously, bypassing the
+    // send queue where already-queued stream/ACK frames would otherwise be
+    // packed first. Fall back to queueing when an immediate send is not
+    // possible (e.g. 1-RTT keys not yet installed).
+    const bool sent_now = send_probe_now_cb_ && send_probe_now_cb_(challenge);
+    if (!sent_now) {
+        LOG_DEBUG("PathManager: immediate probe send unavailable, queueing challenge");
+        to_send_frame_cb_(challenge);
+    }
 
     probe_retry_count_ = 0;
     probe_retry_delay_ms_ = kInitialProbeDelayMs;
@@ -140,6 +158,10 @@ void PathManager::OnPathResponse(const uint8_t* data) {
         LOG_INFO("PathManager: path validated successfully, switching from %s:%d to %s:%d", peer_addr_.GetIp().c_str(),
             peer_addr_.GetPort(), candidate_peer_addr_.GetIp().c_str(), candidate_peer_addr_.GetPort());
 
+        // Snapshot the OLD peer BEFORE set_peer_addr_cb_ rewrites peer_addr_:
+        // CompleteMigration() reports old/new endpoints in MigrationInfo, and
+        // peer_addr_ is already the new endpoint by the time it runs.
+        last_old_peer_addr_ = peer_addr_;
         set_peer_addr_cb_(candidate_peer_addr_);
 
         // Rotate to next remote CID (delegated to coordinator). For client-initiated
@@ -260,7 +282,7 @@ MigrationResult PathManager::InitiateMigrationToAddress(const ::quicx::common::A
         local_addr.GetPort());
 
     // 1. Check if migration is disabled by peer
-    if (transport_param_.GetDisableActiveMigration()) {
+    if (transport_param_.GetPeerDisableActiveMigration()) {
         LOG_WARN("PathManager: migration disabled by peer");
         return MigrationResult::kFailedMigrationDisabled;
     }
@@ -324,6 +346,97 @@ MigrationResult PathManager::InitiateMigrationToAddress(const ::quicx::common::A
         new_local_addr_.GetPort(), peer_addr_.GetIp().c_str(), peer_addr_.GetPort());
 
     StartPathValidationProbeInternal(dcid_rotated);  // Only skip CID rotation in OnPathResponse if actually pre-rotated
+
+    return MigrationResult::kSuccess;
+}
+
+void PathManager::SetPreferredConnectionID(const uint8_t* cid, uint16_t len) {
+    if (cid == nullptr || len == 0 || len > kMaxCidLength) {
+        LOG_WARN("PathManager::SetPreferredConnectionID: invalid CID (len=%u), ignoring", len);
+        has_preferred_cid_ = false;
+        return;
+    }
+    memcpy(preferred_cid_bytes_, cid, len);
+    preferred_cid_len_ = len;
+    has_preferred_cid_ = true;
+}
+
+MigrationResult PathManager::InitiateMigrationToPeerAddress(const ::quicx::common::Address& peer_addr) {
+    LOG_INFO("PathManager::InitiateMigrationToPeerAddress: migrating to peer %s:%d", peer_addr.GetIp().c_str(),
+        peer_addr.GetPort());
+
+    // Note: disable_active_migration is deliberately NOT checked here. RFC
+    // 9000 §18.2 scopes that transport parameter to NAT-rebinding-induced
+    // migration only; migrating to an advertised preferred_address is always
+    // permitted. (Do not "fix" this into an InitiateMigrationToAddress-style
+    // symmetry check.)
+
+    // 1. Check if a probe is already in progress
+    if (path_probe_inflight_) {
+        LOG_WARN("PathManager: probe already in progress");
+        return MigrationResult::kFailedProbeInProgress;
+    }
+
+    // 2. Pre-install the new DCID per RFC 9000 §9.5: the first packet on the new
+    //    path must already carry a fresh connection ID (the interop
+    //    connectionmigration check verifies exactly this on the first packet).
+    //    When a preferred_address CID was supplied we install it directly
+    //    (§9.6: this exact CID — not a pooled NEW_CONNECTION_ID CID — is the one
+    //    the client MUST use). Otherwise we rotate to the next pooled CID.
+    bool dcid_pre_rotated = false;
+    if (has_preferred_cid_) {
+        cid_coordinator_.SetRemoteConnectionID(preferred_cid_bytes_, preferred_cid_len_);
+        dcid_pre_rotated = true;
+        LOG_DEBUG("PathManager: using preferred-address CID as DCID for migration");
+    } else {
+        dcid_pre_rotated = cid_coordinator_.RotateRemoteConnectionID();
+        if (!dcid_pre_rotated) {
+            LOG_WARN("PathManager: no available remote CID for migration, aborting");
+            return MigrationResult::kFailedNoAvailableCID;
+        }
+        LOG_DEBUG("PathManager: pre-rotated DCID for preferred-address migration");
+    }
+
+    // 3. Create a socket matching the TARGET's family. The current peer may be
+    //    IPv6 while the preferred address is IPv4 (the classic interop
+    //    scenario), so the family comes from the new address, not peer_addr_.
+    bool target_is_ipv4 = (peer_addr.GetIp().find(':') == std::string::npos);
+    ::quicx::common::Address bind_any(target_is_ipv4 ? "0.0.0.0" : "::", 0);
+    int32_t new_socket = CreateBoundSocket(bind_any, target_is_ipv4);
+    if (new_socket < 0) {
+        LOG_ERROR("PathManager: failed to create socket for preferred-address migration");
+        return MigrationResult::kFailedSocketCreation;
+    }
+
+    // 4. Save old local address for reporting
+    if (get_socket_cb_) {
+        int32_t old_sock = get_socket_cb_();
+        if (old_sock > 0) {
+            common::ParseLocalAddress(old_sock, old_local_addr_);
+        }
+    }
+
+    // 5. Store migration state; the CANDIDATE is the new peer address. Packets
+    //    built while the probe is in flight are sent there (GetSendAddress()
+    //    prefers the candidate), on the new probe socket.
+    is_client_initiated_migration_ = true;
+    migration_start_time_ = common::UTCTimeMsec();
+    candidate_peer_addr_ = peer_addr;
+
+    // 6. Hand the probe socket to its owner (MigrationController): emitter
+    //    prefers it for egress, receiver registers it so the PATH_RESPONSE can
+    //    arrive on it.
+    if (probe_socket_ready_cb_) {
+        probe_socket_ready_cb_(new_socket);
+    }
+
+    LOG_INFO("PathManager: preferred-address migration initiated, local: %s:%d -> %s:%d, peer: %s:%d -> %s:%d",
+        old_local_addr_.GetIp().c_str(), old_local_addr_.GetPort(), new_local_addr_.GetIp().c_str(),
+        new_local_addr_.GetPort(), peer_addr_.GetIp().c_str(), peer_addr_.GetPort(), peer_addr.GetIp().c_str(),
+        peer_addr.GetPort());
+
+    // 7. Start path validation with the pre-installed DCID
+    StartPathValidationProbeInternal(dcid_pre_rotated);
 
     return MigrationResult::kSuccess;
 }
@@ -392,16 +505,17 @@ void PathManager::ScheduleProbeRetry() {
             if (!path_probe_inflight_) {
                 return;
             }
+            // Re-send the SAME challenge token on every retry. Regenerating it
+            // here desynchronizes the wire from pending_path_challenge_data_
+            // whenever a datagram is dropped by the anti-amplification gate
+            // (the frame is enqueued but never transmitted): the peer then
+            // responds with an older token and OnPathResponse ignores it
+            // forever, so validation can never complete (observed as "path
+            // validation failed after 5 attempts" on every NAT rebind).
             auto challenge = std::make_shared<PathChallengeFrame>();
-            if (!challenge->MakeData()) {
-                // Keep the probe pending and try again on the next scheduled retry.
-                LOG_ERROR("PathManager: failed to generate challenge token, deferring retry");
-                ScheduleProbeRetry();
-                return;
-            }
+            memcpy(challenge->GetData(), pending_path_challenge_data_, 8);
             LOG_DEBUG("PathManager: retrying path validation (attempt %d/%d) to %s:%d", probe_retry_count_ + 1,
                 kMaxProbeRetries, candidate_peer_addr_.GetIp().c_str(), candidate_peer_addr_.GetPort());
-            memcpy(pending_path_challenge_data_, challenge->GetData(), 8);
             to_send_frame_cb_(challenge);
             ScheduleProbeRetry();
         },
@@ -417,8 +531,8 @@ void PathManager::CompleteMigration() {
     info.old_local_port_ = old_local_addr_.GetPort();
     info.new_local_ip_ = new_local_addr_.GetIp();
     info.new_local_port_ = new_local_addr_.GetPort();
-    info.old_peer_ip_ = peer_addr_.GetIp();
-    info.old_peer_port_ = peer_addr_.GetPort();
+    info.old_peer_ip_ = last_old_peer_addr_.GetIp();
+    info.old_peer_port_ = last_old_peer_addr_.GetPort();
     info.new_peer_ip_ = peer_addr_.GetIp();
     info.new_peer_port_ = peer_addr_.GetPort();
     info.migration_start_time_ = migration_start_time_;
@@ -503,9 +617,12 @@ void PathManager::CleanupMigrationState() {
     migration_start_time_ = 0;
 }
 
-int32_t PathManager::CreateBoundSocket(const ::quicx::common::Address& local_addr) {
-    // Determine if peer is IPv4 or IPv6 to create matching socket type
-    bool peer_is_ipv4 = (peer_addr_.GetIp().find(':') == std::string::npos);
+int32_t PathManager::CreateBoundSocket(const ::quicx::common::Address& local_addr, std::optional<bool> force_ipv4) {
+    // Determine socket family: an explicit override wins (preferred-address
+    // migration can cross families, e.g. current peer IPv6, target IPv4);
+    // otherwise match the current peer.
+    bool peer_is_ipv4 =
+        force_ipv4.has_value() ? *force_ipv4 : (peer_addr_.GetIp().find(':') == std::string::npos);
 
     // Create the right kind of UDP socket. UdpSocket*() returns the actual
     // address family of the resulting fd, which we forward to Bind() so that

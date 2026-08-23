@@ -28,6 +28,15 @@ void RenoCongestionControl::Configure(const CcConfigV2& cfg) {
     }
 }
 
+void RenoCongestionControl::Reset() {
+    // RFC 9000 §9.4 on path migration: back to the initial window (see
+    // CubicCongestionControl::Reset). bytes_in_flight_ and srtt are preserved.
+    uint64_t bif = bytes_in_flight_;
+    Configure(cfg_);
+    bytes_in_flight_ = bif;
+    if (pacer_) pacer_->OnPacingRateUpdated(GetPacingRateBytesPerSec());
+}
+
 void RenoCongestionControl::OnPacketSent(const SentPacketEvent& ev) {
     uint64_t old_bytes_in_flight = bytes_in_flight_;
     bytes_in_flight_ += ev.bytes;

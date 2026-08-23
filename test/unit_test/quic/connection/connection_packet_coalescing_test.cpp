@@ -81,12 +81,13 @@ static size_t SendAndDeliverDatagram(std::shared_ptr<IConnection> send_conn, std
         return 0;
     }
 
+    uint32_t dgram = buffer->GetDataLength();
     std::vector<std::shared_ptr<IPacket>> packets;
     if (!DecodePackets(buffer, packets)) {
         return 0;
     }
 
-    recv_conn->OnPackets(0, packets);
+    recv_conn->OnPackets(0, packets, dgram);
     return packets.size();
 }
 
@@ -324,9 +325,10 @@ TEST(QuicConnectionCoalescingTest, server_coalesce_initial_handshake_one_datagra
     {
         auto buf = client_sender->GetLastSentBuffer();
         ASSERT_TRUE(buf != nullptr);
+        uint32_t dgram = buf->GetDataLength();
         std::vector<std::shared_ptr<IPacket>> pkts;
         ASSERT_TRUE(DecodePackets(buf, pkts));
-        server_conn->OnPackets(0, pkts);
+        server_conn->OnPackets(0, pkts, dgram);
     }
 
     // 2) Server → client. Drive the burst entry which runs the

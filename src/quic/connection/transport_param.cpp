@@ -1,10 +1,17 @@
 #include <set>
 
+#ifdef _WIN32
+#include <ws2tcpip.h>
+#else
+#include <arpa/inet.h>
+#endif
+
 #include "common/decode/decode.h"
 #include "common/log/log.h"
 
 #include "quic/connection/transport_param.h"
 #include "quic/connection/type.h"
+#include "quic/connection/util.h"
 
 namespace quicx {
 namespace quic {
@@ -64,6 +71,8 @@ void TransportParam::Init(const QuicTransportParams& conf) {
     max_idle_timeout_ = conf.max_idle_timeout_ms_;
     stateless_reset_token_ = conf.stateless_reset_token_;
     max_udp_payload_size_ = conf.max_udp_payload_size_;
+    enable_keep_alive_ = conf.enable_keep_alive_;
+    keep_alive_interval_ms_ = conf.keep_alive_interval_ms_;
     initial_max_data_ = conf.initial_max_data_;
     initial_max_stream_data_bidi_local_ = conf.initial_max_stream_data_bidi_local_;
     initial_max_stream_data_bidi_remote_ = conf.initial_max_stream_data_bidi_remote_;
@@ -73,7 +82,27 @@ void TransportParam::Init(const QuicTransportParams& conf) {
     ack_delay_exponent_ = conf.ack_delay_exponent_ms_;
     max_ack_delay_ = conf.max_ack_delay_ms_;
     disable_active_migration_ = conf.disable_active_migration_;
-    preferred_address_ = conf.preferred_address_;
+    // Parse the human-readable string(s) into RFC 9000 §18.2 binary fields.
+    // CID and stateless reset token are filled later by AddTransportParam().
+    // Each configured family fills the matching field of one shared struct so
+    // both families can be advertised at once.
+    if (!conf.preferred_address_v4_.empty() || !conf.preferred_address_v6_.empty()) {
+        PreferredAddress pa;
+        bool ok = true;
+        if (!conf.preferred_address_v4_.empty()) {
+            ok &= ParsePreferredAddressString(conf.preferred_address_v4_, pa);
+        }
+        if (!conf.preferred_address_v6_.empty()) {
+            ok &= ParsePreferredAddressString(conf.preferred_address_v6_, pa);
+        }
+        if (ok) {
+            preferred_address_binary_ = std::move(pa);
+            has_preferred_address_binary_ = true;
+        } else {
+            LOG_ERROR("TransportParam::Init: failed to parse preferred_address. v4:%s v6:%s",
+                conf.preferred_address_v4_.c_str(), conf.preferred_address_v6_.c_str());
+        }
+    }
     active_connection_id_limit_ = conf.active_connection_id_limit_;
     initial_source_connection_id_ = conf.initial_source_connection_id_;
     retry_source_connection_id_ = conf.retry_source_connection_id_;
@@ -102,8 +131,16 @@ bool TransportParam::Merge(const TransportParam& tp) {
     initial_max_streams_uni_ = tp.initial_max_streams_uni_;
     ack_delay_exponent_ = tp.ack_delay_exponent_;
     max_ack_delay_ = tp.max_ack_delay_;
-    disable_active_migration_ = disable_active_migration_ || tp.disable_active_migration_;
+    // disable_active_migration is a per-direction declaration: whatever the
+    // peer declared belongs to peer state. Do NOT OR it into
+    // disable_active_migration_ — that field is OUR wire declaration, and
+    // OR-ing here would make us (and, via resumption caching, later
+    // connections) wrongly advertise disable_active_migration to future peers.
+    peer_disable_active_migration_ = tp.disable_active_migration_;
     preferred_address_ = tp.preferred_address_;
+    preferred_address_cid_ = tp.preferred_address_cid_;
+    preferred_address_binary_ = tp.preferred_address_binary_;
+    has_preferred_address_binary_ = tp.has_preferred_address_binary_;
     active_connection_id_limit_ = tp.active_connection_id_limit_;
     initial_source_connection_id_ = tp.initial_source_connection_id_;
     retry_source_connection_id_ = tp.retry_source_connection_id_;
@@ -210,8 +247,22 @@ bool TransportParam::Encode(const common::BufferSpan& buffer, size_t& bytes_writ
         if (pos == nullptr) return false;
     }
 
-    if (!preferred_address_.empty()) {
-        pos = EncodeString(pos, end, preferred_address_, static_cast<uint32_t>(TransportParamType::kPreferredAddress));
+    if (has_preferred_address_binary_) {
+        // RFC 9000 §18.2 binary format:
+        // IPv4(4) + port(2) + IPv6(16) + port(2) + cid_len(1) + cid + token(16)
+        const PreferredAddress& pa = preferred_address_binary_;
+        std::string binary;
+        binary.reserve(41 + pa.cid.size());
+        binary.append(reinterpret_cast<const char*>(pa.ipv4), 4);
+        binary.push_back(static_cast<char>((pa.ipv4_port >> 8) & 0xFF));
+        binary.push_back(static_cast<char>(pa.ipv4_port & 0xFF));
+        binary.append(reinterpret_cast<const char*>(pa.ipv6), 16);
+        binary.push_back(static_cast<char>((pa.ipv6_port >> 8) & 0xFF));
+        binary.push_back(static_cast<char>(pa.ipv6_port & 0xFF));
+        binary.push_back(static_cast<char>(pa.cid.size()));
+        binary.append(pa.cid);
+        binary.append(pa.stateless_reset_token);
+        pos = EncodeString(pos, end, binary, static_cast<uint32_t>(TransportParamType::kPreferredAddress));
         if (pos == nullptr) return false;
     }
 
@@ -387,6 +438,17 @@ bool TransportParam::Decode(const common::BufferSpan& buffer, bool received_by_s
             case TransportParamType::kPreferredAddress:
                 pos = DecodeString(pos, end, preferred_address_);
                 if (pos == nullptr) return false;
+                // RFC 9000 §18.2: the value must be a valid binary
+                // preferred_address structure. Only the layout is validated
+                // here; the connection layer re-parses the raw bytes on
+                // demand with its own address-family choice (see
+                // ConnectionBase::HandleTransportParams).
+                if (!ValidatePreferredAddressBinary(preferred_address_)) {
+                    LOG_ERROR("TransportParam: malformed preferred_address binary. len:%zu",
+                        preferred_address_.size());
+                    return false;
+                }
+                has_preferred_address_binary_ = true;
                 break;
             case TransportParamType::kActiveConnectionIdLimit:
                 pos = DecodeUint(pos, end, active_connection_id_limit_);
@@ -546,8 +608,12 @@ uint32_t TransportParam::EncodeSize() {
     if (disable_active_migration_) {
         size += bool_param_size(static_cast<uint32_t>(TransportParamType::kDisableActiveMigration));
     }
-    if (!preferred_address_.empty()) {
-        size += string_param_size(static_cast<uint32_t>(TransportParamType::kPreferredAddress), preferred_address_);
+    if (has_preferred_address_binary_) {
+        // RFC 9000 §18.2: IPv4(4) + port(2) + IPv6(16) + port(2) + cid_len(1) + cid + token(16)
+        uint32_t pa_size = 4 + 2 + 16 + 2 + 1 + static_cast<uint32_t>(preferred_address_binary_.cid.size()) + 16;
+        size += common::GetEncodeVarintLength(
+                    static_cast<uint32_t>(TransportParamType::kPreferredAddress)) +
+                common::GetEncodeVarintLength(pa_size) + pa_size;
     }
     if (active_connection_id_limit_) {
         size += uint_param_size(
@@ -673,6 +739,46 @@ uint8_t* TransportParam::DecodeBool(uint8_t* start, uint8_t* end, bool& value) {
     }
     value = varint > 0;
     return start;
+}
+
+// Fills only the address family of |addr_str| (ipv4 or ipv6) inside |out|;
+// the other family's fields are left untouched so callers can assemble a
+// dual-family PreferredAddress from two strings.
+bool TransportParam::ParsePreferredAddressString(const std::string& addr_str, PreferredAddress& out) {
+    common::Address addr;
+    if (!ParsePreferredAddress(addr_str, addr)) {
+        return false;
+    }
+
+    // Pull the binary bytes straight from the sockaddr form that
+    // common::Address already knows how to build (EnsureSockaddrCache).
+    if (addr.IsIPv4()) {
+        if (!addr.EnsureSockaddrCache(AF_INET)) {
+            return false;
+        }
+        socklen_t sa_len = 0;
+        const struct sockaddr* sa = addr.GetCachedSockaddr(AF_INET, sa_len);
+        if (sa == nullptr) {
+            return false;
+        }
+        memcpy(out.ipv4, &reinterpret_cast<const sockaddr_in*>(sa)->sin_addr, sizeof(out.ipv4));
+        out.ipv4_port = addr.GetPort();
+    } else if (addr.IsIPv6()) {
+        if (!addr.EnsureSockaddrCache(AF_INET6)) {
+            return false;
+        }
+        socklen_t sa_len = 0;
+        const struct sockaddr* sa = addr.GetCachedSockaddr(AF_INET6, sa_len);
+        if (sa == nullptr) {
+            return false;
+        }
+        memcpy(out.ipv6, &reinterpret_cast<const sockaddr_in6*>(sa)->sin6_addr, sizeof(out.ipv6));
+        out.ipv6_port = addr.GetPort();
+    } else {
+        return false;
+    }
+
+    return true;
 }
 
 }  // namespace quic

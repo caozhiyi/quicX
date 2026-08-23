@@ -212,6 +212,151 @@ TEST_F(RecvStreamTest, RecvDuplicateData) {
     EXPECT_FALSE(recv_callback_called_);
 }
 
+// Test 1.5b: RFC 9000 §2.2 — overlapping STREAM frames. A loss-recovering
+// sender re-segments stream data, so a retransmission may start below
+// except_offset_ yet carry new bytes past it. The receiver must trim the
+// already-received prefix and deliver the new tail; dropping the frame whole
+// permanently stalls the stream (interop tail-stall deadlock).
+TEST_F(RecvStreamTest, RecvOverlappingReassembly) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
+    auto stream =
+        std::make_shared<RecvStream>(event_loop, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
+
+    static const std::string kFlow = "0123456789ABCDEFGHIJKLMN"; // 24 bytes
+    std::string delivered;
+    bool last_flag = false;
+    stream->SetStreamReadCallBack([&](std::shared_ptr<IBufferRead> buffer, bool is_last, uint32_t err) {
+        if (is_last) last_flag = true;
+        if (buffer) {
+            std::string tmp(buffer->GetDataLength(), '\0');
+            buffer->Read(reinterpret_cast<uint8_t*>(tmp.data()), tmp.size());
+            delivered.append(tmp);
+        }
+    });
+
+    auto make_frame = [](uint64_t offset, uint64_t len, bool fin) {
+        auto frame = std::make_shared<StreamFrame>();
+        frame->SetStreamID(5);
+        frame->SetOffset(offset);
+        if (fin) frame->SetFin();
+        auto data_buffer =
+            std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(len));
+        data_buffer->Write(reinterpret_cast<const uint8_t*>(kFlow.data() + offset), len);
+        frame->SetData(data_buffer->GetSharedReadableSpan());
+        return frame;
+    };
+
+    // Frame 1: [10,20) arrives out of order -> queued.
+    ASSERT_TRUE(stream->OnFrame(make_frame(10, 10, false)));
+
+    // Frame 2: [0,15) in-order head; also overlaps the queued [10,20) frame.
+    // Advances except_offset_ to 15, then the queued frame must be
+    // prefix-trimmed (5 bytes dropped) and absorbed to 20.
+    ASSERT_TRUE(stream->OnFrame(make_frame(0, 15, false)));
+
+    // Frame 3: [18,24) with FIN — partially overlaps except_offset_(20):
+    // trim 2 bytes, deliver [20,24), final_offset == 24 -> is_last.
+    ASSERT_TRUE(stream->OnFrame(make_frame(18, 6, true)));
+
+    EXPECT_EQ(delivered, kFlow);
+    EXPECT_TRUE(last_flag);
+}
+
+// Test 1.5c: exact interop sequence — hole filled by contiguous frame while
+// six frames sit in the out-of-order queue; absorption must drain all of them.
+TEST_F(RecvStreamTest, RecvOverlappingAbsorbQueue) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
+    auto stream =
+        std::make_shared<RecvStream>(event_loop, 100000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
+
+    std::string kFlow(13000, 'x');
+    for (size_t i = 0; i < kFlow.size(); i++) kFlow[i] = 'A' + (i % 26);
+    std::string delivered;
+    bool last_flag = false;
+    stream->SetStreamReadCallBack([&](std::shared_ptr<IBufferRead> buffer, bool is_last, uint32_t err) {
+        if (is_last) last_flag = true;
+        if (buffer) {
+            std::string tmp(buffer->GetDataLength(), '\0');
+            buffer->Read(reinterpret_cast<uint8_t*>(tmp.data()), tmp.size());
+            delivered.append(tmp);
+        }
+    });
+
+    auto make_frame = [&kFlow](uint64_t offset, uint64_t len, bool fin) {
+        auto frame = std::make_shared<StreamFrame>();
+        frame->SetStreamID(5);
+        frame->SetOffset(offset);
+        if (fin) frame->SetFin();
+        auto data_buffer =
+            std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(len));
+        data_buffer->Write(reinterpret_cast<const uint8_t*>(kFlow.data() + offset), len);
+        frame->SetData(data_buffer->GetSharedReadableSpan());
+        return frame;
+    };
+
+    // In-order [0,2126) then [2126,3432)
+    ASSERT_TRUE(stream->OnFrame(make_frame(0, 2126, false)));
+    ASSERT_TRUE(stream->OnFrame(make_frame(2126, 1306, false)));
+    // Six frames buffered out-of-order: [4738 ... 12574)
+    ASSERT_TRUE(stream->OnFrame(make_frame(4738, 1306, false)));
+    ASSERT_TRUE(stream->OnFrame(make_frame(6044, 1306, false)));
+    ASSERT_TRUE(stream->OnFrame(make_frame(7350, 1306, false)));
+    ASSERT_TRUE(stream->OnFrame(make_frame(8656, 1306, false)));
+    ASSERT_TRUE(stream->OnFrame(make_frame(9962, 1306, false)));
+    ASSERT_TRUE(stream->OnFrame(make_frame(11268, 1306, false)));
+    // Hole-filling contiguous frame [3432,4738) — must drain the whole queue.
+    ASSERT_TRUE(stream->OnFrame(make_frame(3432, 1306, false)));
+
+    EXPECT_EQ(delivered, kFlow.substr(0, 12574)) << "delivered len=" << delivered.size();
+    EXPECT_FALSE(last_flag);
+}
+
+// Test 1.5d: zero-length FIN-only frame after all data was delivered —
+// quic-go resends a bare FIN under loss; it must complete the stream.
+TEST_F(RecvStreamTest, RecvFinOnlyAfterAllData) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
+    auto stream =
+        std::make_shared<RecvStream>(event_loop, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
+
+    static const std::string kFlow = "0123456789ABCDEFGHIJKLMN"; // 24 bytes
+    std::string delivered;
+    bool last_flag = false;
+    stream->SetStreamReadCallBack([&](std::shared_ptr<IBufferRead> buffer, bool is_last, uint32_t err) {
+        if (is_last) last_flag = true;
+        if (buffer) {
+            std::string tmp(buffer->GetDataLength(), '\0');
+            buffer->Read(reinterpret_cast<uint8_t*>(tmp.data()), tmp.size());
+            delivered.append(tmp);
+        }
+    });
+
+    auto make_frame = [](uint64_t offset, uint64_t len, bool fin) {
+        auto frame = std::make_shared<StreamFrame>();
+        frame->SetStreamID(5);
+        frame->SetOffset(offset);
+        if (fin) frame->SetFin();
+        if (len > 0) {
+            auto data_buffer =
+                std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(len));
+            data_buffer->Write(reinterpret_cast<const uint8_t*>(kFlow.data() + offset), len);
+            frame->SetData(data_buffer->GetSharedReadableSpan());
+        }
+        return frame;
+    };
+
+    // All data delivered in-order first.
+    ASSERT_TRUE(stream->OnFrame(make_frame(0, 24, false)));
+    // Then a bare FIN arrives separately: offset == except_offset_ == final.
+    // Returns 0 bytes processed, which is legal (not an error).
+    stream->OnFrame(make_frame(24, 0, true));
+
+    EXPECT_EQ(delivered, kFlow);
+    EXPECT_TRUE(last_flag);
+}
+
 // Test 1.6: exceeds flow control limit
 TEST_F(RecvStreamTest, RecvDataExceedsLimit) {
     auto event_loop = common::MakeEventLoop();

@@ -138,10 +138,20 @@ bool QuicServer::Init(const QuicServerConfig& config) {
     }
 
     auto sender = ISender::MakeSender();
+
+    // One shared RetryTokenManager for ALL workers: the master dispatches by
+    // DCID hash, so the Initial carrying a Retry token can arrive on a worker
+    // different from the one that issued it. All workers must therefore sign
+    // and validate tokens with the same secret.
+    std::shared_ptr<RetryTokenManager> shared_retry_token_manager;
+    if (config.retry_policy_ != RetryPolicy::NEVER) {
+        shared_retry_token_manager = std::make_shared<RetryTokenManager>();
+    }
+
     worker_map_.reserve(config.config_.worker_thread_num_);
     if (config.config_.thread_mode_ == ThreadMode::kSingleThread) {
-        auto worker =
-            std::make_shared<ServerWorker>(config, tls_ctx, sender, params_, connection_state_cb_, master_event_loop_);
+        auto worker = std::make_shared<ServerWorker>(config, tls_ctx, sender, params_, connection_state_cb_,
+            master_event_loop_, shared_retry_token_manager);
         master_event_loop_->RunInLoop(
             [worker, this]() { master_event_loop_->AddFixedProcess(worker, [worker]() { worker->Process(); }); });
 
@@ -157,8 +167,8 @@ bool QuicServer::Init(const QuicServerConfig& config) {
                 return false;
             }
 
-            auto worker_ptr =
-                std::make_shared<ServerWorker>(config, tls_ctx, sender, params_, connection_state_cb_, worker_loop);
+            auto worker_ptr = std::make_shared<ServerWorker>(config, tls_ctx, sender, params_, connection_state_cb_,
+                worker_loop, shared_retry_token_manager);
             worker_ptr->SetConnectionIDNotify(master_);
 
             auto worker = std::make_shared<WorkerWithThread>(worker_loop, worker_ptr);

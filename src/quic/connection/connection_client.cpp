@@ -9,9 +9,11 @@
 #include "quic/connection/connection_frame_processor.h"
 #include "quic/connection/connection_id_generator.h"
 #include "quic/connection/connection_stream_manager.h"
+#include "quic/connection/connection_timer_coordinator.h"
 #include "quic/connection/error.h"
 #include "quic/connection/session_cache.h"
 #include "quic/crypto/retry_crypto.h"
+#include "quic/frame/ping_frame.h"
 #include "quic/packet/handshake_packet.h"
 #include "quic/packet/retry_packet.h"
 #include "quic/stream/crypto_stream.h"
@@ -20,8 +22,9 @@ namespace quicx {
 namespace quic {
 
 ClientConnection::ClientConnection(
-    std::shared_ptr<TLSCtx> ctx, std::shared_ptr<common::IEventLoop> loop, const ConnectionCallbacks& callbacks):
-    BaseConnection(StreamIDGenerator::StreamStarter::kClient, false, loop, callbacks) {
+    std::shared_ptr<TLSCtx> ctx, std::shared_ptr<common::IEventLoop> loop, const ConnectionCallbacks& callbacks,
+    bool ecn_enabled):
+    BaseConnection(StreamIDGenerator::StreamStarter::kClient, ecn_enabled, loop, callbacks) {
     tls_connection_ = std::make_shared<TLSClientConnection>(ctx, &connection_crypto_);
     if (!tls_connection_->Init()) {
         LOG_ERROR("tls connection init failed.");
@@ -304,6 +307,20 @@ bool ClientConnection::OnHandshakePacket(const std::shared_ptr<IPacket>& packet)
     return OnNormalPacket(packet);
 }
 
+void ClientConnection::OnApplicationDataPacketProcessed() {
+    // RFC 9000 §4.1.2: a client MUST consider the handshake confirmed when it
+    // receives a 1-RTT packet.  The server may send 1-RTT data (e.g. its
+    // NEW_CONNECTION_ID / RETIRE_CONNECTION_ID frames, or the response) before
+    // or even without a HANDSHAKE_DONE frame being delivered; under packet
+    // corruption/loss the HANDSHAKE_DONE frame itself can be lost while 1-RTT
+    // packets still arrive.  Without this fallback the client would stay in the
+    // Connecting state forever, never issuing its request, and the interop
+    // handshakecorruption / handshakeloss tests would time out.
+    if (!handshake_done_processed_) {
+        HandleHandshakeDoneFrame(nullptr);
+    }
+}
+
 bool ClientConnection::HandleHandshakeDoneFrame(std::shared_ptr<IFrame> /*frame*/) {
     LOG_DEBUG("ClientConnection::HandleHandshakeDoneFrame called");
     // Idempotency guard: a retransmitted HANDSHAKE_DONE must be accepted (so it
@@ -315,6 +332,76 @@ bool ClientConnection::HandleHandshakeDoneFrame(std::shared_ptr<IFrame> /*frame*
     handshake_done_processed_ = true;
 
     state_machine_.OnHandshakeDone();
+
+    // Deferred preferred-address migration (RFC 9000 §9.6): the server's
+    // transport parameters (carrying preferred_address) arrive during the
+    // handshake, when migration is still gated on the connected state.
+    // Now that we are established, launch it.
+    if (has_pending_preferred_addr_) {
+        has_pending_preferred_addr_ = false;
+        const auto addr = pending_preferred_addr_;
+        LOG_INFO("Initiating deferred migration to server's preferred address: %s:%d", addr.GetIp().c_str(),
+            addr.GetPort());
+        // Post rather than run inline: the server typically packs
+        // HANDSHAKE_DONE and its NEW_CONNECTION_ID frames into the SAME
+        // packet, and frames are processed in wire order — HANDSHAKE_DONE
+        // first. Migrating inline races the CID pool: the DCID rotation finds
+        // the remote pool still empty ("no next CID available") and the
+        // migration is aborted forever. Posting to the loop lets the rest of
+        // this packet's frames (the NEW_CONNECTION_IDs) land in the pool
+        // first; the task then runs with a fresh DCID available.
+        if (auto loop = event_loop_.lock()) {
+            auto weak_base = std::weak_ptr<BaseConnection>(
+                std::static_pointer_cast<BaseConnection>(shared_from_this()));
+            // RFC allows the peer to deliver HANDSHAKE_DONE and its
+            // NEW_CONNECTION_IDs in SEPARATE packets; if the remote CID pool
+            // is still empty when the task runs, retry briefly instead of
+            // giving up forever.
+            auto attempts = std::make_shared<int>(3);
+            auto try_migrate = std::make_shared<std::function<void()>>();
+            *try_migrate = [weak_base, this, addr, loop, attempts, try_migrate]() {
+                // lock(), not expired(): checking expired() and then using a
+                // captured raw `this` is a TOCTOU — the last shared_ptr can
+                // drop between the check and the use. Holding the lock keeps
+                // the connection (and `this`) alive for the whole call.
+                auto self = weak_base.lock();
+                if (!self) {
+                    return;
+                }
+                auto result = migration_controller_->InitiateMigrationToPeer(
+                    std::weak_ptr<void>(self), addr.GetIp(), addr.GetPort());
+                if (result == MigrationResult::kFailedNoAvailableCID && (*attempts)-- > 0) {
+                    LOG_DEBUG("Deferred migration: CID pool still empty, retrying (%d attempts left)", *attempts);
+                    loop->PostDelayed([try_migrate]() {
+                        if (*try_migrate) {
+                            (*try_migrate)();
+                        }
+                    }, 50);
+                }
+            };
+            loop->PostTask(*try_migrate);
+        } else {
+            migration_controller_->InitiateMigrationToPeer(
+                std::weak_ptr<void>(std::static_pointer_cast<BaseConnection>(shared_from_this())), addr.GetIp(),
+                addr.GetPort());
+        }
+    }
+
+    // RFC 9000 §10.1.2 keep-alive (opt-in via transport parameters): a
+    // download-only client goes completely silent when the server's return
+    // path breaks (NAT rebind, server path change) — no received data means
+    // no ACKs, so the server never learns the new network address and both
+    // endpoints idle out. A periodic PING keeps traffic flowing through the
+    // current mapping, refreshing the server's idle timer and revealing any
+    // address change so the existing path-validation machinery can migrate.
+    if (transport_param_.GetEnableKeepAlive()) {
+        timer_coordinator_->StartKeepAliveTimer([this]() {
+            LOG_DEBUG("Keep-alive: sending PING frame");
+            auto ping = std::make_shared<PingFrame>();
+            OnFrameReady(ping);
+            OnConnectionActive();
+        });
+    }
 
     // Mark handshake complete to stop PTO probing
     send_manager_.GetSendControl().SetHandshakeComplete();
@@ -508,8 +595,13 @@ bool ClientConnection::OnRetryPacket(const std::shared_ptr<IPacket>& packet) {
     // Reset Initial cryptographer keys
     connection_crypto_.Reset();
 
-    // RFC 9000 Section 5.2: The Initial secret is derived from the new Destination
-    // Connection ID (Retry's Source CID).
+    // The post-Retry Initial's packet-header Destination Connection ID is the
+    // Retry SCID (new DCID). Interop peers (quic-go, quiche, aioquic, lsquic,
+    // ...) derive the Initial *read* key from the Destination Connection ID
+    // carried in the header of each received Initial packet — i.e. from this
+    // new DCID, not from the ODCID. So the client must re-derive its Initial
+    // *write* key from the same new DCID, otherwise the peer's AEAD open fails
+    // with payload_decrypt_error and the handshake never completes.
     if (!connection_crypto_.InstallInitSecret(src_cid.GetID(), src_cid.GetLength(), false)) {
         LOG_ERROR("Failed to install Initial Secrets for Retry");
         return false;
@@ -576,6 +668,19 @@ void ClientConnection::WriteCryptoData(std::shared_ptr<IBufferRead> buffer, int3
 
     if (tls_connection_->DoHandleShake()) {
         LOG_DEBUG("handshake done.");
+        // RFC 9000 §4.1.2: the client considers the handshake confirmed once its
+        // own handshake is complete (server CRYPTO received + client Finished
+        // sent).  This is symmetric to the server confirming on receiving the
+        // client's Finished (ServerConnection::DoHandleShake).  It is essential
+        // under packet corruption/loss, where the server's HANDSHAKE_DONE frame
+        // and/or its first 1-RTT packet can both be lost while the handshake
+        // itself already succeeded — without this the client would stay in
+        // Connecting forever, never issue its request, and the interop
+        // handshakecorruption / handshakeloss tests would time out.  (We still
+        // also confirm on HANDSHAKE_DONE and on any received 1-RTT packet.)
+        if (!handshake_done_processed_) {
+            HandleHandshakeDoneFrame(nullptr);
+        }
     }
 }
 

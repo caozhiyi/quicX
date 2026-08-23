@@ -91,11 +91,12 @@ static bool ExchangePackets(std::shared_ptr<IConnection> sender, std::shared_ptr
     if (!buffer || buffer->GetDataLength() == 0) {
         return false;
     }
+    uint32_t dgram = buffer->GetDataLength();
     std::vector<std::shared_ptr<IPacket>> packets;
     if (!DecodePackets(buffer, packets) || packets.empty()) {
         return false;
     }
-    receiver->OnPackets(0, packets);
+    receiver->OnPackets(0, packets, dgram);
     return true;
 }
 

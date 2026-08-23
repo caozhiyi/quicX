@@ -66,6 +66,17 @@ void BBRv2CongestionControl::Configure(const CcConfigV2& cfg) {
     if (pacer_) pacer_->OnPacingRateUpdated(GetPacingRateBytesPerSec());
 }
 
+void BBRv2CongestionControl::Reset() {
+    // RFC 9000 §9.4 / BBR flow-reset on path change (see BBRv1::Reset):
+    // bandwidth model, RTprop, loss state and probe phase are path-specific.
+    uint64_t bif = bytes_in_flight_;
+    uint64_t srtt = srtt_us_;
+    Configure(cfg_);
+    bytes_in_flight_ = bif;
+    srtt_us_ = srtt;
+    if (pacer_) pacer_->OnPacingRateUpdated(GetPacingRateBytesPerSec());
+}
+
 void BBRv2CongestionControl::OnPacketSent(const SentPacketEvent& ev) {
     bytes_in_flight_ += ev.bytes;
     if (pacer_) pacer_->OnPacketSent(ev.sent_time / 1000, static_cast<size_t>(ev.bytes));

@@ -142,17 +142,24 @@ static constexpr bool kDefaultTlsVerifyPeer = false;
 // ============================================================================
 
 // Handshake timeout in milliseconds
-// 5 seconds provides reasonable time for TLS handshake even on slow networks
+// 30 seconds, aligned with the client-side handshake timeout (30 s).
+// Under hostile-network testcases (30% burst loss/corruption) the server's
+// handshake flight can be wiped several times in a row; the PTO backoff
+// (0.75s/1.5s/3s/6s/12s...) needs far more than 5 s of attempts to push the
+// flight through. With a 5 s watchdog the server aborted while the client
+// was still waiting, then every client PING probe Initial (no ClientHello)
+// spawned a phantom server connection that could only ACK and hit the same
+// 5 s timeout — a ~6 s death loop until the client's 30 s timeout.
 // Used in: worker_server.cpp
-static constexpr uint32_t kHandshakeTimeoutMs = 5000;
+static constexpr uint32_t kHandshakeTimeoutMs = 30000;
 
 // Connection-migration dispatch timeout in milliseconds.
 // When a migration API (InitiateMigration / InitiateMigrationTo) is invoked from
 // a thread other than the connection's event-loop thread, the work is posted to
 // the loop and the caller blocks on a future for this long before giving up with
-// kFailedTimeout. Sized equal to kHandshakeTimeoutMs — if the loop cannot drain a
-// single posted task within 5s it is effectively stalled/dead, so failing fast is
-// the correct outcome. Used in: connection/migration_controller.cpp
+// kFailedTimeout. If the loop cannot drain a single posted task within 5 s it is
+// effectively stalled/dead, so failing fast is the correct outcome.
+// Used in: connection/migration_controller.cpp
 static constexpr uint32_t kMigrationDispatchTimeoutMs = 5000;
 
 // Retry token Connection ID length (RFC 9000 Section 8.1)

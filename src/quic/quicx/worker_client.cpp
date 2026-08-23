@@ -25,7 +25,7 @@ void ClientWorker::Connect(const std::string& ip, uint16_t port, const std::stri
     callbacks.retire_conn_id_cb = [this](auto a) { HandleRetireConnectionId(a); };
     callbacks.connection_close_cb = [this](auto a, auto b, auto c) { HandleConnectionClose(a, b, c); };
 
-    auto conn = std::make_shared<ClientConnection>(ctx_, event_loop_.lock(), callbacks);
+    auto conn = std::make_shared<ClientConnection>(ctx_, event_loop_.lock(), callbacks, ecn_enabled_);
 
     // Inject Sender for direct packet transmission
     conn->SetSender(sender_);
@@ -44,6 +44,7 @@ void ClientWorker::Connect(const std::string& ip, uint16_t port, const std::stri
     // RFC 9001: Enable Key Update if configured
     if (enable_key_update_) {
         conn->SetKeyUpdateEnabled(true);
+        conn->SetKeyUpdateForced(true);
         LOG_INFO("Key Update enabled for connection");
     }
 
@@ -112,7 +113,7 @@ bool ClientWorker::InnerHandlePacket(PacketParseResult& packet_info) {
                 observed_addr, packet_info.net_packet_->GetData()->GetDataLength());
         }
         connection->SetPendingEcn(packet_info.net_packet_->GetEcn());
-        connection->OnPackets(packet_info.net_packet_->GetTime(), packet_info.packets_);
+        connection->OnPackets(packet_info.net_packet_->GetTime(), packet_info.packets_, packet_info.datagram_size_);
         return true;
     }
 
@@ -187,7 +188,7 @@ void ClientWorker::HandleVersionNegotiation(std::shared_ptr<IConnection> conn, c
     vn_callbacks.retire_conn_id_cb = [this](auto a) { HandleRetireConnectionId(a); };
     vn_callbacks.connection_close_cb = [this](auto a, auto b, auto c) { HandleConnectionClose(a, b, c); };
 
-    auto new_conn = std::make_shared<ClientConnection>(ctx_, event_loop_.lock(), vn_callbacks);
+    auto new_conn = std::make_shared<ClientConnection>(ctx_, event_loop_.lock(), vn_callbacks, ecn_enabled_);
 
     // CRITICAL: Set the negotiated version BEFORE dialing
     new_conn->SetVersion(negotiated_version);
@@ -210,6 +211,7 @@ void ClientWorker::HandleVersionNegotiation(std::shared_ptr<IConnection> conn, c
     // Enable Key Update if configured
     if (enable_key_update_) {
         new_conn->SetKeyUpdateEnabled(true);
+        new_conn->SetKeyUpdateForced(true);
     }
 
     // Set version negotiation callback for the new connection.

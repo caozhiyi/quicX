@@ -569,12 +569,21 @@ bool Pipe(int32_t& pipe1, int32_t& pipe2) {
 
 SysCallInt32Result EnableUdpEcn(int32_t sockfd) {
     int on = 1;
-    // Try both IPv4 and IPv6 options - on a dual-stack socket, one may fail
-    setsockopt(sockfd, IPPROTO_IP, IP_RECVTOS, &on, sizeof(on));
+    // Try both IPv4 and IPv6 options: on any given socket family one of the
+    // two fails with ENOPROTOOPT (expected); success of EITHER is success.
+    int rc4 = setsockopt(sockfd, IPPROTO_IP, IP_RECVTOS, &on, sizeof(on));
+    int err4 = (rc4 != 0) ? errno : 0;
 #ifdef IPV6_RECVTCLASS
-    setsockopt(sockfd, IPPROTO_IPV6, IPV6_RECVTCLASS, &on, sizeof(on));
+    int rc6 = setsockopt(sockfd, IPPROTO_IPV6, IPV6_RECVTCLASS, &on, sizeof(on));
+    int err6 = (rc6 != 0) ? errno : 0;
+#else
+    int rc6 = -1;
+    int err6 = ENOTSUP;
 #endif
-    return {0, 0};
+    if (rc4 == 0 || rc6 == 0) {
+        return {0, 0};
+    }
+    return {rc4, err4 != 0 ? err4 : (err6 != 0 ? err6 : EINVAL)};
 }
 
 SysCallInt32Result RecvFromWithEcn(
@@ -644,13 +653,25 @@ SysCallInt32Result RecvFromWithEcn(
 
 SysCallInt32Result EnableUdpEcnMarking(int32_t sockfd, uint8_t ecn_codepoint) {
     int tos = static_cast<int>(ecn_codepoint & 0x03);
-    // Try both IPv4 and IPv6 options - on a dual-stack socket, one may fail
-    setsockopt(sockfd, IPPROTO_IP, IP_TOS, &tos, sizeof(tos));
+    // Try both IPv4 and IPv6 options: on any given socket family one of the
+    // two fails with ENOPROTOOPT (expected); success of EITHER is success.
+    int rc4 = setsockopt(sockfd, IPPROTO_IP, IP_TOS, &tos, sizeof(tos));
+    int err4 = (rc4 != 0) ? errno : 0;
 #ifdef IPV6_TCLASS
     int tclass = static_cast<int>(ecn_codepoint & 0x03);
-    setsockopt(sockfd, IPPROTO_IPV6, IPV6_TCLASS, &tclass, sizeof(tclass));
+    int rc6 = setsockopt(sockfd, IPPROTO_IPV6, IPV6_TCLASS, &tclass, sizeof(tclass));
+    int err6 = (rc6 != 0) ? errno : 0;
+#else
+    int rc6 = -1;
+    int err6 = ENOTSUP;
 #endif
-    return {0, 0};
+    if (rc4 == 0 || rc6 == 0) {
+        return {0, 0};
+    }
+    // Both failed: report the first available error (prefer the IPv4 one).
+    // errno is captured right after each setsockopt so the second call cannot
+    // clobber the first one's error code.
+    return {rc4, err4 != 0 ? err4 : (err6 != 0 ? err6 : EINVAL)};
 }
 
 }  // namespace common

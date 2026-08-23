@@ -84,7 +84,10 @@ static QuicTransportParams TEST_TRANSPORT_PARAMS = {
     3,         // ack_delay_exponent
     25,        // max_ack_delay
     false,     // disable_active_migration
-    "",        // preferred_address
+    "",        // preferred_address_v4_
+    "",        // preferred_address_v6_
+    false,     // enable_keep_alive
+    0,         // keep_alive_interval_ms (0 = derive from idle timeout)
     8,         // active_connection_id_limit
     "",        // initial_source_connection_id
     "",        // retry_source_connection_id
@@ -195,14 +198,15 @@ TEST(PathMigrationTest, concurrent_path_probing) {
     common::Address addr2("127.0.0.1", 10002);
     common::Address addr3("127.0.0.1", 10003);
 
+    // The probe challenge is sent synchronously on the first observation, so
+    // clear the mock sender BEFORE triggering the probe.
+    client_sender->Clear();
     client_conn->OnObservedPeerAddress(addr1);  // Start probing immediately
     client_conn->OnObservedPeerAddress(addr2);  // Should be queued
     client_conn->OnObservedPeerAddress(addr3);  // Should be queued
 
     // Verify first PATH_CHALLENGE by server's PATH_RESPONSE (avoid decrypting in test)
     {
-        client_sender->Clear();
-        ASSERT_TRUE((client_conn->TrySendBurst(1) > 0));
         auto buffer = client_sender->GetLastSentBuffer();
         ASSERT_NE(buffer, nullptr);
         ASSERT_GT(buffer->GetDataLength(), 0);
@@ -210,7 +214,7 @@ TEST(PathMigrationTest, concurrent_path_probing) {
         std::vector<std::shared_ptr<IPacket>> pkts;
         ASSERT_TRUE(DecodePackets(buffer, pkts));
         // Deliver client's encrypted packets to server; server should respond PATH_RESPONSE
-        server_conn->OnPackets(0, pkts);
+        server_conn->OnPackets(0, pkts, 0);
 
         server_sender->Clear();
         ASSERT_TRUE((server_conn->TrySendBurst(1) > 0));
@@ -257,20 +261,20 @@ TEST(PathMigrationTest, cid_pool_replenishment) {
     auto server_sender = std::get<3>(connections);
     auto event_loop = std::get<4>(connections);  // Keep event_loop alive for weak_ptr
 
-    // Trigger path migration to consume CIDs
+    // Trigger path migration to consume CIDs; the probe challenge is sent
+    // synchronously, so clear the mock sender first.
     common::Address new_addr("127.0.0.1", 9999);
+    client_sender->Clear();
     client_conn->OnObservedPeerAddress(new_addr);
 
     // Send PATH_CHALLENGE
     {
-        client_sender->Clear();
-        ASSERT_TRUE((client_conn->TrySendBurst(1) > 0));
         auto cb = client_sender->GetLastSentBuffer();
         ASSERT_NE(cb, nullptr);
         ASSERT_GT(cb->GetDataLength(), 0);
         std::vector<std::shared_ptr<IPacket>> pkts;
         ASSERT_TRUE(DecodePackets(cb, pkts));
-        server_conn->OnPackets(0, pkts);
+        server_conn->OnPackets(0, pkts, 0);
     }
 
     // Receive PATH_RESPONSE and complete migration
@@ -300,7 +304,7 @@ TEST(PathMigrationTest, cid_pool_replenishment) {
             }
         }
 
-        client_conn->OnPackets(0, pkts);
+        client_conn->OnPackets(0, pkts, 0);
 
         // Server should automatically replenish CID pool after path switch
         // (May be sent in subsequent packets)
@@ -308,9 +312,9 @@ TEST(PathMigrationTest, cid_pool_replenishment) {
 
     // Verify can continue migration (CID pool replenished)
     common::Address addr2("127.0.0.1", 10000);
+    client_sender->Clear();
     client_conn->OnObservedPeerAddress(addr2);
 
-    client_sender->Clear();
     // TrySend may queue the second probe if first probe is still inflight
     // The important thing is that we can queue another migration without crashing
     if ((client_conn->TrySendBurst(1) > 0)) {
@@ -384,21 +388,20 @@ TEST(PathMigrationTest, duplicate_path_response) {
     auto server_sender = std::get<3>(connections);
     auto event_loop = std::get<4>(connections);  // Keep event_loop alive for weak_ptr
 
-    // Trigger migration
+    // Trigger migration; the probe challenge is sent synchronously.
     common::Address new_addr("127.0.0.1", 9999);
+    client_sender->Clear();
     client_conn->OnObservedPeerAddress(new_addr);
 
     // Send PATH_CHALLENGE and get PATH_RESPONSE
     std::vector<std::shared_ptr<IPacket>> response_pkts;
     {
-        client_sender->Clear();
-        ASSERT_TRUE((client_conn->TrySendBurst(1) > 0));
         auto cb = client_sender->GetLastSentBuffer();
         ASSERT_NE(cb, nullptr);
         ASSERT_GT(cb->GetDataLength(), 0);
         std::vector<std::shared_ptr<IPacket>> challenge_pkts;
         ASSERT_TRUE(DecodePackets(cb, challenge_pkts));
-        server_conn->OnPackets(0, challenge_pkts);
+        server_conn->OnPackets(0, challenge_pkts, 0);
 
         server_sender->Clear();
         ASSERT_TRUE((server_conn->TrySendBurst(1) > 0));
@@ -408,11 +411,11 @@ TEST(PathMigrationTest, duplicate_path_response) {
         ASSERT_TRUE(DecodePackets(sb, response_pkts));
 
         // First processing
-        client_conn->OnPackets(0, response_pkts);
+        client_conn->OnPackets(0, response_pkts, 0);
     }
 
     // Re-send same PATH_RESPONSE (simulate network retransmission)
-    EXPECT_NO_THROW(client_conn->OnPackets(0, response_pkts)) << "Should handle duplicate PATH_RESPONSE gracefully";
+    EXPECT_NO_THROW(client_conn->OnPackets(0, response_pkts, 0)) << "Should handle duplicate PATH_RESPONSE gracefully";
 
     // Verify connection still works normally
     auto stream = std::dynamic_pointer_cast<IQuicSendStream>(client_conn->MakeStream(StreamDirection::kSend));
@@ -429,13 +432,13 @@ TEST(PathMigrationTest, path_token_validation_and_promotion) {
     auto server_sender = std::get<3>(connections);
     auto event_loop = std::get<4>(connections);  // Keep event_loop alive for weak_ptr
 
-    // Simulate observed new address on client side
+    // Simulate observed new address on client side; the probe challenge is
+    // sent synchronously, so clear the mock sender first.
     common::Address new_addr("127.0.0.1", 9543);
+    client_sender->Clear();
     client_conn->OnObservedPeerAddress(new_addr);
 
-    // Generate probe packet(s)
-    client_sender->Clear();
-    ASSERT_TRUE((client_conn->TrySendBurst(1) > 0));
+    // The synchronous probe packet
     auto buffer = client_sender->GetLastSentBuffer();
     ASSERT_NE(buffer, nullptr);
     ASSERT_GT(buffer->GetDataLength(), 0);
@@ -444,7 +447,7 @@ TEST(PathMigrationTest, path_token_validation_and_promotion) {
     std::vector<std::shared_ptr<IPacket>> pkts;
     ASSERT_TRUE(DecodePackets(buffer, pkts));
     ASSERT_FALSE(pkts.empty());
-    server_conn->OnPackets(0, pkts);
+    server_conn->OnPackets(0, pkts, 0);
 
     // Now server sends PATH_RESPONSE
     server_sender->Clear();
@@ -454,7 +457,7 @@ TEST(PathMigrationTest, path_token_validation_and_promotion) {
             std::vector<std::shared_ptr<IPacket>> rsp;
             ASSERT_TRUE(DecodePackets(sb, rsp));
             ASSERT_FALSE(rsp.empty());
-            client_conn->OnPackets(0, rsp);
+            client_conn->OnPackets(0, rsp, 0);
         }
     }
 
@@ -486,20 +489,19 @@ TEST(PathMigrationTest, nat_rebinding_integration) {
     auto server_sender = std::get<3>(connections);
     auto event_loop = std::get<4>(connections);  // Keep event_loop alive for weak_ptr
 
-    // NAT rebinding: server observes new source address from client
+    // NAT rebinding: server observes new source address from client; the
+    // probe challenge is sent synchronously, so clear the mock sender first.
     common::Address nat_addr("127.0.0.1", 9654);
+    server_sender->Clear();
     server_conn->OnObservedPeerAddress(nat_addr);
 
     // server will probe; deliver its probe to client
     {
-        server_sender->Clear();
-        if ((server_conn->TrySendBurst(1) > 0)) {
-            auto sb = server_sender->GetLastSentBuffer();
-            if (sb && sb->GetDataLength() > 0) {
-                std::vector<std::shared_ptr<IPacket>> pkts;
-                ASSERT_TRUE(DecodePackets(sb, pkts));
-                client_conn->OnPackets(0, pkts);
-            }
+        auto sb = server_sender->GetLastSentBuffer();
+        if (sb && sb->GetDataLength() > 0) {
+            std::vector<std::shared_ptr<IPacket>> pkts;
+            ASSERT_TRUE(DecodePackets(sb, pkts));
+            client_conn->OnPackets(0, pkts, 0);
         }
     }
 
@@ -511,7 +513,7 @@ TEST(PathMigrationTest, nat_rebinding_integration) {
             if (cb && cb->GetDataLength() > 0) {
                 std::vector<std::shared_ptr<IPacket>> pkts;
                 ASSERT_TRUE(DecodePackets(cb, pkts));
-                server_conn->OnPackets(0, pkts);
+                server_conn->OnPackets(0, pkts, 0);
             }
         }
     }
@@ -553,8 +555,10 @@ TEST(PathMigrationTest, amp_gating_blocks_streams_before_validation) {
     auto server_sender = std::get<3>(connections);
     auto event_loop = std::get<4>(connections);  // Keep event_loop alive for weak_ptr
 
-    // Trigger client-side migration; while unvalidated, streams should be gated
+    // Trigger client-side migration; while unvalidated, streams should be gated.
+    // The probe challenge is sent synchronously, so clear the mock sender first.
     common::Address new_addr("127.0.0.1", 9555);
+    client_sender->Clear();
     client_conn->OnObservedPeerAddress(new_addr);
 
     auto s_base = client_conn->MakeStream(StreamDirection::kSend);
@@ -562,8 +566,6 @@ TEST(PathMigrationTest, amp_gating_blocks_streams_before_validation) {
     ASSERT_NE(s, nullptr);
     const char* payload = "must gate before validation";
 
-    client_sender->Clear();
-    ASSERT_TRUE((client_conn->TrySendBurst(1) > 0));
     auto buffer = client_sender->GetLastSentBuffer();
     ASSERT_NE(buffer, nullptr);
     ASSERT_GT(buffer->GetDataLength(), 0);
@@ -592,19 +594,19 @@ TEST(PathMigrationTest, pmtu_probe_success_raises_mtu) {
 
     // Trigger migration to start PMTU probing after validation
     common::Address new_addr("127.0.0.1", 9666);
+    // The probe challenge is sent synchronously; clear the mock sender first.
+    client_sender->Clear();
     client_conn->OnObservedPeerAddress(new_addr);
 
     // Client sends PATH_CHALLENGE
     {
-        client_sender->Clear();
-        ASSERT_TRUE((client_conn->TrySendBurst(1) > 0));
         auto cb = client_sender->GetLastSentBuffer();
         ASSERT_NE(cb, nullptr);
         ASSERT_GT(cb->GetDataLength(), 0);
         std::vector<std::shared_ptr<IPacket>> pkts;
         ASSERT_TRUE(DecodePackets(cb, pkts));
         ASSERT_FALSE(pkts.empty());
-        server_conn->OnPackets(0, pkts);
+        server_conn->OnPackets(0, pkts, 0);
     }
 
     // Server replies PATH_RESPONSE; deliver to client to validate path
@@ -617,7 +619,7 @@ TEST(PathMigrationTest, pmtu_probe_success_raises_mtu) {
         std::vector<std::shared_ptr<IPacket>> pkts;
         ASSERT_TRUE(DecodePackets(sb, pkts));
         ASSERT_FALSE(pkts.empty());
-        client_conn->OnPackets(0, pkts);
+        client_conn->OnPackets(0, pkts, 0);
     }
 
     // After validation, client should attempt a PMTU probe packet (PING+PADDING large)
@@ -631,7 +633,7 @@ TEST(PathMigrationTest, pmtu_probe_success_raises_mtu) {
         ASSERT_TRUE(DecodePackets(cb, pkts));
         if (!pkts.empty()) {
             // Deliver to server so it ACKs, which will be treated as probe success internally
-            server_conn->OnPackets(0, pkts);
+            server_conn->OnPackets(0, pkts, 0);
         }
     }
 
@@ -644,7 +646,7 @@ TEST(PathMigrationTest, pmtu_probe_success_raises_mtu) {
                 std::vector<std::shared_ptr<IPacket>> pkts;
                 ASSERT_TRUE(DecodePackets(sb, pkts));
                 if (!pkts.empty()) {
-                    client_conn->OnPackets(0, pkts);
+                    client_conn->OnPackets(0, pkts, 0);
                 }
             }
         }
@@ -659,21 +661,21 @@ TEST(PathMigrationTest, pmtu_probe_loss_fallback) {
     auto server_sender = std::get<3>(connections);
     auto event_loop = std::get<4>(connections);  // Keep event_loop alive for weak_ptr
 
-    // Trigger migration to start PMTU probing after validation
+    // Trigger migration to start PMTU probing after validation; the probe
+    // challenge is sent synchronously, so clear the mock sender first.
     common::Address new_addr("127.0.0.1", 9777);
+    client_sender->Clear();
     client_conn->OnObservedPeerAddress(new_addr);
 
     // Client sends PATH_CHALLENGE; deliver and drop server response to simulate loss of PMTU probe later
     {
-        client_sender->Clear();
-        ASSERT_TRUE((client_conn->TrySendBurst(1) > 0));
         auto cb = client_sender->GetLastSentBuffer();
         ASSERT_NE(cb, nullptr);
         ASSERT_GT(cb->GetDataLength(), 0);
         std::vector<std::shared_ptr<IPacket>> pkts;
         ASSERT_TRUE(DecodePackets(cb, pkts));
         ASSERT_FALSE(pkts.empty());
-        server_conn->OnPackets(0, pkts);
+        server_conn->OnPackets(0, pkts, 0);
     }
 
     // Server replies PATH_RESPONSE; deliver to client to validate path
@@ -686,7 +688,7 @@ TEST(PathMigrationTest, pmtu_probe_loss_fallback) {
         std::vector<std::shared_ptr<IPacket>> pkts;
         ASSERT_TRUE(DecodePackets(sb, pkts));
         ASSERT_FALSE(pkts.empty());
-        client_conn->OnPackets(0, pkts);
+        client_conn->OnPackets(0, pkts, 0);
     }
 
     // After validation, trigger client send (PMTU probe created). Do not deliver to server to simulate black hole.
@@ -715,54 +717,58 @@ TEST(PathMigrationTest, disable_active_migration_semantics) {
     auto server_sender = std::get<3>(connections);
     auto event_loop = std::get<4>(connections);  // Keep event_loop alive for weak_ptr
 
-    // Client proactively observes a new address; first observation should not start probe
+    // Client proactively observes a new address. The client itself did NOT
+    // declare disable_active_migration (only the server did, which governs
+    // how the SERVER treats client migration), so the client probes the new
+    // peer address immediately — no "second observation" confirmation.
     common::Address new_addr("127.0.0.1", 9888);
+    client_sender->Clear();
     client_conn->OnObservedPeerAddress(new_addr);
 
-    // Generate a flight and check no PATH_CHALLENGE appears yet
+    // The probe leaves via SendImmediateProbe inside OnObservedPeerAddress;
+    // a follow-up burst may or may not add more packets.
+    (void)(client_conn->TrySendBurst(1) > 0);
     {
-        client_sender->Clear();
-        (void)(client_conn->TrySendBurst(1) > 0);
-        auto b = client_sender->GetLastSentBuffer();
-
-        // When migration is disabled, first observation may not send any data
-        if (b != nullptr && b->GetDataLength() > 0) {
-            std::vector<std::shared_ptr<IPacket>> pkts;
-            ASSERT_TRUE(DecodePackets(b, pkts));
-            // Decrypt client->server packets with server cryptographer
-            auto srv_crypto = AsBase(server_conn)->GetCryptographerForTest(kApplication);
-            ASSERT_NE(srv_crypto, nullptr);
-            for (auto& p : pkts) {
-                p->SetCryptographer(srv_crypto);
-                auto tmp_buf =
-                    std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4096));
-                ASSERT_TRUE(p->DecodeWithCrypto(tmp_buf));
-                bool found_path_challenge = false;
-                for (auto& f : p->GetFrames()) {
-                    if (f->GetType() == FrameType::kPathChallenge) {
-                        found_path_challenge = true;
-                        break;
-                    }
-                }
-                EXPECT_FALSE(found_path_challenge) << "No PATH_CHALLENGE on first observation when migration disabled";
-            }
-        }
-        // else: No data sent on first observation, which is expected behavior
-    }
-
-    // Second observation of the same new address -> treat as NAT rebinding and probe
-    client_conn->OnObservedPeerAddress(new_addr);
-    {
-        client_sender->Clear();
-        ASSERT_TRUE((client_conn->TrySendBurst(1) > 0));
         auto b = client_sender->GetLastSentBuffer();
         ASSERT_NE(b, nullptr);
         ASSERT_GT(b->GetDataLength(), 0);
-        std::vector<std::shared_ptr<IPacket>> client_pkts;
-        ASSERT_TRUE(DecodePackets(b, client_pkts));
+        // DecodeWithCrypto (and the server's OnPackets receive path) decrypt
+        // destructively in place: they strip header protection and rewrite the
+        // wire buffer. Verification and delivery therefore need independent
+        // copies of the datagram bytes.
+        auto verify_buf =
+            std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4096));
+        auto data_span = b->GetReadableSpan();
+        ASSERT_TRUE(data_span.Valid());
+        ASSERT_GT(data_span.GetLength(), 0u);
+        verify_buf->Write(data_span.GetStart(), data_span.GetLength());
 
-        // Deliver client's probe packets to server
-        server_conn->OnPackets(0, client_pkts);
+        std::vector<std::shared_ptr<IPacket>> verify_pkts;
+        ASSERT_TRUE(DecodePackets(verify_buf, verify_pkts));
+        // Decrypt client->server packets with server cryptographer
+        auto srv_crypto = AsBase(server_conn)->GetCryptographerForTest(kApplication);
+        ASSERT_NE(srv_crypto, nullptr);
+        bool found_path_challenge = false;
+        for (auto& p : verify_pkts) {
+            p->SetCryptographer(srv_crypto);
+            auto tmp_buf =
+                std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4096));
+            ASSERT_TRUE(p->DecodeWithCrypto(tmp_buf));
+            for (auto& f : p->GetFrames()) {
+                if (f->GetType() == FrameType::kPathChallenge) {
+                    found_path_challenge = true;
+                    break;
+                }
+            }
+        }
+        EXPECT_TRUE(found_path_challenge) << "Client should PATH_CHALLENGE a new peer address immediately when it "
+                                             "did not declare disable_active_migration itself";
+
+        // Deliver the original (still header-protected) packets to the server:
+        // decode fresh packet objects from the untouched wire buffer.
+        std::vector<std::shared_ptr<IPacket>> pkts;
+        ASSERT_TRUE(DecodePackets(b, pkts));
+        server_conn->OnPackets(0, pkts, 0);
 
         // Server should respond; generate and decrypt server->client response to find PATH_RESPONSE
         server_sender->Clear();
@@ -790,7 +796,30 @@ TEST(PathMigrationTest, disable_active_migration_semantics) {
             }
             if (found_path_response) break;
         }
-        ASSERT_TRUE(found_path_response) << "Server should send PATH_RESPONSE on second observation (NAT rebinding)";
+        ASSERT_TRUE(found_path_response) << "Server should send PATH_RESPONSE to the client's path probe";
+    }
+
+    // A repeated observation while the probe is inflight must not start a second probe
+    client_sender->Clear();
+    client_conn->OnObservedPeerAddress(new_addr);
+    (void)(client_conn->TrySendBurst(1) > 0);
+    {
+        auto b = client_sender->GetLastSentBuffer();
+        if (b != nullptr && b->GetDataLength() > 0) {
+            std::vector<std::shared_ptr<IPacket>> pkts;
+            ASSERT_TRUE(DecodePackets(b, pkts));
+            auto srv_crypto = AsBase(server_conn)->GetCryptographerForTest(kApplication);
+            for (auto& p : pkts) {
+                p->SetCryptographer(srv_crypto);
+                auto tmp_buf =
+                    std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4096));
+                ASSERT_TRUE(p->DecodeWithCrypto(tmp_buf));
+                for (auto& f : p->GetFrames()) {
+                    EXPECT_NE(f->GetType(), FrameType::kPathChallenge)
+                        << "Duplicate observation must not re-probe while validation is inflight";
+                }
+            }
+        }
     }
 }
 
@@ -813,21 +842,21 @@ TEST(PathMigrationTest, cid_rotation_and_retirement_on_path_switch) {
     ASSERT_GT(remote_cid_count, 1) << "Client should have received extra CIDs from server (count: " << remote_cid_count
                                    << ")";
 
-    // Trigger migration on client
+    // Trigger migration on client; the probe challenge is sent synchronously,
+    // so clear the mock sender first.
     common::Address new_addr("127.0.0.1", 9999);
+    client_sender->Clear();
     client_conn->OnObservedPeerAddress(new_addr);
 
     // Client sends PATH_CHALLENGE -> deliver to server
     {
-        client_sender->Clear();
-        ASSERT_TRUE((client_conn->TrySendBurst(1) > 0));
         auto cb = client_sender->GetLastSentBuffer();
         ASSERT_NE(cb, nullptr);
         ASSERT_GT(cb->GetDataLength(), 0);
         std::vector<std::shared_ptr<IPacket>> pkts;
         ASSERT_TRUE(DecodePackets(cb, pkts));
         ASSERT_FALSE(pkts.empty());
-        server_conn->OnPackets(0, pkts);
+        server_conn->OnPackets(0, pkts, 0);
     }
 
     // Server PATH_RESPONSE -> client validates and should rotate DCID
@@ -840,7 +869,7 @@ TEST(PathMigrationTest, cid_rotation_and_retirement_on_path_switch) {
         std::vector<std::shared_ptr<IPacket>> pkts;
         ASSERT_TRUE(DecodePackets(sb, pkts));
         ASSERT_FALSE(pkts.empty());
-        client_conn->OnPackets(0, pkts);
+        client_conn->OnPackets(0, pkts, 0);
     }
 
     // After path validation, client should emit RETIRE_CONNECTION_ID for the old DCID
@@ -990,6 +1019,8 @@ TEST(PathMigrationTest, initiate_migration_pre_rotates_dcid) {
     // According to RFC 9000 Section 9 and official interop tests:
     // 1. DCID must be rotated BEFORE sending PATH_CHALLENGE
     // 2. The first packet after migration must use the new DCID
+    // The probe challenge is sent synchronously, so clear the mock sender first.
+    client_sender->Clear();
     bool migration_initiated = client_conn->InitiateMigration();
     ASSERT_TRUE(migration_initiated) << "InitiateMigration() should succeed when CIDs are available";
 
@@ -1003,8 +1034,6 @@ TEST(PathMigrationTest, initiate_migration_pre_rotates_dcid) {
         << "DCID must be rotated immediately by InitiateMigration() (pre-rotation for interop compliance)";
 
     // Verify PATH_CHALLENGE is sent
-    client_sender->Clear();
-    ASSERT_TRUE((client_conn->TrySendBurst(1) > 0));
     auto buffer = client_sender->GetLastSentBuffer();
     ASSERT_NE(buffer, nullptr);
     ASSERT_GT(buffer->GetDataLength(), 0);
@@ -1060,7 +1089,7 @@ TEST(PathMigrationTest, initiate_migration_fails_without_available_cid) {
         if (cb && cb->GetDataLength() > 0) {
             std::vector<std::shared_ptr<IPacket>> pkts;
             if (DecodePackets(cb, pkts)) {
-                server_conn->OnPackets(0, pkts);
+                server_conn->OnPackets(0, pkts, 0);
             }
         }
         server_sender->Clear();
@@ -1069,7 +1098,7 @@ TEST(PathMigrationTest, initiate_migration_fails_without_available_cid) {
         if (sb && sb->GetDataLength() > 0) {
             std::vector<std::shared_ptr<IPacket>> pkts;
             if (DecodePackets(sb, pkts)) {
-                client_conn->OnPackets(0, pkts);
+                client_conn->OnPackets(0, pkts, 0);
             }
         }
         // Safety limit to prevent infinite loop
@@ -1115,7 +1144,9 @@ TEST(PathMigrationTest, initiate_migration_skips_cid_rotation_on_response) {
     size_t cid_count_before = client_remote_mgr->GetAvailableIDCount();
     ASSERT_GT(cid_count_before, 1);
 
-    // Initiate migration (pre-rotates DCID)
+    // Initiate migration (pre-rotates DCID); the probe challenge is sent
+    // synchronously, so clear the mock sender first.
+    client_sender->Clear();
     ASSERT_TRUE(client_conn->InitiateMigration());
 
     // Record DCID hash after InitiateMigration()
@@ -1123,14 +1154,12 @@ TEST(PathMigrationTest, initiate_migration_skips_cid_rotation_on_response) {
     uint64_t dcid_after_init_hash = dcid_after_init.Hash();
 
     // Send PATH_CHALLENGE to server
-    client_sender->Clear();
-    ASSERT_TRUE((client_conn->TrySendBurst(1) > 0));
     auto cb = client_sender->GetLastSentBuffer();
     ASSERT_NE(cb, nullptr);
     ASSERT_GT(cb->GetDataLength(), 0);
     std::vector<std::shared_ptr<IPacket>> challenge_pkts;
     ASSERT_TRUE(DecodePackets(cb, challenge_pkts));
-    server_conn->OnPackets(0, challenge_pkts);
+    server_conn->OnPackets(0, challenge_pkts, 0);
 
     // Server sends PATH_RESPONSE
     server_sender->Clear();
@@ -1142,7 +1171,7 @@ TEST(PathMigrationTest, initiate_migration_skips_cid_rotation_on_response) {
     ASSERT_TRUE(DecodePackets(sb, response_pkts));
 
     // Client processes PATH_RESPONSE (this calls OnPathResponse)
-    client_conn->OnPackets(0, response_pkts);
+    client_conn->OnPackets(0, response_pkts, 0);
 
     // Verify DCID was NOT rotated again by OnPathResponse()
     // (because dcid_pre_rotated_ flag should prevent double rotation)
@@ -1249,18 +1278,18 @@ TEST(PathMigrationTest, migration_callback_invoked_on_success) {
         received_info = info;
     });
 
-    // Initiate migration
+    // Initiate migration; the probe challenge is sent synchronously, so
+    // clear the mock sender first.
+    client_sender->Clear();
     auto result = client_conn->InitiateMigrationTo("127.0.0.1", 0);
     EXPECT_EQ(result, MigrationResult::kSuccess);
 
     // Send PATH_CHALLENGE
-    client_sender->Clear();
-    ASSERT_TRUE((client_conn->TrySendBurst(1) > 0));
     auto cb = client_sender->GetLastSentBuffer();
     if (cb && cb->GetDataLength() > 0) {
         std::vector<std::shared_ptr<IPacket>> challenge_pkts;
         if (DecodePackets(cb, challenge_pkts)) {
-            server_conn->OnPackets(0, challenge_pkts);
+            server_conn->OnPackets(0, challenge_pkts, 0);
         }
     }
 
@@ -1271,7 +1300,7 @@ TEST(PathMigrationTest, migration_callback_invoked_on_success) {
     if (sb && sb->GetDataLength() > 0) {
         std::vector<std::shared_ptr<IPacket>> response_pkts;
         if (DecodePackets(sb, response_pkts)) {
-            client_conn->OnPackets(0, response_pkts);
+            client_conn->OnPackets(0, response_pkts, 0);
         }
     }
 

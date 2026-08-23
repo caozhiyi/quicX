@@ -59,7 +59,7 @@ echo ""
 # Supported tests: must match scenarios in testcases.py that quicX can handle
 # NOTE: "multiplexing" was removed — it is not a valid scenario in testcases.py.
 #       "multiconnect" is the correct name for concurrent client testing.
-SUPPORTED_TESTS="handshake transfer retry resumption zerortt multiconnect versionnegotiation chacha20 keyupdate v2 rebind-port rebind-addr connectionmigration http3"
+SUPPORTED_TESTS="handshake transfer retry resumption zerortt multiconnect versionnegotiation chacha20 keyupdate v2 rebind-port rebind-addr connectionmigration http3 ecn"
 
 # Explicitly unsupported tests (none currently)
 UNSUPPORTED_TESTS=""
@@ -145,6 +145,11 @@ run_client() {
         chacha20)
             cmd+=" --cipher TLS_CHACHA20_POLY1305_SHA256"
             ;;
+        ecn)
+            # RFC 9000 §A.4: mark outgoing packets ECT(0) and report counts in
+            # ACK_ECN frames (both directions must mark + echo).
+            export ENABLE_ECN=1
+            ;;
         keyupdate)
             cmd+=" --force-keyupdate"
             ;;
@@ -202,9 +207,6 @@ run_server() {
         chacha20)
             cmd+=" --cipher TLS_CHACHA20_POLY1305_SHA256"
             ;;
-        keyupdate)
-            cmd+=" --enable-keyupdate"
-            ;;
         versionnegotiation)
             cmd+=" --strict-version"
             ;;
@@ -214,8 +216,41 @@ run_server() {
         http3)
             cmd+=" --http3"
             ;;
+        connectionmigration)
+            # RFC 9000 §9.6: advertise a preferred address that differs from
+            # the client's current path so a migration actually happens,
+            # whatever address family the client picked for its initial
+            # connection (picoquicdemo, for one, prefers IPv6 even for the
+            # dual-stack "server46" name). Advertise BOTH of the server's
+            # addresses with a DIFFERENT port (picoquic-style :4433, matching
+            # the official picoquic interop server's "-p 443:4433"); the
+            # server opens a second listener on that port.
+            PREF_V4=$(hostname -I 2>/dev/null | tr ' ' '\n' | grep -v '^fe80' | grep -m1 -E '^[0-9]+\.[0-9]+\.')
+            PREF_V6=$(hostname -I 2>/dev/null | tr ' ' '\n' | grep -v '^fe80' | grep -m1 ':')
+            if [ -n "$PREF_V4" ] && [ -n "$PREF_V6" ]; then
+                cmd+=" --preferred-address-v4 ${PREF_V4}:4433 --preferred-address-v6 [${PREF_V6}]:4433"
+            elif [ -n "$PREF_V6" ]; then
+                cmd+=" --preferred-address-v6 [${PREF_V6}]:4433"
+            else
+                echo "WARNING: could not determine server address for preferred_address"
+            fi
+            ;;
     esac
-    
+
+    # The interop ecn test runs the server perspective as "handshake", so the
+    # server never learns it is an ECN scenario — enable ECN unconditionally.
+    # Safe for every other testcase: ECT(0) marking is RFC 9000 §A.4 "SHOULD",
+    # ECN-disabled peers zero the received codepoint (Master::OnPacket) and
+    # nothing outside the ecn check inspects dsfield.ecn.
+    export ENABLE_ECN=1
+
+    # The interop keyupdate test runs the server perspective as "transfer", so the
+    # framework never signals the server that it is a keyupdate scenario. Key
+    # Update is a mandatory RFC 9001 feature and is benign for every other
+    # testcase (it only fires after >=512KB of application data has been sent),
+    # so we unconditionally enable it on the server.
+    cmd+=" --enable-keyupdate"
+
     # Enable QLOG
     if [ -n "${QLOGDIR}" ]; then
         cmd+=" --qlog-dir ${QLOGDIR}"

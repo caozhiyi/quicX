@@ -19,7 +19,9 @@ MigrationController::MigrationController(ConnectionStateMachine& state_machine, 
       event_loop_(event_loop) {}
 
 bool MigrationController::IsMigrationSupported() const {
-    return !transport_param_.GetDisableActiveMigration();
+    // Gated by the PEER's disable_active_migration declaration (RFC 9000
+    // §9.4), not by our own wire declaration.
+    return !transport_param_.GetPeerDisableActiveMigration();
 }
 
 bool MigrationController::IsMigrationInProgress() const {
@@ -83,32 +85,67 @@ MigrationResult MigrationController::InitiateMigrationToImpl(const std::string& 
         return MigrationResult::kFailedInvalidState;
     }
 
-    // Install callbacks once. PathManager creates the probe socket but does not
-    // keep it: it hands the fd straight here, so there is exactly one owner.
-    if (!callbacks_installed_) {
-        path_manager_.SetSocketFactoryCallbacks([this]() { return emitter_.GetActiveSocket(); },
-            [this](int32_t probe_fd) {
-                emitter_.SetProbeSocket(probe_fd);
-
-                // Register immediately: PATH_RESPONSE arrives on the probe
-                // socket, so it must be in the poll set before validation
-                // starts. (The old code registered it after
-                // InitiateMigrationToAddress returned, which left a window.)
-                if (register_socket_cb_ && probe_fd > 0) {
-                    if (!register_socket_cb_(probe_fd)) {
-                        LOG_ERROR("MigrationController: failed to register probe socket %d with receiver", probe_fd);
-                    } else {
-                        LOG_INFO("MigrationController: registered probe socket %d with receiver", probe_fd);
-                    }
-                }
-            });
-
-        path_manager_.SetMigrationCompleteCallback([this](const MigrationInfo& info) { OnMigrationComplete(info); });
-        callbacks_installed_ = true;
-    }
+    EnsureCallbacksInstalled();
 
     common::Address local_addr(local_ip, local_port);
     return path_manager_.InitiateMigrationToAddress(local_addr);
+}
+
+MigrationResult MigrationController::InitiateMigrationToPeer(std::weak_ptr<void> owner, const std::string& peer_ip,
+    uint16_t peer_port) {
+    return GateResult(owner, [this, peer_ip, peer_port]() { return InitiateMigrationToPeerImpl(peer_ip, peer_port); });
+}
+
+MigrationResult MigrationController::InitiateMigrationToPeerImpl(const std::string& peer_ip, uint16_t peer_port) {
+    // RFC 9000 §9.6: migrate to the server's advertised preferred address.
+    LOG_INFO("MigrationController::InitiateMigrationToPeer: migrating to peer %s:%d", peer_ip.c_str(), peer_port);
+
+    if (!state_machine_.CanSendData()) {
+        LOG_WARN("MigrationController::InitiateMigrationToPeer: connection not in connected state");
+        return MigrationResult::kFailedInvalidState;
+    }
+
+    EnsureCallbacksInstalled();
+
+    // RFC 9000 §9.6: the new DCID on the migrated path is the connection ID
+    // carried inside the server's preferred_address transport parameter. Hand it
+    // to PathManager so it installs that exact CID instead of rotating to a
+    // pooled NEW_CONNECTION_ID CID (which a server need not provide).
+    const std::string& pref_cid = transport_param_.GetPreferredAddressCID();
+    if (!pref_cid.empty()) {
+        path_manager_.SetPreferredConnectionID(reinterpret_cast<const uint8_t*>(pref_cid.data()),
+            static_cast<uint16_t>(pref_cid.size()));
+    }
+
+    common::Address peer_addr(peer_ip, peer_port);
+    return path_manager_.InitiateMigrationToPeerAddress(peer_addr);
+}
+
+void MigrationController::EnsureCallbacksInstalled() {
+    // Install callbacks once. PathManager creates the probe socket but does not
+    // keep it: it hands the fd straight here, so there is exactly one owner.
+    if (callbacks_installed_) {
+        return;
+    }
+    path_manager_.SetSocketFactoryCallbacks([this]() { return emitter_.GetActiveSocket(); },
+        [this](int32_t probe_fd) {
+            emitter_.SetProbeSocket(probe_fd);
+
+            // Register immediately: PATH_RESPONSE arrives on the probe
+            // socket, so it must be in the poll set before validation
+            // starts. (The old code registered it after
+            // InitiateMigrationToAddress returned, which left a window.)
+            if (register_socket_cb_ && probe_fd > 0) {
+                if (!register_socket_cb_(probe_fd)) {
+                    LOG_ERROR("MigrationController: failed to register probe socket %d with receiver", probe_fd);
+                } else {
+                    LOG_INFO("MigrationController: registered probe socket %d with receiver", probe_fd);
+                }
+            }
+        });
+
+    path_manager_.SetMigrationCompleteCallback([this](const MigrationInfo& info) { OnMigrationComplete(info); });
+    callbacks_installed_ = true;
 }
 
 bool MigrationController::GateBool(std::weak_ptr<void> owner, std::function<bool()> task) {

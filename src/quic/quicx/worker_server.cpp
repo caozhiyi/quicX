@@ -30,7 +30,8 @@ namespace quic {
 
 ServerWorker::ServerWorker(const QuicServerConfig& config, std::shared_ptr<TLSCtx> ctx, std::shared_ptr<ISender> sender,
     const QuicTransportParams& params, connection_state_callback connection_handler,
-    std::shared_ptr<common::IEventLoop> event_loop):
+    std::shared_ptr<common::IEventLoop> event_loop,
+    std::shared_ptr<RetryTokenManager> shared_retry_token_manager):
     Worker(config.config_, ctx, sender, params, connection_handler, event_loop),
     server_alpn_(config.alpn_),
     max_connections_per_worker_(config.max_connections_per_worker_),
@@ -40,7 +41,15 @@ ServerWorker::ServerWorker(const QuicServerConfig& config, std::shared_ptr<TLSCt
     retry_token_lifetime_(config.retry_token_lifetime_) {
     // Initialize Retry infrastructure based on policy
     if (retry_policy_ != RetryPolicy::NEVER) {
-        retry_token_manager_ = std::make_shared<RetryTokenManager>();
+        // Use the shared RetryTokenManager when the server provides one. With
+        // multiple workers the master dispatches by DCID hash (master.cpp), so
+        // the post-Retry Initial frequently lands on a DIFFERENT worker than
+        // the one that issued the token. Per-worker secrets would then fail
+        // HMAC validation and the server would answer with another Retry,
+        // dead-looping the handshake. One shared, mutex-protected manager
+        // (see retry_token_manager.h) is valid on every worker.
+        retry_token_manager_ =
+            shared_retry_token_manager ? shared_retry_token_manager : std::make_shared<RetryTokenManager>();
 
         // Initialize rate monitoring components for SELECTIVE mode
         if (retry_policy_ == RetryPolicy::SELECTIVE) {
@@ -164,7 +173,7 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
                 observed_addr, packet_info.net_packet_->GetData()->GetDataLength());
         }
         connection->SetPendingEcn(packet_info.net_packet_->GetEcn());
-        connection->OnPackets(packet_info.net_packet_->GetTime(), packet_info.packets_);
+        connection->OnPackets(packet_info.net_packet_->GetTime(), packet_info.packets_, packet_info.datagram_size_);
         return true;
     }
 
@@ -279,7 +288,8 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
     callbacks.retire_conn_id_cb = [this](auto a) { HandleRetireConnectionId(a); };
     callbacks.connection_close_cb = [this](auto a, auto b, auto c) { HandleConnectionClose(a, b, c); };
 
-    auto new_conn = std::make_shared<ServerConnection>(ctx_, event_loop_.lock(), server_alpn_, callbacks);
+    auto new_conn = std::make_shared<ServerConnection>(ctx_, event_loop_.lock(), server_alpn_, callbacks,
+        ecn_enabled_);
 
     // Inject Sender for direct packet transmission
     new_conn->SetSender(sender_);
@@ -291,6 +301,15 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
     // available_versions list includes it (and it differs from the client's
     // chosen_version) we will compatibly upgrade during TP processing.
     new_conn->SetPreferredVersion(quic_version_);
+
+    // RFC 9001: Enable Key Update if configured. This both lets the server
+    // initiator rotate its write keys once the bytes-sent threshold is crossed
+    // and lets the receiver respond with its own key-phase-1 packets when the
+    // peer updates its keys.
+    if (enable_key_update_) {
+        new_conn->SetKeyUpdateEnabled(true);
+        LOG_INFO("Key Update enabled for server connection");
+    }
 
     // RFC 9000 §18.2: Server MUST include original_destination_connection_id
     // in transport parameters, set to the DCID from the client's first Initial packet.
@@ -341,7 +360,7 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
     new_conn->SetSocket(packet_info.net_packet_->GetSocket());
     new_conn->SetPeerAddress(packet_info.net_packet_->GetAddress());
     new_conn->SetPendingEcn(packet_info.net_packet_->GetEcn());
-    new_conn->OnPackets(packet_info.net_packet_->GetTime(), packet_info.packets_);
+    new_conn->OnPackets(packet_info.net_packet_->GetTime(), packet_info.packets_, packet_info.datagram_size_);
 
     // Handshake watchdog timer: if the handshake does not finish within
     // kHandshakeTimeoutMs we tear the connection down.

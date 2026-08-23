@@ -37,15 +37,30 @@ BlockMemoryPool::~BlockMemoryPool() {
 }
 
 void* BlockMemoryPool::PoolLargeMalloc() {
-    // Reclaim foreign-thread frees before we may need to expand.
+    // Self-heal ownership: if this pool was never given an owner, the first
+    // thread that allocates from it becomes the owner. This keeps the
+    // ownership metadata stable even for pools whose creator forgot
+    // SetOwnerThread().
+    std::thread::id expected = std::thread::id();
+    owner_tid_.compare_exchange_strong(expected, std::this_thread::get_id(),
+                                       std::memory_order_relaxed,
+                                       std::memory_order_relaxed);
+
+    // Reclaim foreign-thread frees before we may need to expand. Any thread
+    // may malloc from a pool whose buffers it holds (e.g. a worker thread
+    // writing into a stream created by the main thread), so free_mem_vec_ is
+    // guarded by free_vec_mtx_ everywhere.
     DrainHandback();
 
-    if (free_mem_vec_.empty()) {
-        Expansion();
+    void* ret = nullptr;
+    {
+        std::lock_guard<std::mutex> lg(free_vec_mtx_);  // TODO remove this lock
+        if (free_mem_vec_.empty()) {
+            Expansion();
+        }
+        ret = free_mem_vec_.back();
+        free_mem_vec_.pop_back();
     }
-
-    void* ret = free_mem_vec_.back();
-    free_mem_vec_.pop_back();
 
     // Metrics: Memory allocated
     common::Metrics::GaugeInc(common::MetricsStd::MemPoolAllocatedBlocks);
@@ -56,21 +71,26 @@ void* BlockMemoryPool::PoolLargeMalloc() {
 }
 
 void BlockMemoryPool::PoolLargeFree(void*& m) {
-    // Fast path: same-thread free (the common case), or owner not yet known.
-    // The free list is only ever touched by the owner thread, so no atomic ops
-    // or allocation are needed here — exactly as in the original design.
-    if (owner_tid_ == std::thread::id() || std::this_thread::get_id() == owner_tid_) {
-        free_mem_vec_.push_back(m);
+    // Fast path: ONLY when this thread is definitively the recorded owner.
+    // The acquire load pairs with the release store in SetOwnerThread(), so a
+    // foreign thread either sees the real owner id (and defers via handback)
+    // or the default id (also handback). The old "owner not yet known == take
+    // the fast path" rule let foreign threads push onto free_mem_vec_
+    // concurrently with the owner — a heap-corrupting data race.
+    if (std::this_thread::get_id() == owner_tid_.load(std::memory_order_acquire)) {
+        {
+            std::lock_guard<std::mutex> lg(free_vec_mtx_);
+            free_mem_vec_.push_back(m);
+            if (free_mem_vec_.size() > kMaxBlockNum) {
+                ReleaseHalf();
+            }
+        }
         m = nullptr;
 
         // Metrics: Memory deallocated
         common::Metrics::GaugeDec(common::MetricsStd::MemPoolAllocatedBlocks);
         common::Metrics::GaugeInc(common::MetricsStd::MemPoolFreeBlocks);
         common::Metrics::CounterInc(common::MetricsStd::MemPoolDeallocations);
-
-        if (free_mem_vec_.size() > kMaxBlockNum) {
-            ReleaseHalf();
-        }
         return;
     }
 
@@ -96,6 +116,7 @@ void BlockMemoryPool::PoolLargeFree(void*& m) {
 }
 
 uint32_t BlockMemoryPool::GetSize() {
+    std::lock_guard<std::mutex> lg(free_vec_mtx_);
     return (uint32_t)free_mem_vec_.size();
 }
 
@@ -104,24 +125,37 @@ uint32_t BlockMemoryPool::GetBlockLength() {
 }
 
 void BlockMemoryPool::SetOwnerThread(std::thread::id owner) {
-    owner_tid_ = owner;
+    // Record the first owner only; a later call from a different thread must
+    // never steal ownership of a pool another thread is already using.
+    std::thread::id expected = std::thread::id();
+    owner_tid_.compare_exchange_strong(expected, owner,
+                                       std::memory_order_release,
+                                       std::memory_order_relaxed);
 }
 
 void BlockMemoryPool::DrainHandback() {
     void* batch = handback_head_.exchange(nullptr, std::memory_order_acquire);
-    while (batch) {
-        void* next = *reinterpret_cast<void**>(batch);
-        free_mem_vec_.push_back(batch);
-        batch = next;
+    if (!batch) {
+        return;
     }
-    // If the drain pushed a large batch back, trim the free list.
-    if (free_mem_vec_.size() > kMaxBlockNum) {
-        ReleaseHalf();
+    // Splice the reclaimed blocks into the free list, then trim if needed.
+    // free_vec_mtx_ also covers ReleaseHalf()/Expansion() called below.
+    {
+        std::lock_guard<std::mutex> lg(free_vec_mtx_);
+        while (batch) {
+            void* next = *reinterpret_cast<void**>(batch);
+            free_mem_vec_.push_back(batch);
+            batch = next;
+        }
+        // If the drain pushed a large batch back, trim the free list.
+        if (free_mem_vec_.size() > kMaxBlockNum) {
+            ReleaseHalf();
+        }
     }
 }
 
 void BlockMemoryPool::ReleaseHalf() {
-    // No lock needed - always called from owning thread via RunInLoop
+    // Caller must hold free_vec_mtx_ (any thread may malloc/free now).
     size_t half = free_mem_vec_.size() / 2;
 
     // Free first half of the vector

@@ -65,6 +65,25 @@ bool UdpReceiver::AddReceiver(int32_t socket_fd, std::shared_ptr<IPacketReceiver
 
     LOG_DEBUG("UdpReceiver::AddReceiver: registering fd=%d in EventLoop", socket_fd);
     receiver_map_[socket_fd] = receiver;
+    if (ecn_enabled_) {
+        // Outgoing marking (ECT(0), RFC 9000 §A.4) + receiving TOS/TCLASS
+        // ancillary data for ACK_ECN counting. This fd-path is where CLIENT
+        // sockets (already connected) and server-provided fds register, so it
+        // needs both sides of the ECN plumbing.
+        auto recv_r = common::EnableUdpEcn(socket_fd);
+        if (recv_r.error_code_ != 0) {
+            LOG_WARN("UdpReceiver::AddReceiver: EnableUdpEcn failed on fd=%d err=%d — ACK_ECN counters will stay "
+                     "zero for this socket",
+                socket_fd, recv_r.error_code_);
+        }
+        auto mark = common::EnableUdpEcnMarking(socket_fd, 2 /* ECT(0) */);
+        if (mark.error_code_ != 0) {
+            LOG_ERROR("UdpReceiver::AddReceiver: failed to enable ECT(0) marking on fd=%d err=%d", socket_fd,
+                mark.error_code_);
+        } else {
+            LOG_DEBUG("UdpReceiver::AddReceiver: ECT(0) marking enabled on fd=%d", socket_fd);
+        }
+    }
     bool result =
         loop->RegisterFd(socket_fd, common::EventType::ET_READ | common::EventType::ET_ERROR, shared_from_this());
     LOG_DEBUG("UdpReceiver::AddReceiver: registration result=%d for fd=%d", result, socket_fd);
@@ -103,7 +122,20 @@ bool UdpReceiver::AddReceiver(const std::string& ip, uint16_t port, std::shared_
 
     if (ecn_enabled_) {
         // enable receiving TOS/TCLASS for ECN via io_handle abstraction
-        common::EnableUdpEcn(socket_fd);
+        auto recv_r = common::EnableUdpEcn(socket_fd);
+        if (recv_r.error_code_ != 0) {
+            LOG_WARN("UdpReceiver::AddReceiver: EnableUdpEcn failed on fd=%d err=%d — ACK_ECN counters will stay "
+                     "zero for this socket",
+                socket_fd, recv_r.error_code_);
+        }
+        // RFC 9000 §A.4: mark outgoing packets on this socket ECT(0)
+        auto mark = common::EnableUdpEcnMarking(socket_fd, 2 /* ECT(0) */);
+        if (mark.error_code_ != 0) {
+            LOG_ERROR("UdpReceiver::AddReceiver: failed to enable ECT(0) marking on fd=%d err=%d", socket_fd,
+                mark.error_code_);
+        } else {
+            LOG_DEBUG("UdpReceiver::AddReceiver: ECT(0) marking enabled on fd=%d", socket_fd);
+        }
     }
 
     opt_ret = Bind(socket_fd, addr);

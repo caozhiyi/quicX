@@ -49,14 +49,16 @@ public:
     /**
      * @brief Whether any queued frame is a probing frame.
      *
-     * A probing frame here means PATH_CHALLENGE or PATH_RESPONSE, matching the
-     * RFC 9000 §9.3.3 congestion-window exemption (packets containing only
-     * probing frames may be sent even when cwnd is exhausted, so that path
-     * validation cannot deadlock behind congestion control).
+     * A probing frame here means PATH_CHALLENGE or PATH_RESPONSE. Letting
+     * packets containing only such frames bypass an exhausted cwnd is an
+     * engineering trade-off (no precise RFC clause): without it, path
+     * validation deadlocks behind congestion control after a path break,
+     * because the entire cwnd is permanently in flight towards the dead
+     * path. ACK-only packets have the equivalent RFC 9002 §7 exemption.
      *
-     * Note this is deliberately narrower than the §9.1 definition of a probing
-     * packet (which also admits NEW_CONNECTION_ID and PADDING): only the two
-     * frames that actually drive path validation earn the cwnd bypass.
+     * Note this is deliberately narrower than RFC 9000 §9.1's definition of a
+     * probing packet (which also admits NEW_CONNECTION_ID and PADDING): only
+     * the two frames that actually drive path validation earn the bypass.
      *
      * Replaces direct access to wait_frame_list_ from BaseConnection.
      */
@@ -103,7 +105,16 @@ public:
      * @param max_bytes Maximum bytes allowed (from congestion window)
      * @return Vector of frames to send
      */
-    std::vector<std::shared_ptr<IFrame>> GetPendingFrames(EncryptionLevel level, uint32_t max_bytes);
+    /**
+     * @brief Pull queued frames for one packet's worth of sending.
+     *
+     * @param exempt_only When true, only frames on the exemption list
+     *        (IsExemptFrameType) are returned — used by the congested-path
+     *        probing bypass so a cwnd-exhausted connection cannot over-send
+     *        ordinary frames (RFC 9002 §7).
+     */
+    std::vector<std::shared_ptr<IFrame>> GetPendingFrames(EncryptionLevel level, uint32_t max_bytes,
+        bool exempt_only = false);
 
     /**
      * @brief Check if there is stream data to send
@@ -121,6 +132,16 @@ public:
     bool IsCongestionControlExempt() const;
     // Temporarily disallow stream scheduling (e.g., during path validation / anti-amplification)
     void SetStreamsAllowed(bool allowed) { streams_allowed_ = allowed; }
+
+    /**
+     * @brief Whether stream frames may currently be scheduled.
+     *
+     * True normally; false only while the peer address is unvalidated
+     * (handshake amplification window) or a path-validation probe is in
+     * flight. Callers use it to keep egress during those windows minimal
+     * (e.g. un-padded probe datagrams that fit the RFC 9000 §8.1 budget).
+     */
+    bool IsStreamsAllowed() const { return streams_allowed_; }
     // Reset PMTU probing state for a new path (use conservative size until probed)
     void ResetMtuForNewPath();
 
@@ -221,6 +242,15 @@ public:
 
 private:
     bool IsAllowedOnUnvalidated(uint16_t type) const;
+
+    /**
+     * @brief Frames permitted in restricted egress windows.
+     *
+     * The single list backing both "path not yet validated" (RFC 9000 §8.1
+     * amplification) and the congested-path probing bypass: control/probing
+     * frames that never carry application payload.
+     */
+    static bool IsExemptFrameType(uint16_t type);
 
 private:
     SendControl send_control_;

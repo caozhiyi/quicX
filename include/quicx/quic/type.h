@@ -86,7 +86,31 @@ struct QuicTransportParams {
     uint32_t ack_delay_exponent_ms_ = 3;
     uint32_t max_ack_delay_ms_ = 25;
     bool disable_active_migration_ = false;
-    std::string preferred_address_ = "";
+
+    // Dual-family preferred address (RFC 9000 §18.2 carries both an IPv4 and
+    // an IPv6 field). Each string is "<ipv4>:<port>" / "[<ipv6>]:<port>" and
+    // is encoded into the matching field of the preferred_address transport
+    // parameter. The port should differ from the main listen port so
+    // migration creates a genuinely new path.
+    std::string preferred_address_v4_ = "";
+    std::string preferred_address_v6_ = "";
+
+    /**
+     * @brief Client-side periodic PING keep-alive (RFC 9000 §10.1.2, opt-in).
+     *
+     * Interval: keep_alive_interval_ms_ if non-zero, else max(idle/2, 1 s).
+     * Off by default: keep-alive traffic is pure overhead for applications
+     * with their own liveness traffic. Download-only clients behind a NAT
+     * should enable it — see ClientConnection's handling for why.
+     *
+     * Set an explicit short interval (e.g. 300 ms) when NAT mappings may
+     * expire in under a second: a 1 s+ probe cadence lets the mapping starve
+     * before the keep-alive can refresh it (observed with the interop
+     * runner's rebind-addr scenario).
+     */
+    bool enable_keep_alive_ = false;
+    uint32_t keep_alive_interval_ms_ = 0;  // 0 = derive from idle timeout
+
     uint32_t active_connection_id_limit_ = 3;
     std::string initial_source_connection_id_ = "";
     std::string retry_source_connection_id_ = "";

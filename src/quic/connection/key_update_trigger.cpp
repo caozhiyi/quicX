@@ -8,6 +8,7 @@ namespace quic {
 KeyUpdateTrigger::KeyUpdateTrigger():
     enabled_(false),
     triggered_(false),
+    force_(false),
     key_update_count_(0),
     bytes_threshold_(kKeyUpdateBytesThreshold),
     total_bytes_sent_(0),
@@ -18,6 +19,13 @@ KeyUpdateTrigger::KeyUpdateTrigger():
 bool KeyUpdateTrigger::OnBytesSent(uint64_t bytes_sent) {
     if (!enabled_) {
         return false;
+    }
+
+    // Force mode: trigger immediately on the first 1-RTT packet sent
+    // (e.g. interop --force-keyupdate), without waiting for the byte/packet threshold.
+    if (force_ && !triggered_) {
+        LOG_INFO("Key update triggered (force mode)");
+        return true;
     }
 
     total_bytes_sent_ += bytes_sent;
@@ -33,6 +41,11 @@ bool KeyUpdateTrigger::OnBytesSent(uint64_t bytes_sent) {
 bool KeyUpdateTrigger::OnPacketSent(uint64_t packet_number) {
     if (!enabled_) {
         return false;
+    }
+
+    if (force_ && !triggered_) {
+        LOG_INFO("Key update triggered (force mode)");
+        return true;
     }
 
     current_pn_ = packet_number;
@@ -52,6 +65,10 @@ bool KeyUpdateTrigger::OnPacketSent(uint64_t packet_number) {
 bool KeyUpdateTrigger::ShouldTriggerKeyUpdate() const {
     if (!enabled_ || triggered_) {
         return false;
+    }
+
+    if (force_) {
+        return true;
     }
 
     // Check bytes threshold

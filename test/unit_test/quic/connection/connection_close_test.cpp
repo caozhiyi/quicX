@@ -68,12 +68,13 @@ static bool ExchangePackets(std::shared_ptr<IConnection> sender, std::shared_ptr
         return false;
     }
 
+    uint32_t dgram = buffer->GetDataLength();
     std::vector<std::shared_ptr<IPacket>> packets;
     if (!DecodePackets(buffer, packets) || packets.empty()) {
         return false;
     }
 
-    receiver->OnPackets(0, packets);
+    receiver->OnPackets(0, packets, dgram);
     return true;
 }
 
@@ -172,12 +173,13 @@ TEST_F(ConnectionCloseTest, GracefulCloseNoPendingData) {
     auto buffer = client_sender->GetLastSentBuffer();
     ASSERT_NE(buffer, nullptr);
     EXPECT_GT(buffer->GetDataLength(), 0);
+    uint32_t dgram = buffer->GetDataLength();
 
     std::vector<std::shared_ptr<IPacket>> packets;
     ASSERT_TRUE(DecodePackets(buffer, packets));
 
     // Server receives the close notification
-    server->OnPackets(0, packets);
+    server->OnPackets(0, packets, dgram);
 
     // Verify server enters Draining state
     EXPECT_EQ(server_base->GetConnectionStateForTest(), ConnectionStateType::kStateDraining);
@@ -256,12 +258,13 @@ TEST_F(ConnectionCloseTest, PeerInitiatedClose) {
     auto buffer = client_sender->GetLastSentBuffer();
     ASSERT_NE(buffer, nullptr);
     ASSERT_GT(buffer->GetDataLength(), 0);
+    uint32_t dgram = buffer->GetDataLength();
 
     std::vector<std::shared_ptr<IPacket>> packets;
     ASSERT_TRUE(DecodePackets(buffer, packets));
 
     // Server receives CONNECTION_CLOSE and enters Draining
-    server->OnPackets(0, packets);
+    server->OnPackets(0, packets, dgram);
 
     // Verify server enters Draining state (RFC 9000: peer-initiated close)
     EXPECT_EQ(server_base->GetConnectionStateForTest(), ConnectionStateType::kStateDraining);
@@ -328,6 +331,7 @@ TEST_F(ConnectionCloseTest, ClosingStateRetransmitsConnectionClose) {
         buffer = server_sender->GetLastSentBuffer();
 
         if (buffer && buffer->GetDataLength() > 0) {
+            uint32_t dgram = buffer->GetDataLength();
             std::vector<std::shared_ptr<IPacket>> packets;
             if (DecodePackets(buffer, packets)) {
                 // Client receives packet while in Closing state
@@ -338,7 +342,7 @@ TEST_F(ConnectionCloseTest, ClosingStateRetransmitsConnectionClose) {
                 // PTO fallback is 100ms if not available (per implementation)
                 uint64_t pto_ms = 100;                  // Use PTO fallback value
                 uint64_t time_after_pto = pto_ms + 10;  // Add small buffer to ensure we're past PTO
-                client->OnPackets(time_after_pto, packets);
+                client->OnPackets(time_after_pto, packets, dgram);
 
                 // Verify client still in Closing state (should not change to Draining on data packets)
                 EXPECT_EQ(client_base->GetConnectionStateForTest(), ConnectionStateType::kStateClosing);
@@ -372,12 +376,13 @@ TEST_F(ConnectionCloseTest, DrainingStateDoesNotSendPackets) {
     auto buffer = client_sender->GetLastSentBuffer();
     ASSERT_NE(buffer, nullptr);
     ASSERT_GT(buffer->GetDataLength(), 0);
+    uint32_t dgram = buffer->GetDataLength();
 
     std::vector<std::shared_ptr<IPacket>> packets;
     ASSERT_TRUE(DecodePackets(buffer, packets));
 
     // Server receives CONNECTION_CLOSE and enters Draining
-    server->OnPackets(0, packets);
+    server->OnPackets(0, packets, dgram);
 
     // Try multiple times to send data, server should remain silent
     for (int i = 0; i < 3; i++) {
@@ -466,12 +471,13 @@ TEST_F(ConnectionCloseTest, GracefulCloseInterruptedByPeerClose) {
     auto buffer = server_sender->GetLastSentBuffer();
     ASSERT_NE(buffer, nullptr);
     ASSERT_GT(buffer->GetDataLength(), 0);
+    uint32_t dgram = buffer->GetDataLength();
 
     std::vector<std::shared_ptr<IPacket>> packets;
     ASSERT_TRUE(DecodePackets(buffer, packets));
 
     // Client receives peer's CONNECTION_CLOSE
-    client->OnPackets(0, packets);
+    client->OnPackets(0, packets, dgram);
 
     // Client should now be in Draining state (received CONNECTION_CLOSE from peer)
     EXPECT_EQ(client_base->GetConnectionStateForTest(), ConnectionStateType::kStateDraining);
