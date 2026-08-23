@@ -1,3 +1,5 @@
+#include <algorithm>
+
 #include <quicx/common/metrics.h>
 #include <quicx/common/metrics_std.h>
 #include "common/log/log.h"
@@ -112,6 +114,78 @@ void TimerCoordinator::StopIdleTimer() {
     LOG_DEBUG("TimerCoordinator: idle timer stopped");
 }
 
+// ==================== Keep-Alive ====================
+
+// Floor for the keep-alive interval: fast enough to survive the interop
+// runner's 5 s NAT-rebind cadence, cheap enough to be negligible on the wire.
+static constexpr uint32_t kMinKeepAliveMs = 1000;
+
+void TimerCoordinator::StartKeepAliveTimer(TimerCallback callback) {
+    if (keep_alive_active_) {
+        return;
+    }
+
+    uint32_t idle_ms = static_cast<uint32_t>(transport_param_.GetMaxIdleTimeout());
+    if (idle_ms == 0) {
+        // Idle timeout disabled: the connection lives forever, keep-alive is
+        // pointless.
+        return;
+    }
+
+    auto loop = event_loop_.lock();
+    if (!loop) {
+        LOG_ERROR("TimerCoordinator::StartKeepAliveTimer: event_loop_ expired");
+        return;
+    }
+
+    keep_alive_callback_ = std::move(callback);
+    // Explicit config wins (clamped to a hard floor so a misconfiguration
+    // cannot turn into a packet storm). The derived cadence max(idle/2, 1 s)
+    // keeps the connection alive but NAT mappings can expire in well under a
+    // second: the interop runner's rebind-addr scenario showed a 5 s cadence
+    // letting the mapping starve before the PING could refresh it, which
+    // deadlocked the transfer after a rebind.
+    uint32_t explicit_ms = transport_param_.GetKeepAliveInterval();
+    if (explicit_ms > 0) {
+        keep_alive_interval_ms_ = std::max<uint32_t>(explicit_ms, kMinKeepAliveMs / 10);
+    } else {
+        // Auto-derive: probe at half the negotiated idle timeout.
+        keep_alive_interval_ms_ = std::max<uint32_t>(static_cast<uint32_t>(idle_ms / 2), kMinKeepAliveMs);
+    }
+    ArmKeepAliveTimer(loop);
+
+    LOG_DEBUG("TimerCoordinator: keep-alive timer started with interval %u ms", keep_alive_interval_ms_);
+}
+
+void TimerCoordinator::ArmKeepAliveTimer(const std::shared_ptr<common::IEventLoop>& loop) {
+    // Copy the callback into the timer body: keep_alive_callback_ itself may
+    // be reassigned by a future Start/Stop while this timer is still armed.
+    auto cb = keep_alive_callback_;
+    keep_alive_timer_ = loop->AddRepeatTimer(life_token_,
+        [this, cb]() {
+            // Stay silent once the connection can no longer send (closing,
+            // draining, terminating): a PING there would be dropped or, worse,
+            // resurrect a draining connection.
+            if (!state_machine_.CanSendData()) {
+                return;
+            }
+            if (cb) {
+                cb();
+            }
+        },
+        keep_alive_interval_ms_);
+    keep_alive_active_ = true;
+}
+
+void TimerCoordinator::StopKeepAliveTimer() {
+    if (!keep_alive_active_) {
+        return;
+    }
+    keep_alive_timer_.Cancel();
+    keep_alive_active_ = false;
+    LOG_DEBUG("TimerCoordinator: keep-alive timer stopped");
+}
+
 void TimerCoordinator::OnIdleTimeoutInternal() {
     idle_timer_active_ = false;
 
@@ -160,6 +234,12 @@ void TimerCoordinator::OnThreadTransferBefore() {
         idle_timer_.Cancel();
         LOG_DEBUG("TimerCoordinator: removed idle timer for thread transfer");
     }
+    if (keep_alive_active_) {
+        // Without this, the timer would keep firing on the OLD loop after the
+        // connection moved, running the PING path on the wrong thread.
+        keep_alive_timer_.Cancel();
+        LOG_DEBUG("TimerCoordinator: removed keep-alive timer for thread transfer");
+    }
 }
 
 void TimerCoordinator::OnThreadTransferAfter() {
@@ -173,6 +253,10 @@ void TimerCoordinator::OnThreadTransferAfter() {
         uint32_t timeout_ms = static_cast<uint32_t>(transport_param_.GetMaxIdleTimeout());
         idle_timer_ = loop->AddTimer(life_token_, [this]() { OnIdleTimeoutInternal(); }, timeout_ms);
         LOG_DEBUG("TimerCoordinator: re-added idle timer after thread transfer");
+    }
+    if (keep_alive_active_) {
+        ArmKeepAliveTimer(loop);
+        LOG_DEBUG("TimerCoordinator: re-added keep-alive timer after thread transfer");
     }
 }
 

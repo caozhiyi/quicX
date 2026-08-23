@@ -21,7 +21,8 @@ class ServerWorker: public Worker {
 public:
     ServerWorker(const QuicServerConfig& config, std::shared_ptr<TLSCtx> ctx, std::shared_ptr<ISender> sender,
         const QuicTransportParams& params, connection_state_callback connection_handler,
-        std::shared_ptr<common::IEventLoop> event_loop);
+        std::shared_ptr<common::IEventLoop> event_loop,
+        std::shared_ptr<RetryTokenManager> shared_retry_token_manager = nullptr);
     virtual ~ServerWorker();
 
     virtual bool InnerHandlePacket(PacketParseResult& packet_info) override;
@@ -30,7 +31,7 @@ public:
      * @brief Override: on handshake completion, also cancel the handshake
      * watchdog timer registered in InnerHandlePacket. If we do not cancel it,
      * the captured std::shared_ptr<ServerConnection> keeps the connection
-     * alive for kHandshakeTimeoutMs (5 s) after the handshake finishes, which
+     * alive for kHandshakeTimeoutMs after the handshake finishes, which
      * shows up as a per-connection RSS residue in short-lived connect/close
      * benchmarks.
      */
@@ -149,7 +150,7 @@ private:
      * cancelled in HandleHandshakeDone() as soon as the handshake finishes.
      *
      * Without this, the lambda passed to AddTimer() captures the connection
-     * by value and keeps it alive for kHandshakeTimeoutMs (5 s) after the
+     * by value and keeps it alive for kHandshakeTimeoutMs after the
      * handshake completes, which inflates per-connection RSS and delays
      * BaseConnection destruction in connect/close benchmarks.
      */

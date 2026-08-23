@@ -74,9 +74,9 @@ LogStream& LogStream::operator<<(uint32_t v) {
 
 LogStream& LogStream::operator<<(int64_t v) {
     CHECK_CONTINUE()
-#ifdef _WIN32
+#ifdef __win__
     log_->len_ += snprintf(log_->log_ + log_->len_, kLogBlockSize - log_->len_, "%I64d", v);
-#elif defined(__APPLE__)
+#elif __APPLE__
     log_->len_ += snprintf(log_->log_ + log_->len_, kLogBlockSize - log_->len_, "%lld", v);
 #else
     log_->len_ += snprintf(log_->log_ + log_->len_, kLogBlockSize - log_->len_, "%ld", v);
@@ -86,9 +86,9 @@ LogStream& LogStream::operator<<(int64_t v) {
 
 LogStream& LogStream::operator<<(uint64_t v) {
     CHECK_CONTINUE()
-#ifdef _WIN32
+#ifdef __win__
     log_->len_ += snprintf(log_->log_ + log_->len_, kLogBlockSize - log_->len_, "%I64u", v);
-#elif defined(__APPLE__)
+#elif __APPLE__
     log_->len_ += snprintf(log_->log_ + log_->len_, kLogBlockSize - log_->len_, "%llu", v);
 #else
     log_->len_ += snprintf(log_->log_ + log_->len_, kLogBlockSize - log_->len_, "%lu", v);

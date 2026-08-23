@@ -1,6 +1,12 @@
 #include <cstdio>
 #include <cstring>
 
+#ifdef _WIN32
+#include <ws2tcpip.h>
+#else
+#include <arpa/inet.h>
+#endif
+
 #include <quicx/common/if_event_loop.h>
 #include <quicx/common/metrics.h>
 #include <quicx/common/metrics_std.h>
@@ -22,6 +28,7 @@
 #include "quic/connection/encryption_level_scheduler.h"
 #include "quic/connection/error.h"
 #include "quic/connection/util.h"
+#include "quic/connection/stateless_reset_token_generator.h"
 #include "quic/frame/connection_close_frame.h"
 #include "quic/frame/ping_frame.h"
 #include "quic/frame/type.h"
@@ -146,6 +153,7 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_
     path_deps.transport_param = &transport_param_;
     path_deps.peer_addr = &peer_addr_;
     path_deps.to_send_frame_cb = [this](auto&& f) { OnFrameReady(std::forward<decltype(f)>(f)); };
+    path_deps.send_probe_now_cb = [this](const std::shared_ptr<IFrame>& f) { return SendImmediateProbe(f); };
     path_deps.active_send_cb = [this]() { OnConnectionActive(); };
     path_deps.set_peer_addr_cb = [this](const common::Address& addr) { this->SetPeerAddress(addr); };
     path_manager_ = std::make_unique<PathManager>(std::move(path_deps));
@@ -397,6 +405,21 @@ void BaseConnection::AddTransportParam(const QuicTransportParams& tp_config) {
     }
     transport_param_.Init(tp);
 
+    // RFC 9000 §18.2: preferred_address transport parameter must include a
+    // connection ID and stateless reset token so the client can migrate to
+    // the preferred address. Generate them here.
+    if (transport_param_.HasPreferredAddressBinary() && cid_coordinator_) {
+        ConnectionID new_cid = cid_coordinator_->GetLocalConnectionIDManager()->Generator();
+        uint8_t reset_token[kStatelessResetTokenLength];
+        StatelessResetTokenGenerator::Instance().Generate(
+            new_cid.GetID(), new_cid.GetLength(), reset_token);
+        PreferredAddress pa = transport_param_.GetPreferredAddressBinary();
+        pa.cid.assign(reinterpret_cast<const char*>(new_cid.GetID()), new_cid.GetLength());
+        pa.stateless_reset_token.assign(reinterpret_cast<const char*>(reset_token),
+            kStatelessResetTokenLength);
+        transport_param_.SetPreferredAddressBinary(pa);
+    }
+
     // RFC 9368 §3: Include the version_information (id 0x11) transport parameter.
     // chosen_version is the version this endpoint is currently using for its Initial
     // packets; available_versions is our preference-ordered supported list.
@@ -436,13 +459,17 @@ uint64_t BaseConnection::GetConnectionIDHash() {
     return cid_coordinator_->GetConnectionIDHash();
 }
 
-void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket>>& packets) {
+void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket>>& packets, uint32_t datagram_size) {
     // Tie the lifetime guards of our timer controllers to this connection so
     // their timer callbacks are skipped once we are destroyed (and kept alive
     // while they run). Must happen after we are owned by a shared_ptr, which is
     // the case here; see RecvControl::Bind / SendControl::Bind.
-    recv_control_.Bind(weak_from_this());
-    send_manager_.Bind(weak_from_this());
+    recv_control_.Bind(weak_from_this());  // TODO optimize this
+    send_manager_.Bind(weak_from_this());  // TODO optimize this
+
+    // RFC 9000 §8.1: credit the datagram against the 3x anti-amplification
+    // budget before any processing that may generate inline response packets.
+    send_manager_.OnCandidatePathBytesReceived(datagram_size);
 
     // Closing state: Check if packet contains CONNECTION_CLOSE, otherwise retransmit
     if (state_machine_.IsClosing()) {
@@ -457,10 +484,16 @@ void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket
     }
 
     // Normal processing for Connecting/Connected states
-    // Accumulate ECN to ACK_ECN counters based on first packet number space
-    if (!packets.empty() && ecn_enabled_) {
-        auto ns = CryptoLevel2PacketNumberSpace(packets[0]->GetCryptoLevel());
-        recv_control_.OnEcnCounters(pending_ecn_, ns);
+    // Accumulate ECN to ACK_ECN counters. The datagram's codepoint applies to
+    // EVERY coalesced packet in it, and each counts in its OWN packet number
+    // space (RFC 9000 §13.4.2 / §19.3: ect0_count is the total number of
+    // packets received with that codepoint). Handshake-time datagrams
+    // coalescing Initial+Handshake are the norm, so counting only the first
+    // packet's space (the old behaviour) undercounted the Handshake space.
+    if (ecn_enabled_ && pending_ecn_ != 0) {
+        for (const auto& pkt : packets) {
+            recv_control_.OnEcnCounters(pending_ecn_, CryptoLevel2PacketNumberSpace(pkt->GetCryptoLevel()));
+        }
     }
 
     // qlog draft-03 §4.11: every entry in `packets` came from a single UDP
@@ -477,23 +510,9 @@ void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket
         recv_packet_numbers.reserve(packets.size());
     }
 
-    // Sum of the encoded packet sizes, so the datagrams_received event matches
-    // what hit the socket. Computed unconditionally (not just under qlog_trace_)
-    // because the anti-amplification credit depends on it: RFC 9000 §8.1 counts
-    // received datagram bytes, and gating that on qlog being enabled would make
-    // a security limit depend on a debug setting.
-    uint32_t recv_datagram_total_bytes = 0;
-    for (const auto& packet : packets) {
-        recv_datagram_total_bytes += packet->GetSrcBuffer().GetLength();
-    }
-
-    // RFC 9000 §8.1: credit the datagram against the 3x budget *before*
-    // dispatching. Dispatch generates the response inline — the server answers a
-    // client Initial from inside DispatchByType — so crediting afterwards meant
-    // the first server flight was weighed against a still-empty budget, refused
-    // by the emitter, and deferred to a later pump or PTO. Waiting for dispatch
-    // buys nothing: crediting is already a no-op once the address is validated.
-    send_manager_.OnCandidatePathBytesReceived(recv_datagram_total_bytes);
+    // NOTE: RFC 9000 §8.1 anti-amplification credit was already applied at
+    // the top of this method via the datagram_size parameter, so the budget
+    // is available when dispatch generates the inline response.
 
     bool any_packet_processed = false;
     for (size_t i = 0; i < packets.size(); i++) {
@@ -509,6 +528,13 @@ void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket
         if (packet_processed) {
             any_packet_processed = true;
             recv_control_.OnPacketRecv(now, packets[i]);
+            // RFC 9000 §4.1.2: confirm the handshake upon receiving a 1-RTT
+            // packet, not only on HANDSHAKE_DONE.  Essential when that frame is
+            // lost under corruption/loss — otherwise the client stalls in
+            // Connecting and never sends its request.
+            if (packets[i]->GetCryptoLevel() == PacketCryptoLevel::kApplicationCryptoLevel) {
+                OnApplicationDataPacketProcessed();
+            }
         }
     }
 
@@ -524,7 +550,14 @@ void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket
         common::DatagramsReceivedData dg_data;
         dg_data.datagram_id = datagram_id;
         dg_data.count = static_cast<uint32_t>(packets.size());
-        dg_data.raw_length = recv_datagram_total_bytes;
+        // qlog raw_length: sum of decoded packet sizes (excludes padding).
+        // The anti-amplification budget uses the real UDP datagram size,
+        // credited via the datagram_size parameter at the top of OnPackets.
+        uint32_t qlog_total_bytes = 0;
+        for (const auto& packet : packets) {
+            qlog_total_bytes += packet->GetSrcBuffer().GetLength();
+        }
+        dg_data.raw_length = qlog_total_bytes;
         dg_data.packet_numbers = std::move(recv_packet_numbers);
         QLOG_DATAGRAMS_RECEIVED(qlog_trace_, dg_data);
     }
@@ -787,7 +820,7 @@ bool BaseConnection::On1rttPacket(const std::shared_ptr<IPacket>& packet) {
     // RFC 9001 §6: Set expected key phase for Key Update detection
     auto rtt1_pkt = std::dynamic_pointer_cast<Rtt1Packet>(packet);
     if (rtt1_pkt) {
-        rtt1_pkt->SetExpectedKeyPhase(connection_crypto_.GetCurrentKeyPhase());
+        rtt1_pkt->SetExpectedKeyPhase(connection_crypto_.GetReadKeyPhase());
     }
 
     // Try normal decrypt path
@@ -797,7 +830,7 @@ bool BaseConnection::On1rttPacket(const std::shared_ptr<IPacket>& packet) {
 
     // Check if decrypt failure was due to Key Phase change (passive Key Update)
     if (rtt1_pkt && packet->IsKeyPhaseChanged() && connection_crypto_.CanKeyUpdate()) {
-        LOG_INFO("Detected peer Key Update, triggering passive key rotation");
+        LOG_INFO("Detected peer Key Update at pn=%llu, triggering passive key rotation", packet->GetPacketNumber());
 
         // Trigger read (and write) key update
         if (!connection_crypto_.TriggerReadKeyUpdate()) {
@@ -942,64 +975,6 @@ bool BaseConnection::OnFrames(std::vector<std::shared_ptr<IFrame>>& frames, uint
     return frame_processor_->OnFrames(frames, crypto_level);
 }
 
-bool BaseConnection::ParsePreferredAddress(const std::string& value, common::Address& out) {
-    if (value.empty()) {
-        return false;
-    }
-
-    std::string host;
-    std::string port_str;
-
-    if (value[0] == '[') {
-        // Bracketed IPv6: "[<ipv6>]:<port>".
-        const auto close = value.find(']');
-        if (close == std::string::npos || close == 1) {
-            return false;  // no closing bracket, or empty host
-        }
-        if (close + 1 >= value.size() || value[close + 1] != ':') {
-            return false;  // must be followed by ":<port>"
-        }
-        host = value.substr(1, close - 1);
-        port_str = value.substr(close + 2);
-
-    } else {
-        const auto colon = value.find(':');
-        if (colon == std::string::npos || colon == 0) {
-            return false;  // no port, or empty host
-        }
-        // More than one colon without brackets is an unbracketed IPv6 literal:
-        // genuinely ambiguous, so refuse instead of guessing.
-        if (value.find(':', colon + 1) != std::string::npos) {
-            return false;
-        }
-        host = value.substr(0, colon);
-        port_str = value.substr(colon + 1);
-    }
-
-    if (host.empty() || port_str.empty()) {
-        return false;
-    }
-
-    // Hand-rolled rather than std::stoi/strtoul: no exceptions, no errno, and
-    // trailing garbage ("443x") is rejected instead of silently ignored.
-    uint32_t port = 0;
-    for (char c : port_str) {
-        if (c < '0' || c > '9') {
-            return false;
-        }
-        port = port * 10 + static_cast<uint32_t>(c - '0');
-        if (port > 65535) {
-            return false;  // bail on overflow; also catches absurdly long input
-        }
-    }
-    if (port == 0) {
-        return false;  // port 0 is not a usable destination
-    }
-
-    out = common::Address(host, static_cast<uint16_t>(port));
-    return true;
-}
-
 void BaseConnection::RecordPeerInitialScid(const uint8_t* id, uint8_t len) {
     if (peer_initial_scid_recorded_) {
         return;
@@ -1082,7 +1057,7 @@ void BaseConnection::OnTransportParams(TransportParam& remote_tp) {
     // 1. SERVER: Advertises a preferred_address in transport parameters during handshake
     //    - This is typically used when the server wants the client to use a different address
     //    - Example: Load balancer forwards initial connection, server wants client to connect directly
-    //    - Server sets this via transport_param.SetPreferredAddress("ip:port") before handshake
+    //    - Server sets this via QuicTransportParams::preferred_address_v4_/_v6_ before handshake
     //
     // 2. CLIENT: Receives preferred_address and decides whether to migrate (this code)
     //    - Only if active migration is not disabled
@@ -1095,21 +1070,52 @@ void BaseConnection::OnTransportParams(TransportParam& remote_tp) {
     //    - Server responds to PATH_CHALLENGE from client on the preferred address
     //    - After client validates, communication happens on the new address
     //
-    if (!transport_param_.GetDisableActiveMigration()) {
-        const auto& pref = transport_param_.GetPreferredAddress();
-        if (!pref.empty()) {
-            LOG_INFO("Server advertised preferred address: %s", pref.c_str());
+    if (!transport_param_.GetPeerDisableActiveMigration()) {
+        if (transport_param_.HasPreferredAddressBinary()) {
+            LOG_INFO("Server advertised preferred address");
 
+            // Parse the RFC 9000 §18.2 binary preferred_address via the
+            // shared util parser; it selects the address family matching the
+            // current connection and extracts the CID to use on the migrated
+            // path (RFC 9000 §9.6).
+            bool peer_is_ipv4 = GetPeerAddress().GetIp().find(':') == std::string::npos;
             common::Address addr;
-            if (!ParsePreferredAddress(pref, addr)) {
-                // Peer-controlled value; a bad one isignored, not fatal.
-                LOG_WARN("Invalid preferred address: %s (expected host:port or [ipv6]:port)", pref.c_str());
-            } else if (addr == GetPeerAddress()) {
-                LOG_DEBUG("Preferred address is same as current address, no migration needed");
+            std::string preferred_cid;
+            if (!ParsePreferredAddressBinary(transport_param_.GetPreferredAddress(), peer_is_ipv4, addr,
+                    &preferred_cid)) {
+                LOG_ERROR("Failed to parse server preferred_address");
             } else {
-                LOG_INFO("Client initiating migration to server's preferred address: %s:%d", addr.GetIp().c_str(),
-                    addr.GetPort());
-                path_manager_->OnObservedPeerAddress(addr);
+                if (!preferred_cid.empty()) {
+                    transport_param_.SetPreferredAddressCID(preferred_cid);
+                }
+
+                if (addr == GetPeerAddress()) {
+                    LOG_DEBUG("Preferred address is same as current address, no migration needed");
+                } else if (!state_machine_.CanSendData()) {
+                    // Server transport parameters arrive during the handshake (in
+                    // EncryptedExtensions), long before the connection is
+                    // established — migrating right now would be rejected by
+                    // MigrationController's connected-state gate. Stash the
+                    // address; ClientConnection::HandleHandshakeDoneFrame picks
+                    // it up the moment the handshake completes.
+                    pending_preferred_addr_ = addr;
+                    has_pending_preferred_addr_ = true;
+                    LOG_INFO("Deferring preferred-address migration to %s:%d until handshake completes",
+                        addr.GetIp().c_str(), addr.GetPort());
+                } else {
+                    LOG_INFO("Client initiating migration to server's preferred address: %s:%d",
+                        addr.GetIp().c_str(), addr.GetPort());
+                    // Full preferred-address migration: creates a socket matching
+                    // the target's family (the classic scenario is IPv6 -> IPv4)
+                    // and pre-rotates the DCID so the first packet on the new path
+                    // already uses a fresh CID. The old call
+                    // (OnObservedPeerAddress) probed the new address on the OLD
+                    // socket, which cannot reach an address of another family,
+                    // and kept the old DCID.
+                    migration_controller_->InitiateMigrationToPeer(
+                        std::weak_ptr<void>(std::static_pointer_cast<BaseConnection>(shared_from_this())),
+                        addr.GetIp(), addr.GetPort());
+                }
             }
         }
     }
@@ -1449,6 +1455,7 @@ void BaseConnection::OnStateToClosing() {
     // the cross-thread fatal observed ~750 ms after CloseInternal in
     // interop runs.
     timer_coordinator_->StopIdleTimer();
+    timer_coordinator_->StopKeepAliveTimer();
 
     send_manager_.ClearRetransmissionData();
     // ClearActiveStreams() already drops the pending frame list.
@@ -1515,6 +1522,7 @@ void BaseConnection::OnStateToDraining() {
 
     // Pre-emptive idle-timer cleanup (see OnStateToClosing for rationale).
     timer_coordinator_->StopIdleTimer();
+    timer_coordinator_->StopKeepAliveTimer();
 
     send_manager_.ClearRetransmissionData();
     // ClearActiveStreams() already drops the pending frame list.
@@ -1561,6 +1569,7 @@ void BaseConnection::OnStateToClosed() {
 
     // Stop idle timer through coordinator
     timer_coordinator_->StopIdleTimer();
+    timer_coordinator_->StopKeepAliveTimer();
 
     // Only invoke callback if it hasn't been called yet
     // (may have been called earlier in OnStateToDraining)
@@ -1815,8 +1824,24 @@ int BaseConnection::TrySendNewBurst(int budget) {
     PacketBuilder::DataPacketContext tmpl;
     FillPacketIdentity(tmpl, send_ctx.level, cryptographer);
     tmpl.key_phase = connection_crypto_.GetCurrentKeyPhase();
-    tmpl.add_padding = (send_ctx.level == kInitial);
-    tmpl.min_size = kMinInitialPacketSize;  // RFC 9000 §14.1
+    // RFC 9000 §14.1: client Initial datagrams MUST be >= 1200 B.
+    // Picoquic also enforces this on server Initial datagrams, so pad
+    // all Initial packets to 1200 B for interop compatibility.
+    const bool initial_padding = send_ctx.level == kInitial;
+    tmpl.add_padding = initial_padding;
+    tmpl.min_size = initial_padding ? kMinInitialPacketSize : 0;
+    if (!send_manager_.IsStreamsAllowed() && send_ctx.level == kApplication) {
+        // Path-validation window (probe in flight / address unvalidated): the
+        // RFC 9000 §8.1 budget is 3x bytes *received from the candidate
+        // address, which after a NAT rebind is only a few tiny keep-alive
+        // PINGs (~86 B each => ~250 B of budget). A 1200 B-padded challenge
+        // datagram then never fits and validation starves (observed: probes
+        // failing 5/5 on every rebind while the padded challenge sat blocked
+        // at the emitter). §8.2.1 padding exists for PMTU discovery; under an
+        // amplification budget sending the probe unpadded is the only way it
+        // can ever leave, so drop the minimum for this window.
+        tmpl.min_size = 0;
+    }
     tmpl.token = send_manager_.GetToken();
 
     int sent = 0;
@@ -1826,25 +1851,30 @@ int BaseConnection::TrySendNewBurst(int budget) {
         // sent-packet manager credits/debits bytes_in_flight, so an
         // earlier packet in this burst can push cwnd to 0).
         uint32_t max_bytes = send_manager_.GetAvailableWindow();
+        bool probe_bypass = false;
         if (max_bytes == 0) {
-            // RFC 9000 §9.3.3 probing-frame exemption.
-            bool has_probing = send_manager_.HasPendingProbingFrame();
-            if (has_probing) {
-                max_bytes = kMinInitialPacketSize;
-                LOG_DEBUG(
-                    "BaseConnection::TrySendBurst: cwnd full but probing frame pending — bypassing cwnd (RFC 9000 "
-                    "§9.3.3)");
-            } else {
+            // ACK-only packets may bypass congestion control (RFC 9002 §7);
+            // packets carrying path-validation probes earn the same bypass as
+            // an engineering trade-off (no precise RFC clause): after a path
+            // break the entire cwnd is in flight towards the dead path, so a
+            // gated PATH_CHALLENGE/RESPONSE would deadlock validation. The
+            // bypass below is deliberately NARROW — exempt frames only, no
+            // stream data, no min-size padding — so a congested-but-validated
+            // path cannot use it to over-send (RFC 9002 §7).
+            if (!send_manager_.IsCongestionControlExempt() && !send_manager_.HasPendingProbingFrame()) {
                 LOG_DEBUG("BaseConnection::TrySendBurst: congestion window full at pkt #%d", sent);
                 send_manager_.SetCwndLimited();
                 common::Metrics::CounterInc(common::MetricsStd::DiagTrySendCwndBlocked);
                 break;
             }
+            probe_bypass = true;
+            max_bytes = kMinInitialPacketSize;
+            LOG_DEBUG("BaseConnection::TrySendBurst: cwnd full but exempt/probing frame pending — narrow bypass");
         }
 
         // 4b. Pending frames (always per-packet — GetPendingFrames may
         // hand out at most one packet's worth of frames at a time).
-        auto frames = send_manager_.GetPendingFrames(send_ctx.level, max_bytes);
+        auto frames = send_manager_.GetPendingFrames(send_ctx.level, max_bytes, probe_bypass);
 
         // 4c. ACK piggyback. ShouldSendAckNow is consumed by the ACK
         // emission path (RecvControl::MayGenerateAckFrame clears the
@@ -1862,6 +1892,19 @@ int BaseConnection::TrySendNewBurst(int budget) {
         }
 
         bool has_stream_data = send_manager_.HasStreamData(send_ctx.level);
+        if ((!send_manager_.IsStreamsAllowed() || probe_bypass) && send_ctx.level == kApplication) {
+            // Restricted egress window (path unvalidated, or congested-path
+            // probing bypass): stream data is packed into the datagram by a
+            // channel that bypasses GetPendingFrames' frame filter
+            // (include_stream_data), so a queued PATH_CHALLENGE used to ship
+            // inside a 1443 B stream datagram that the §8.1 amp budget always
+            // rejected (observed: every probe "result=0, size=1443" despite
+            // frames=1 & min_size=0). Block the app-stream channel for the
+            // window; it resumes once the path validates / cwnd returns.
+            // Handshake-level CRYPTO (Initial/Handshake) is untouched so the
+            // handshake flight keeps flowing under the handshake amp window.
+            has_stream_data = false;
+        }
         if (frames.empty() && !has_stream_data) {
             LOG_DEBUG("BaseConnection::TrySendBurst: no data to send at pkt #%d", sent);
             common::Metrics::CounterInc(common::MetricsStd::DiagTrySendNoData);
@@ -1874,6 +1917,24 @@ int BaseConnection::TrySendNewBurst(int budget) {
         PacketBuilder::DataPacketContext build_ctx = tmpl;
         build_ctx.frames = std::move(frames);
         build_ctx.include_stream_data = has_stream_data;
+        if (probe_bypass) {
+            // Narrow-bypass datagram must fit tight amp/cwnd budgets — no
+            // 1200 B minimum-size padding on this one.
+            build_ctx.min_size = 0;
+        }
+
+        bool burst_has_challenge = false;
+        for (const auto& f : build_ctx.frames) {
+            if (static_cast<FrameType>(f->GetType()) == FrameType::kPathChallenge) {
+                burst_has_challenge = true;
+                break;
+            }
+        }
+        if (burst_has_challenge) {
+            LOG_DEBUG("BaseConnection::TrySendBurst: challenge in new-burst datagram (frames=%zu, min_size=%u, "
+                      "has_stream_data=%d)",
+                build_ctx.frames.size(), build_ctx.min_size, has_stream_data ? 1 : 0);
+        }
 
         // 4e. Connection-level flow control.
         //
@@ -1980,6 +2041,10 @@ int BaseConnection::TrySendNewBurst(int budget) {
         if (send_success) {
             common::Metrics::HistogramObserve(common::MetricsStd::DiagPktPayloadHist, buffer->GetDataLength());
         }
+        if (burst_has_challenge) {
+            LOG_DEBUG("BaseConnection::TrySendBurst: challenge datagram send result=%d, pn=%llu, size=%u",
+                send_success ? 1 : 0, result.packet_number, result.packet_size);
+        }
 
         // 4i. Conn-level FC accounting + key update trigger (unchanged).
         if (send_success && result.stream_data_size > 0) {
@@ -1988,9 +2053,22 @@ int BaseConnection::TrySendNewBurst(int budget) {
         if (send_success && send_ctx.level == kApplication && key_update_trigger_.IsEnabled()) {
             if (key_update_trigger_.OnBytesSent(result.packet_size)) {
                 if (connection_crypto_.TriggerKeyUpdate()) {
+                    // Exactly ONE key update per connection. MarkTriggered() keeps
+                    // triggered_ set forever; do NOT Reset() — re-arming would fire
+                    // again every 512KB (6x for a 3MB file, 20x for 10MB). Each
+                    // update opens a key-transition window; with multiple updates
+                    // the read/write generations on the two endpoints can drift by
+                    // >=2, the mod-2 key-phase bit then shows "no change", the
+                    // drifting side drops every peer ACK (decryption_failed) and
+                    // the transfer stalls at the sender's in-flight window.
                     key_update_trigger_.MarkTriggered();
-                    key_update_trigger_.Reset();
-                    LOG_INFO("Key Update triggered after sending %u bytes", result.packet_size);
+                    // Refresh the burst template so the remaining packets of THIS
+                    // burst carry the new key phase bit. Without this they get
+                    // encrypted with the new write key but still carry the old
+                    // phase bit, leaving the peer no hint to rotate its keys.
+                    tmpl.key_phase = connection_crypto_.GetCurrentKeyPhase();
+                    LOG_INFO("Key Update triggered after sending %u bytes (new key_phase: %u)", result.packet_size,
+                        connection_crypto_.GetCurrentKeyPhase());
                 }
             }
         }
@@ -2112,9 +2190,11 @@ int BaseConnection::TryCoalescedInitialHandshake() {
     // subtract a conservative envelope estimate. Erring high (29 B) is
     // safe: it may make the datagram a few bytes over 1200 (still fully
     // compliant; §14.1 has no upper bound below MTU) but never under.
-    const bool is_client = !is_server_;
-    const bool client_first_flight = is_client && !encryption_scheduler_->IsInitialPacketSent();
-    const uint32_t target_datagram_size = client_first_flight ? kMinInitialPacketSize : 0;
+    // Pad coalesced Initial+Handshake datagrams to 1200 bytes for both
+    // client and server. RFC 9000 §14.1 requires this for client first
+    // flight; picoquic also enforces it on server Initial datagrams
+    // ("Server initial too short" if < 1200 B).
+    const uint32_t target_datagram_size = kMinInitialPacketSize;
     constexpr uint32_t kHandshakeEnvelopeEstimate = 29;  // header lower bound + AEAD tag
 
     uint32_t handshake_min_plaintext = 0;
@@ -2142,47 +2222,24 @@ int BaseConnection::TryCoalescedInitialHandshake() {
         hs_ctx, buffer, send_manager_.GetPacketNumber(), send_manager_.GetSendControl());
     if (!hs_result.success) {
         // Initial has already been built into the buffer and recorded by
-        // SendControl. Two options at this point:
-        //   (a) Send what we have — Initial alone — accepting it lacks
-        //       padding (if client_first_flight, that violates §14.1).
-        //   (b) Send anyway only if padding wasn't required; otherwise
-        //       drop and let the legacy path rebuild Initial with padding.
-        //
-        // We take a third, simpler stance: if Handshake build fails,
-        // send the Initial as-is *only* when no padding was required
-        // (server or non-first-flight). For the client first flight,
-        // we cannot safely send an under-1200 datagram, so we report 0
-        // and rely on the normal level-sticky burst (next iteration) to
-        // rebuild the Initial with padding. The cost of this fallback
-        // is one wasted packet-number on the Initial — acceptable
-        // because handshake build failures are rare paths.
+        // SendControl. Since we always pad to 1200 B (target_datagram_size
+        // > 0), an Initial-only datagram would be under-padded. Discard
+        // and let the normal burst path rebuild with padding.
         LOG_WARN(
             "BaseConnection::TryCoalescedInitialHandshake: Handshake build failed: %s "
-            "(initial_size=%u, client_first_flight=%d)",
-            hs_result.error_message.c_str(), initial_size, client_first_flight ? 1 : 0);
-        if (client_first_flight) {
-            // Discard the buffer; caller's TrySendNewBurst will rebuild
-            // and pad Initial properly on the next pass.
-            // qlog draft-03: the Initial we just built is being thrown
-            // away — the Scope destructor drains the datagram bracket so
-            // the next attempt gets a fresh id rather than inheriting this
-            // orphan one.
-            return 0;
-        }
-        // Server or non-first-flight: ship Initial alone — the datagram
-        // therefore holds exactly one packet (the Initial).
-        encryption_scheduler_->SetInitialPacketSent(true);
-        if (!scope.Commit(buffer)) {
-            return 0;
-        }
-        return 1;
+            "(initial_size=%u, target_datagram_size=%u)",
+            hs_result.error_message.c_str(), initial_size, target_datagram_size);
+        // qlog draft-03: the Initial we just built is being thrown
+        // away — the Scope destructor drains the datagram bracket so
+        // the next attempt gets a fresh id rather than inheriting this
+        // orphan one.
+        return 0;
     }
 
     LOG_DEBUG(
         "BaseConnection::TryCoalescedInitialHandshake: built Handshake pn=%llu size=%u, "
-        "datagram_total=%u (target>=%u, client_first_flight=%d)",
-        hs_result.packet_number, hs_result.packet_size, initial_size + hs_result.packet_size, target_datagram_size,
-        client_first_flight ? 1 : 0);
+        "datagram_total=%u (target>=%u)",
+        hs_result.packet_number, hs_result.packet_size, initial_size + hs_result.packet_size, target_datagram_size);
 
     // 6. Update Initial-sent flag (scheduler uses this for 0-RTT ordering).
     encryption_scheduler_->SetInitialPacketSent(true);
@@ -2209,6 +2266,21 @@ int BaseConnection::TryCoalescedInitialHandshake() {
 
 bool BaseConnection::SendImmediateAck(PacketNumberSpace ns) {
     LOG_DEBUG("BaseConnection::SendImmediateAck: ns=%d", ns);
+
+    // Server-side Initial: defer ACK to coalesced CRYPTO packet.
+    //
+    // SendImmediateAck builds a separate ACK-only datagram padded to
+    // kMinInitialPacketSize (1200 bytes) per RFC 9000 §14.1. On the server
+    // side this padding is unnecessary (§14.1 only requires *clients* to
+    // pad) and causes the ACK to either be blocked by the anti-amplification
+    // limit or consume the entire budget, preventing CRYPTO (handshake) data
+    // from being sent. By deferring, the ACK is piggybacked in the coalesced
+    // Initial+Handshake CRYPTO packet via MaybePrependAck(), which is smaller
+    // and fits within the anti-amplification budget.
+    if (is_server_ && ns == kInitialNumberSpace) {
+        LOG_DEBUG("BaseConnection::SendImmediateAck: deferring server Initial ACK to coalesced packet");
+        return false;
+    }
 
     // 1. Determine encryption level from packet number space
     EncryptionLevel target_level;
@@ -2268,6 +2340,42 @@ bool BaseConnection::SendImmediateAck(PacketNumberSpace ns) {
 
     // 5. Send immediately: bypass the batch sink so the ACK does not wait for
     // the end-of-round sendmmsg flush.
+    return scope.Commit(buffer, /*bypass_batch=*/true);
+}
+
+bool BaseConnection::SendImmediateProbe(const std::shared_ptr<IFrame>& frame) {
+    // PATH_CHALLENGE/PATH_RESPONSE only travel in 1-RTT packets.
+    auto cryptographer = connection_crypto_.GetCryptographer(kApplication);
+    if (!cryptographer) {
+        LOG_DEBUG("BaseConnection::SendImmediateProbe: no 1-RTT cryptographer yet");
+        return false;
+    }
+
+    // Allocate buffer chunk
+    auto chunk = std::make_shared<common::BufferChunk>(quic::GlobalResource::Instance().GetThreadLocalBlockPool());
+    if (!chunk || !chunk->Valid()) {
+        LOG_ERROR("BaseConnection::SendImmediateProbe: failed to allocate buffer chunk");
+        return false;
+    }
+    auto buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
+
+    auto scope = emitter_->Open();
+
+    auto result = packet_builder_->BuildImmediatePacket(frame, kApplication, cryptographer,
+        cid_coordinator_->GetLocalConnectionIDManager().get(), cid_coordinator_->GetRemoteConnectionIDManager().get(),
+        buffer, send_manager_.GetPacketNumber(), send_manager_.GetSendControl(), connection_crypto_.GetVersion(),
+        connection_crypto_.GetCurrentKeyPhase());
+
+    if (!result.success) {
+        LOG_ERROR("BaseConnection::SendImmediateProbe: failed to build packet: %s", result.error_message.c_str());
+        return false;
+    }
+
+    LOG_DEBUG("BaseConnection::SendImmediateProbe: built probe packet pn=%llu, size=%u", result.packet_number,
+        result.packet_size);
+
+    // Send synchronously: this packet must precede any queued traffic that
+    // would otherwise claim the new path's first packet.
     return scope.Commit(buffer, /*bypass_batch=*/true);
 }
 

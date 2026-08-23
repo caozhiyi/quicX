@@ -220,26 +220,84 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
     LOG_DEBUG("stream recv stream frame. stream id:%llu, offset:%llu, length:%u, final offset:%llu", stream_id_,
         stream_frame->GetOffset(), stream_frame->GetLength(), final_offset_);
 
-    if (stream_frame->GetOffset() == except_offset_) {
+    if (stream_frame->GetOffset() <= except_offset_) {
+        // RFC 9000 §2.2: STREAM frames carrying overlapping ranges of stream
+        // data are legal. A loss-recovering sender frequently re-segments data:
+        // the retransmission may start before except_offset_ (already received
+        // prefix) yet carry brand-new bytes past it. Dropping such a frame
+        // whole permanently loses the new tail: the sender has packet-level
+        // ACKs for it and will never resend those bytes, so except_offset_
+        // stalls forever and the stream never completes (observed as tail-stall
+        // deadlock under transferloss/transfercorruption).
+        if (stream_frame->GetOffset() + stream_frame->GetLength() <= except_offset_) {
+            // Senders may resend the FIN as a zero-length STREAM frame after the
+            // data itself was delivered by other (re-segmented) frames — quic-go
+            // does this under loss. Swallowing it as a duplicate would leave the
+            // stream forever incomplete. Normalize to an empty frame at
+            // except_offset_ and fall through so the FIN can complete delivery.
+            if (!stream_frame->IsFin()) {
+                LOG_DEBUG("stream recv fully duplicate frame. stream id:%llu, offset:%llu, except offset:%llu", stream_id_,
+                    stream_frame->GetOffset(), except_offset_);
+                return 0;
+            }
+            common::SharedBufferSpan empty_span;
+            stream_frame->SetData(empty_span);
+            stream_frame->SetOffset(except_offset_);
+        }
+        uint64_t overlap = except_offset_ - stream_frame->GetOffset();
+        auto raw = stream_frame->GetData();
+        common::SharedBufferSpan trimmed(raw.GetChunk(), raw.GetStart() + overlap, raw.GetEnd());
+        stream_frame->SetData(trimmed);
+        stream_frame->SetOffset(except_offset_);
+
         // CRITICAL: Use deep copy (Write(uint8_t*, len)) instead of shallow copy (Write(SharedBufferSpan, len)).
         // SharedBufferSpan points into the packet buffer chunk, which may be shared by multiple STREAM frames
         // from the same packet (belonging to different streams). If we shallow-copy (push the chunk directly
         // into our buffer's chunk list), subsequent Write operations may use the "free" space after our data
         // in that chunk — but that space may contain another stream's data. This causes cross-stream
         // data contamination. Deep copy avoids this by copying data into our own exclusive chunks.
-        buffer_->Write(stream_frame->GetData().GetStart(), stream_frame->GetLength());
+        // Zero-length FIN-only frames carry no bytes to copy.
+        if (stream_frame->GetLength() > 0) {
+            buffer_->Write(stream_frame->GetData().GetStart(), stream_frame->GetLength());
+        }
         except_offset_ += stream_frame->GetLength();
 
-        while (true) {
-            auto iter = out_order_frame_.find(except_offset_);
-            if (iter == out_order_frame_.end()) {
-                break;
+        // Absorb the out-of-order queue. Iterate from the LOWEST buffered
+        // offset (map is sorted) instead of exact-key find(except_offset_):
+        // buffered frames may also partially overlap except_offset_ and must
+        // be prefix-trimmed rather than skipped, otherwise they stay stuck in
+        // the queue forever.
+        while (!out_order_frame_.empty()) {
+            auto iter = out_order_frame_.begin();
+            auto queued = std::dynamic_pointer_cast<StreamFrame>(iter->second);
+            uint64_t qs = queued->GetOffset();
+            uint64_t qe = qs + queued->GetLength();
+            if (qe <= except_offset_) {
+                // Entirely below the consumed point: pure duplicate.
+                out_order_bytes_ -= queued->GetLength();
+                out_order_frame_.erase(iter);
+                continue;
             }
-
-            stream_frame = std::dynamic_pointer_cast<StreamFrame>(iter->second);
-            out_order_bytes_ -= stream_frame->GetLength();
-            buffer_->Write(stream_frame->GetData().GetStart(), stream_frame->GetLength());
-            except_offset_ += stream_frame->GetLength();
+            if (qs < except_offset_) {
+                // Partial overlap: drop the received prefix, re-key the frame
+                // at except_offset_ and re-examine (it may now be contiguous).
+                uint64_t qov = except_offset_ - qs;
+                auto qraw = queued->GetData();
+                common::SharedBufferSpan qtrimmed(qraw.GetChunk(), qraw.GetStart() + qov, qraw.GetEnd());
+                queued->SetData(qtrimmed);
+                queued->SetOffset(except_offset_);
+                out_order_bytes_ -= qov;
+                out_order_frame_.erase(iter);
+                out_order_frame_[except_offset_] = queued;
+                continue;
+            }
+            if (qs > except_offset_) {
+                break;  // real gap: nothing more can be reassembled yet
+            }
+            // Contiguous continuation.
+            out_order_bytes_ -= queued->GetLength();
+            buffer_->Write(queued->GetData().GetStart(), queued->GetLength());
+            except_offset_ += queued->GetLength();
             out_order_frame_.erase(iter);
         }
 

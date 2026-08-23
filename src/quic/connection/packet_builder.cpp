@@ -292,15 +292,34 @@ PacketBuilder::BuildResult PacketBuilder::BuildDataPacket(const DataPacketContex
     // unchanged because they continue to pass add_padding=true with
     // min_size=kMinInitialPacketSize.
     if (ctx.add_padding) {
+        // RFC 9000 §14.1 requires the *on-wire datagram* to be at least
+        // kMinInitialPacketSize (1200 B). That floor includes the token plus a
+        // fixed header + AEAD-tag envelope on top of the plaintext payload.
+        // The token is injected separately (step 7 / SetToken) and was NOT part
+        // of the payload length measured above, so a flat kMinInitialPacketSize
+        // target would make the datagram 1200 + token (≈1497 B for a 256 B
+        // token). That both overshoots the minimum and, with a large token,
+        // overflows the 1500 B send-buffer block during in-place AEAD sealing
+        // (EVP_AEAD_CTX_seal fails). Subtract the token and a conservative
+        // envelope estimate so the *datagram* reaches ~1200 B. Using a small
+        // (under-)estimate is the safe direction: it can only make the datagram
+        // a few bytes OVER 1200, never under, so §14.1 still holds.
+        uint32_t effective_min_size = ctx.min_size;
+        if (ctx.level == kInitial) {
+            constexpr uint32_t kInitialEnvelopeEstimate = 20;  // PN(<=4) + AEAD tag(16); lower bound, safe
+            uint32_t token_len = !ctx.token.empty() ? static_cast<uint32_t>(ctx.token.length()) : 0;
+            uint32_t overhead = token_len + kInitialEnvelopeEstimate;
+            effective_min_size = (overhead < ctx.min_size) ? (ctx.min_size - overhead) : 0;
+        }
         uint32_t current_size = payload_buffer->GetDataLength();
-        if (current_size < ctx.min_size) {
+        if (current_size < effective_min_size) {
             auto padding_frame = std::make_shared<PaddingFrame>();
-            padding_frame->SetPaddingLength(ctx.min_size - current_size);
+            padding_frame->SetPaddingLength(effective_min_size - current_size);
             if (!visitor.HandleFrame(padding_frame)) {
                 LOG_WARN("PacketBuilder::BuildDataPacket: failed to add padding frame");
             } else {
                 LOG_DEBUG("PacketBuilder::BuildDataPacket: added %u bytes padding to reach %u bytes (level=%d)",
-                    ctx.min_size - current_size, ctx.min_size, ctx.level);
+                    effective_min_size - current_size, effective_min_size, ctx.level);
             }
         }
     }

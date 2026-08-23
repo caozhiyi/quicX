@@ -2,6 +2,7 @@
 #define QUIC_STREAM_RECV_STREAM
 
 #include <functional>
+#include <map>
 #include <string>
 #include <unordered_map>
 
@@ -65,7 +66,9 @@ protected:
     // next except data offset
     uint64_t except_offset_;
     std::shared_ptr<common::MultiBlockBuffer> buffer_;
-    std::unordered_map<uint64_t, std::shared_ptr<IFrame>> out_order_frame_;
+    // Ordered by offset: the reassembly drain loop relies on begin() being the
+    // lowest buffered offset (prefix-trim + absorb until the first real gap).
+    std::map<uint64_t, std::shared_ptr<IFrame>> out_order_frame_;
     // Running total of bytes currently held in out_order_frame_. It only ever
     // decreases when frames are consumed in order (the drain loop); we never
     // evict buffered frames, because out-of-order frames are already ACKed at the

@@ -1,7 +1,11 @@
 # CMakeLists.txt for QUIC interop test programs
 
 cmake_minimum_required(VERSION 3.10)
-add_compile_options(-Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function)
+# MSVC / clang-cl reject GCC-style -Wno-* flags (D8021); route to /wd#### instead.
+add_compile_options(
+    "$<$<OR:$<CXX_COMPILER_ID:MSVC>,$<STREQUAL:$<CXX_COMPILER_FRONTEND_VARIANT>,MSVC>>:/wd4101;/wd4189;/wd4505>"
+    "$<$<AND:$<NOT:$<CXX_COMPILER_ID:MSVC>>,$<NOT:$<STREQUAL:$<CXX_COMPILER_FRONTEND_VARIANT>,MSVC>>>:-Wno-unused-variable;-Wno-unused-but-set-variable;-Wno-unused-function>"
+)
 
 # Interop Server (links http3 library for HTTP/3 support)
 add_executable(interop_server

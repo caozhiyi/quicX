@@ -60,8 +60,18 @@ SendOperation SendManager::GetSendOperation() {
         uint64_t now = common::UTCTimeMsec();
         send_control_.CanSend(now, can_send_size);
         if (can_send_size == 0) {
-            // RFC 9002: Allow ACK-only packets to bypass congestion control
-            if (!IsCongestionControlExempt()) {
+            // RFC 9002: Allow ACK-only packets to bypass congestion control.
+            // Also allow path-validation probes (PATH_CHALLENGE/RESPONSE) to
+            // bypass: after a NAT rebind the entire cwnd is in flight towards
+            // the dead mapping, and requiring the queue to be 100% exempt lets
+            // ONE lingering non-exempt frame (e.g. RETIRE_CONNECTION_ID from a
+            // DCID rotation) park the connection for the whole 5 s probe
+            // window — the challenge then never leaves and validation fails
+            // 5/5 on every rebind (observed). Safety: downstream filters
+            // (GetPendingFrames' IsAllowedOnUnvalidated skip when
+            // !streams_allowed_, TrySendNewBurst's probing bypass) ensure only
+            // the tiny exempt frames actually go out under cwnd exhaustion.
+            if (!IsCongestionControlExempt() && !HasPendingProbingFrame()) {
                 uint64_t next_time = send_control_.GetNextSendTime(now);
                 if (next_time > now) {
                     uint64_t delay = next_time - now;
@@ -140,13 +150,23 @@ void SendManager::OnPacketAck(PacketNumberSpace ns, std::shared_ptr<IFrame> fram
 }
 
 void SendManager::ResetPathSignals() {
-    // Recreate congestion controller with default config and reset RTT estimator via UpdateConfig
-    CcConfigV2 cfg;  // defaults
-    // Reconfigure congestion control
-    // The current implementation doesn't expose Configure directly; rebuild via factory path in SendControl
-    // So we simulate by resetting RTT to initial via UpdateConfig and relying on controller startup behavior
-    TransportParam dummy;
-    send_control_.UpdateConfig(dummy);
+    // RFC 9000 §9.4 on path migration: old-path congestion state (cwnd,
+    // recovery epoch, pacing rate, capacity estimates) is invalid on the new
+    // path. After a NAT-rebind blackout the surviving cwnd is massively
+    // oversized for the fresh path: loss-marking releases in-flight budget,
+    // the retransmit drain refills it, and the result is a multi-MB
+    // retransmit flood that overflowed the sim bottleneck (~182 MB sent for a
+    // 10 MB file, ~90% dropped, contiguous delivery stuck at the first hole).
+    // This used to be a stub that only touched UpdateConfig(); actually reset
+    // the controller now. bytes_in_flight is preserved inside Reset().
+    send_control_.ResetCongestionControl();
+
+    // Reset the RTT estimator: old-path SRTT drives PTO/loss detection on the
+    // new path and is typically wrong there. Note UpdateConfig() is NOT
+    // called (the pre-fix stub did, with a default TransportParam): it would
+    // clobber the NEGOTIATED max_ack_delay / ack_delay_exponent with defaults,
+    // and nothing re-delivers the real values after a migration.
+    send_control_.ResetRtt();
 }
 
 void SendManager::ResetMtuForNewPath() {
@@ -209,6 +229,11 @@ bool SendManager::IsAllowedOnUnvalidated(uint16_t type) const {
     if (streams_allowed_) {
         return true;
     }
+    return IsExemptFrameType(type);
+}
+
+// static
+bool SendManager::IsExemptFrameType(uint16_t type) {
     switch (type) {
         case FrameType::kPathChallenge:
         case FrameType::kPathResponse:
@@ -216,6 +241,7 @@ bool SendManager::IsAllowedOnUnvalidated(uint16_t type) const {
         case FrameType::kAckEcn:
         case FrameType::kPing:
         case FrameType::kPadding:
+        case FrameType::kCrypto:
         case FrameType::kNewConnectionId:
         case FrameType::kRetireConnectionId:
         case FrameType::kConnectionClose:
@@ -279,9 +305,22 @@ bool SendManager::IsCongestionControlExempt() const {
         if (frame_type == FrameType::kAck || frame_type == FrameType::kAckEcn ||
             frame_type == FrameType::kConnectionClose || frame_type == FrameType::kConnectionCloseApp) {
             continue;
-        } else {
-            return false;
         }
+        // Path-validation probes (PATH_CHALLENGE / PATH_RESPONSE) and PTO PING
+        // are congestion-control exempt as an engineering trade-off (no
+        // precise RFC clause): after a NAT rebind the whole cwnd window is in
+        // flight towards the dead mapping, so cwnd is exhausted for multiple
+        // RTTs; without this exemption GetSendOperation() parks the connection
+        // (kNextPeriod) and the worker never calls TrySendBurst — the
+        // challenge queued by the PathManager could then NEVER leave
+        // (observed: probes failing 5/5 on every rebind while only the PTO
+        // timer's direct retransmit path, which bypasses this gate, kept
+        // hitting the amp limit).
+        if (frame_type == FrameType::kPathChallenge || frame_type == FrameType::kPathResponse ||
+            frame_type == FrameType::kPing) {
+            continue;
+        }
+        return false;
     }
 
     return true;
@@ -362,7 +401,8 @@ void SendManager::ArmFlowControlRecheckTimer() {
         kFlowControlRecheckIntervalMs);
 }
 
-std::vector<std::shared_ptr<IFrame>> SendManager::GetPendingFrames(EncryptionLevel level, uint32_t max_bytes) {
+std::vector<std::shared_ptr<IFrame>> SendManager::GetPendingFrames(EncryptionLevel level, uint32_t max_bytes,
+    bool exempt_only) {
     std::vector<std::shared_ptr<IFrame>> result;
     uint32_t total_bytes = 0;
 
@@ -393,6 +433,24 @@ std::vector<std::shared_ptr<IFrame>> SendManager::GetPendingFrames(EncryptionLev
             }
         }
 
+        // Restricted egress windows: while the path is unvalidated (probe in
+        // flight, RFC 9000 §8.1/§8.2 amplification) or while the congested-
+        // path probing bypass is active (exempt_only), only frames on the
+        // exemption list may leave. Retransmitted stream frames used to be
+        // packed into the same datagram as the PATH_CHALLENGE, inflating it
+        // past the budget so the whole datagram (challenge included) was
+        // dropped at the emitter — validation could then never complete.
+        // Keep such frames queued; they are flushed once the window clears.
+        if ((!streams_allowed_ || exempt_only) && !IsExemptFrameType(frame->GetType())) {
+            ++iter;
+            continue;
+        }
+
+        if (static_cast<FrameType>(frame->GetType()) == FrameType::kPathChallenge) {
+            LOG_DEBUG("SendManager: PATH_CHALLENGE dispatched to burst builder (streams_allowed=%d, exempt_only=%d, "
+                      "max_bytes=%u)",
+                streams_allowed_ ? 1 : 0, exempt_only ? 1 : 0, max_bytes);
+        }
         result.push_back(frame);
         total_bytes += frame_size;
         iter = wait_frame_list_.erase(iter);  // Remove from pending list

@@ -55,15 +55,27 @@ struct StreamContext {
 
 class HqInteropServer {
 public:
-    HqInteropServer(const std::string& root_dir, uint16_t port):
+    HqInteropServer(const std::string& root_dir, uint16_t port, const std::string& preferred_address_v4 = "",
+        const std::string& preferred_address_v6 = ""):
         root_dir_(root_dir),
-        port_(port) {}
+        port_(port),
+        preferred_address_v4_(preferred_address_v4),
+        preferred_address_v6_(preferred_address_v6) {}
 
     bool Init(const std::string& cert_file, const std::string& key_file) {
         QuicTransportParams transport_params;
         // Use a short idle timeout for interop testing so the connection closes
         // promptly after all streams are finished, well within container timeout.
         transport_params.max_idle_timeout_ms_ = 10000;  // 10 seconds
+        // RFC 9000 §9.6: advertise the server's alternate address so the client
+        // migrates to it (connectionmigration interop scenario).
+        transport_params.preferred_address_v4_ = preferred_address_v4_;
+        transport_params.preferred_address_v6_ = preferred_address_v6_;
+        if (!preferred_address_v4_.empty() || !preferred_address_v6_.empty()) {
+            std::cout << "Advertising preferred address: v4="
+                      << (preferred_address_v4_.empty() ? "-" : preferred_address_v4_) << " v6="
+                      << (preferred_address_v6_.empty() ? "-" : preferred_address_v6_) << std::endl;
+        }
         quic_ = IQuicServer::Create(transport_params);
 
         quic_->SetConnectionStateCallBack(
@@ -141,6 +153,17 @@ public:
             std::cout << "Session Resumption enabled" << std::endl;
         }
 
+        // Key Update (RFC 9001 §6) — set by --enable-keyupdate (run_endpoint.sh).
+        // The server sends the bulk of the transfer bytes, so it is the side that
+        // actually reaches the send-byte threshold and initiates the key update;
+        // the client then responds with its own key-phase-1 packets. Without this,
+        // neither peer sends key-phase-1 packets and the keyupdate test fails.
+        const char* keyupdate = std::getenv("ENABLE_KEYUPDATE");
+        if (keyupdate && std::atoi(keyupdate) == 1) {
+            config.config_.enable_key_update_ = true;
+            std::cout << "Key Update enabled" << std::endl;
+        }
+
         // Cipher Suites
         const char* ciphers = std::getenv("CIPHER_SUITE");
         if (ciphers) {
@@ -177,6 +200,19 @@ public:
             return false;
         }
         std::cout << "Server listening on [::]:" << port_ << std::endl;
+        // The advertised preferred address must actually be listened on, or
+        // the client's PATH_CHALLENGE probes get no response and migration
+        // stalls. Add a second listener on the advertised port (picoquic-style
+        // "443:4433"); datagrams are dispatched by DCID, so both listeners
+        // feed the same connections.
+        uint16_t pref_port = GetPreferredPort();
+        if (pref_port != 0 && pref_port != port_) {
+            if (!quic_->ListenAndAccept("::", pref_port)) {
+                std::cerr << "Failed to start listening on preferred port " << pref_port << std::endl;
+                return false;
+            }
+            std::cout << "Server listening on [::]:" << pref_port << " (preferred address)" << std::endl;
+        }
         quic_->Join();
         return true;
     }
@@ -326,6 +362,21 @@ private:
     std::shared_ptr<IQuicServer> quic_;
     std::string root_dir_;
     uint16_t port_;
+    std::string preferred_address_v4_;
+    std::string preferred_address_v6_;
+
+    // Extract the port from the first non-empty preferred address string
+    // ("<ipv4>:<port>" or "[<ipv6>]:<port>"). Returns 0 if none is set.
+    uint16_t GetPreferredPort() const {
+        const std::string& addr =
+            !preferred_address_v4_.empty() ? preferred_address_v4_ : preferred_address_v6_;
+        auto pos = addr.rfind(':');
+        if (pos == std::string::npos) {
+            return 0;
+        }
+        int port = std::atoi(addr.c_str() + pos + 1);
+        return (port > 0 && port <= 65535) ? static_cast<uint16_t>(port) : 0;
+    }
 };
 
 // =============================================================================
@@ -531,6 +582,8 @@ int main(int argc, char* argv[]) {
     std::string cipher_suite;
     uint32_t quic_version = 0;
     bool strict_version = false;
+    std::string preferred_address_v4;
+    std::string preferred_address_v6;
 
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
@@ -560,6 +613,10 @@ int main(int argc, char* argv[]) {
             cipher_suite = argv[++i];
         } else if (arg == "--quic-version" && i + 1 < argc) {
             quic_version = static_cast<uint32_t>(std::strtoul(argv[++i], nullptr, 0));
+        } else if (arg == "--preferred-address-v4" && i + 1 < argc) {
+            preferred_address_v4 = argv[++i];
+        } else if (arg == "--preferred-address-v6" && i + 1 < argc) {
+            preferred_address_v6 = argv[++i];
         }
     }
 
@@ -645,7 +702,7 @@ int main(int argc, char* argv[]) {
         std::cout << "HTTP/3 Server stopped" << std::endl;
     } else {
         // hq-interop mode: use HqInteropServer
-        HqInteropServer server(www_dir, port);
+        HqInteropServer server(www_dir, port, preferred_address_v4, preferred_address_v6);
         g_server = &server;
 
         if (!server.Init(cert_file, key_file)) {

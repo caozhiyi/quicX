@@ -4,9 +4,11 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include <quicx/quic/type.h>
+#include "quic/connection/type.h"
 #include "common/network/address.h"
 #include <quicx/common/if_timer_scheduler.h>
 #include "quic/common/constants.h"
@@ -41,6 +43,11 @@ class IFrame;
 class PathManager {
 public:
     using ToSendFrameCallback = std::function<void(std::shared_ptr<IFrame>)>;
+    // Sends a probe frame synchronously as a standalone 1-RTT packet that
+    // bypasses the send queue. Used for PATH_CHALLENGE so it becomes the
+    // first packet on the new path (interop runners check this). Returning
+    // false means "cannot send now" and the caller falls back to queueing.
+    using SendProbeNowCallback = std::function<bool(std::shared_ptr<IFrame>)>;
     using ActiveSendCallback = std::function<void()>;
     using SetPeerAddressCallback = std::function<void(const ::quicx::common::Address&)>;
     using MigrationCompleteCallback = std::function<void(const MigrationInfo&)>;
@@ -60,7 +67,7 @@ public:
      *  - `event_loop` is held as `weak_ptr` (no lifetime bump).
      *  - `send_manager`, `cid_coordinator`, `transport_param`, `peer_addr`
      *    are stored as references and MUST outlive the PathManager.
-     *  - The three callbacks are copied (std::function); they capture
+     *  - The callbacks are copied (std::function); they capture
      *    `BaseConnection*` via `this`, so the connection must outlive the
      *    PathManager (it does — PathManager is a member of BaseConnection).
      */
@@ -71,6 +78,7 @@ public:
         TransportParam* transport_param{nullptr};
         ::quicx::common::Address* peer_addr{nullptr};
         ToSendFrameCallback to_send_frame_cb;
+        SendProbeNowCallback send_probe_now_cb;
         ActiveSendCallback active_send_cb;
         SetPeerAddressCallback set_peer_addr_cb;
     };
@@ -140,6 +148,31 @@ public:
      * @return MigrationResult indicating success or failure reason
      */
     MigrationResult InitiateMigrationToAddress(const ::quicx::common::Address& local_addr);
+
+    /**
+     * @brief Initiate migration to a new PEER address (preferred-address flow)
+     *
+     * RFC 9000 §9.6: the server may advertise a preferred_address; the client
+     * migrates by sending to that address. Unlike InitiateMigrationToAddress()
+     * (new local socket, same peer), this rotates the peer address — which may
+     * also change address family (e.g. IPv6 -> IPv4), so a socket matching the
+     * TARGET family is created. The DCID is pre-rotated so the very first
+     * packet on the new path already uses a fresh connection ID (§9.5, and the
+     * interop connectionmigration check requires exactly that).
+     *
+     * @param peer_addr Server's preferred address to migrate to
+     * @return MigrationResult indicating success or failure reason
+     */
+    MigrationResult InitiateMigrationToPeerAddress(const ::quicx::common::Address& peer_addr);
+
+    /**
+     * @brief Supply the connection ID carried in the server's preferred_address
+     * transport parameter (RFC 9000 §18.2). When set, the next preferred-address
+     * migration uses this CID as the new DCID instead of rotating to a pooled
+     * NEW_CONNECTION_ID CID (which a server need not provide alongside the
+     * preferred address).
+     */
+    void SetPreferredConnectionID(const uint8_t* cid, uint16_t len);
 
     /**
      * @brief Set callback for migration completion events
@@ -240,9 +273,13 @@ private:
     /**
      * @brief Create a new UDP socket bound to the specified address
      * @param local_addr Address to bind to
+     * @param force_ipv4 When set, forces an IPv4 socket regardless of the
+     *                   current peer's family (needed when migrating to a
+     *                   preferred address of a different family, e.g. IPv6 ->
+     *                   IPv4). Unset = derive the family from the current peer.
      * @return Socket fd on success, -1 on failure
      */
-    int32_t CreateBoundSocket(const ::quicx::common::Address& local_addr);
+    int32_t CreateBoundSocket(const ::quicx::common::Address& local_addr, std::optional<bool> force_ipv4 = std::nullopt);
 
 private:
     // Dependencies (injected)
@@ -252,6 +289,7 @@ private:
     TransportParam& transport_param_;
     ::quicx::common::Address& peer_addr_;  // Reference to main connection address
     ToSendFrameCallback to_send_frame_cb_;
+    SendProbeNowCallback send_probe_now_cb_;
     ActiveSendCallback active_send_cb_;
     SetPeerAddressCallback set_peer_addr_cb_;
     MigrationCompleteCallback migration_complete_cb_;
@@ -277,6 +315,11 @@ private:
     // Flag: true if DCID was pre-rotated before starting probe (for client-initiated migration)
     // When true, OnPathResponse() will skip CID rotation (already done)
     bool dcid_pre_rotated_{false};
+
+    // Peer endpoint immediately BEFORE the last successful path switch
+    // (captured in OnPathResponse before set_peer_addr_cb_ rewrites
+    // peer_addr_); CompleteMigration() reports it as MigrationInfo::old_peer.
+    ::quicx::common::Address last_old_peer_addr_;
 
     // ==================== Client-Initiated Migration State ====================
 
@@ -305,6 +348,11 @@ private:
     // — at least 3×PTO, see kDefaultPathValidationTimeoutMs in
     // quic/common/constants.h).
     uint32_t path_validation_timeout_ms_{kDefaultPathValidationTimeoutMs};
+
+    // Preferred-address CID (RFC 9000 §9.6): the DCID to use on the migrated path.
+    bool has_preferred_cid_{false};
+    uint8_t preferred_cid_bytes_[kMaxCidLength]{0};
+    uint16_t preferred_cid_len_{0};
 };
 
 }  // namespace quic

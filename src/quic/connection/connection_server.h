@@ -14,7 +14,7 @@ namespace quic {
 class ServerConnection: public BaseConnection, public TlsServerHandlerInterface {
 public:
     ServerConnection(std::shared_ptr<TLSCtx> ctx, std::shared_ptr<common::IEventLoop> loop, const std::string& alpn,
-        const ConnectionCallbacks& callbacks = {});
+        const ConnectionCallbacks& callbacks = {}, bool ecn_enabled = false);
     virtual ~ServerConnection();
 
     virtual void AddRemoteConnectionId(ConnectionID& id);

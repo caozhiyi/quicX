@@ -145,6 +145,11 @@ public:
     uint8_t GetCurrentKeyPhase() const { return current_key_phase_; }
     void FlipKeyPhase() { current_key_phase_ ^= 1; }
 
+    // RFC 9001 §6: Key phase we expect on RECEIVED packets (0 or 1); flips when
+    // a peer Key Update is detected and processed. Read and write directions
+    // advance independently, so they are tracked separately.
+    uint8_t GetReadKeyPhase() const { return read_key_phase_; }
+
     // Check if Application level cryptographer is ready for key updates
     bool CanKeyUpdate() const { return cryptographers_[kApplication] != nullptr; }
 
@@ -180,6 +185,11 @@ private:
 
     // RFC 9001 §6: Current key phase (0 or 1), flips on each Key Update
     uint8_t current_key_phase_ = 0;
+
+    // RFC 9001 §6: Expected key phase (0 or 1) of received packets; flips on
+    // each processed peer Key Update. Read and write phases advance
+    // independently and MUST be tracked separately.
+    uint8_t read_key_phase_ = 0;
 
     // RFC 9368: DCID used to derive the currently installed Initial secret.
     // Persisted so that Compatible VN rekey can reuse the same DCID even when

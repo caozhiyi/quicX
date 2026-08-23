@@ -52,6 +52,18 @@ public:
 
     virtual void Configure(const CcConfigV2& cfg) = 0;
 
+    /**
+     * @brief Reset the controller to its initial state (RFC 9000 §9.4).
+     *
+     * Called when the connection migrates to a validated new path: capacity
+     * estimates, cwnd and recovery state from the OLD path are meaningless
+     * (and typically catastrophically oversized after a NAT rebind blackout,
+     * causing multi-MB retransmit floods that overflow the bottleneck).
+     * bytes_in_flight is preserved: those packets are genuinely unacked.
+     * Default no-op for controllers without an explicit implementation.
+     */
+    virtual void Reset() {}
+
     virtual void OnPacketSent(const SentPacketEvent& ev) = 0;
     virtual void OnPacketAcked(const AckEvent& ev) = 0;
     virtual void OnPacketLost(const LossEvent& ev) = 0;

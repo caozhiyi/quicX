@@ -76,6 +76,18 @@ void BBRv3CongestionControl::Configure(const CcConfigV2& cfg) {
     if (pacer_) pacer_->OnPacingRateUpdated(GetPacingRateBytesPerSec());
 }
 
+void BBRv3CongestionControl::Reset() {
+    // RFC 9000 §9.4 / BBR flow-reset on path change (see BBRv1::Reset):
+    // ProbeBW sub-state machine, ECN/loss state and bandwidth model are all
+    // properties of the OLD path and must not survive a migration.
+    uint64_t bif = bytes_in_flight_;
+    uint64_t srtt = srtt_us_;
+    Configure(cfg_);
+    bytes_in_flight_ = bif;
+    srtt_us_ = srtt;
+    if (pacer_) pacer_->OnPacingRateUpdated(GetPacingRateBytesPerSec());
+}
+
 void BBRv3CongestionControl::OnPacketSent(const SentPacketEvent& ev) {
     bytes_in_flight_ += ev.bytes;
     if (pacer_) pacer_->OnPacketSent(ev.sent_time / 1000, static_cast<size_t>(ev.bytes));

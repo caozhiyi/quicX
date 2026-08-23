@@ -233,6 +233,26 @@ bool ConnectionIDCoordinator::RotateRemoteConnectionID() {
     return true;
 }
 
+void ConnectionIDCoordinator::SetRemoteConnectionID(const uint8_t* id, uint16_t len) {
+    if (!remote_conn_id_manager_) {
+        LOG_ERROR("ConnectionIDCoordinator::SetRemoteConnectionID: remote_conn_id_manager_ is null");
+        return;
+    }
+    if (id == nullptr || len == 0) {
+        LOG_ERROR("ConnectionIDCoordinator::SetRemoteConnectionID: invalid CID");
+        return;
+    }
+    // Preferred-address migration (RFC 9000 §9.6): the new DCID is the CID carried
+    // in the server's preferred_address transport parameter. We install it directly
+    // as the current remote CID (same mechanism the client uses to switch DCID from
+    // ODCID to server SCID during the handshake), assigning it the next sequence
+    // number so any later RETIRE is unambiguous. No CID rotation / RETIRE of the
+    // previous DCID is triggered here.
+    uint64_t seq = remote_conn_id_manager_->GetCurrentID().GetSequenceNumber() + 1;
+    remote_conn_id_manager_->SetCurrentID(id, len, seq);
+    LOG_DEBUG("ConnectionIDCoordinator: set remote CID to preferred-address CID (seq=%llu, len=%d)", seq, len);
+}
+
 void ConnectionIDCoordinator::RetirePendingRemoteConnectionID() {
     if (!has_pending_retire_remote_cid_) {
         return;

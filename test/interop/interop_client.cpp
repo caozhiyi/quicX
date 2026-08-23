@@ -67,7 +67,10 @@ using namespace quicx;
 
 static const std::string kHqInteropAlpn = "hq-interop";
 
-// Resolve hostname to IP address (prefer IPv4)
+// Resolve hostname to IP address (prefer IPv4, the historical behavior).
+// The connectionmigration scenario works the other way around: the server
+// advertises its addresses on a different port (see run_endpoint.sh), so the
+// client migrates to the preferred_address after the handshake.
 static std::string ResolveHost(const std::string& host) {
     struct addrinfo hints, *result, *rp;
     memset(&hints, 0, sizeof(hints));
@@ -80,7 +83,6 @@ static std::string ResolveHost(const std::string& host) {
         return "";
     }
 
-    // Prefer IPv4 (AF_INET) over IPv6 (AF_INET6)
     char ipv4[INET_ADDRSTRLEN] = "";
     char ipv6[INET6_ADDRSTRLEN] = "";
 
@@ -96,13 +98,10 @@ static std::string ResolveHost(const std::string& host) {
 
     freeaddrinfo(result);
 
-    // Return IPv4 if available, otherwise IPv6
     if (ipv4[0] != '\0') {
         return std::string(ipv4);
-    } else if (ipv6[0] != '\0') {
-        return std::string(ipv6);
     }
-    return "";
+    return ipv6[0] != '\0' ? std::string(ipv6) : "";
 }
 
 struct DownloadContext {
@@ -135,6 +134,14 @@ public:
         // Use a short idle timeout for interop testing so the connection closes
         // promptly after all streams finish, well within container timeout.
         transport_params.max_idle_timeout_ms_ = 10000;  // 10 seconds
+        // Keep-alive PINGs: the interop client is download-only, so after a
+        // NAT rebind (rebind-port/rebind-addr) it would otherwise go silent
+        // forever and both endpoints idle out. Explicit 300 ms cadence: the
+        // runner's NAT mappings can expire in under a second, so the derived
+        // max(idle/2, 1 s) cadence lets the mapping starve between rebind
+        // recovery probes (observed as a download deadlock in rebind-addr).
+        transport_params.enable_keep_alive_ = true;
+        transport_params.keep_alive_interval_ms_ = 300;
         quic_ = IQuicClient::Create(transport_params);
         if (!quic_) {
             std::cerr << "Failed to create QUIC client" << std::endl;
@@ -292,25 +299,7 @@ public:
             return false;
         }
 
-        // Create bidirectional stream (retry if max_streams reached)
-        std::shared_ptr<IQuicStream> stream;
-        for (int retry = 0; retry < 30; retry++) {
-            stream = conn->MakeStream(StreamDirection::kBidi);
-            if (stream) break;
-            std::this_thread::sleep_for(std::chrono::milliseconds(200));
-        }
-        if (!stream) {
-            std::cerr << "Failed to create stream after retries" << std::endl;
-            return false;
-        }
-
-        auto bidi = std::dynamic_pointer_cast<IQuicBidirectionStream>(stream);
-        if (!bidi) {
-            std::cerr << "Failed to cast to bidirectional stream" << std::endl;
-            return false;
-        }
-
-        // Prepare download context
+        // Prepare download context (shared with the loop-thread callback)
         auto ctx = std::make_shared<DownloadContext>();
         ctx->filepath = filepath;
         ctx->file = fopen(filepath.c_str(), "wb");
@@ -319,66 +308,88 @@ public:
             return false;
         }
 
-        // Set read callback to receive response data
-        // Note: Keep ctx alive by capturing it in lambda
-        bidi->SetStreamReadCallBack([ctx](std::shared_ptr<IBufferRead> data, bool is_last, uint32_t error) {
-            // Debug: Log every callback invocation
-            static std::atomic<int> call_count{0};
-            int count = ++call_count;
-            std::cout << "[CALLBACK #" << count << "] data=" << (data ? data->GetDataLength() : 0)
-                      << " bytes, is_last=" << is_last << ", error=" << error << std::endl;
-
-            if (error != 0) {
-                std::cerr << "Stream read error: " << error << std::endl;
-                std::lock_guard<std::mutex> lock(ctx->mtx);
-                ctx->done = true;
-                ctx->cv.notify_all();
-                return;
-            }
-
-            if (data) {
-                uint32_t len = data->GetDataLength();
-                if (len > 0) {
-                    std::vector<uint8_t> buf(len);
-                    uint32_t read = data->Read(buf.data(), len);
-                    if (ctx->file && read > 0) {
-                        size_t written = fwrite(buf.data(), 1, read, ctx->file);
-                        ctx->bytes_received += written;
+        // Stream creation and all stream calls must happen on the
+        // connection's event loop (StreamManager/SendManager containers are
+        // loop-thread-only). MakeStreamAsync hops there for us.
+        if (!conn->MakeStreamAsync(StreamDirection::kBidi,
+                [ctx, path](std::shared_ptr<IQuicStream> stream) {
+                    if (!stream) {
+                        std::cerr << "Failed to create stream" << std::endl;
+                        std::lock_guard<std::mutex> lock(ctx->mtx);
+                        ctx->done = true;
+                        ctx->cv.notify_all();
+                        return;
                     }
-                }
-            }
 
-            if (is_last) {
-                if (ctx->file) {
-                    fclose(ctx->file);
-                    ctx->file = nullptr;
-                }
-                std::cout << "Downloaded " << ctx->bytes_received << " bytes -> " << ctx->filepath << std::endl;
-                std::lock_guard<std::mutex> lock(ctx->mtx);
-                ctx->success = true;
-                ctx->done = true;
-                ctx->cv.notify_all();
-            }
-        });
+                    auto bidi = std::dynamic_pointer_cast<IQuicBidirectionStream>(stream);
+                    if (!bidi) {
+                        std::cerr << "Failed to cast to bidirectional stream" << std::endl;
+                        std::lock_guard<std::mutex> lock(ctx->mtx);
+                        ctx->done = true;
+                        ctx->cv.notify_all();
+                        return;
+                    }
 
-        // Send hq-interop request: "GET /path\r\n"
-        std::string request = "GET " + path + "\r\n";
-        int32_t sent = bidi->Send(reinterpret_cast<uint8_t*>(request.data()), static_cast<uint32_t>(request.size()));
-        if (sent < 0) {
-            std::cerr << "Failed to send request" << std::endl;
+                    // Set read callback to receive response data
+                    bidi->SetStreamReadCallBack([ctx](std::shared_ptr<IBufferRead> data, bool is_last, uint32_t error) {
+                        if (error != 0) {
+                            std::cerr << "Stream read error: " << error << std::endl;
+                            std::lock_guard<std::mutex> lock(ctx->mtx);
+                            if (ctx->file) {
+                                fclose(ctx->file);
+                                ctx->file = nullptr;
+                            }
+                            ctx->done = true;
+                            ctx->cv.notify_all();
+                            return;
+                        }
+
+                        if (data) {
+                            uint32_t len = data->GetDataLength();
+                            if (len > 0) {
+                                std::vector<uint8_t> buf(len);
+                                uint32_t read = data->Read(buf.data(), len);
+                                if (ctx->file && read > 0) {
+                                    size_t written = fwrite(buf.data(), 1, read, ctx->file);
+                                    ctx->bytes_received += written;
+                                }
+                            }
+                        }
+
+                        if (is_last) {
+                            if (ctx->file) {
+                                fclose(ctx->file);
+                                ctx->file = nullptr;
+                            }
+                            std::cout << "Downloaded " << ctx->bytes_received << " bytes -> " << ctx->filepath << std::endl;
+                            std::lock_guard<std::mutex> lock(ctx->mtx);
+                            ctx->success = true;
+                            ctx->done = true;
+                            ctx->cv.notify_all();
+                        }
+                    });
+
+                    // Send hq-interop request: "GET /path\r\n"
+                    std::string request = "GET " + path + "\r\n";
+                    int32_t sent = bidi->Send(reinterpret_cast<uint8_t*>(request.data()), static_cast<uint32_t>(request.size()));
+                    if (sent < 0) {
+                        std::cerr << "Failed to send request" << std::endl;
+                        std::lock_guard<std::mutex> lock(ctx->mtx);
+                        ctx->done = true;
+                        ctx->cv.notify_all();
+                        return;
+                    }
+
+                    bidi->Flush();
+                    // Close the send direction (sends FIN) to signal end of request.
+                    // hq-interop protocol: server waits for client FIN before responding.
+                    bidi->Close();
+                    std::cout << "Sent request: GET " << path << std::endl;
+                })) {
+            // Connection already closing; the callback will not run.
+            std::cerr << "MakeStreamAsync failed (connection closed?)" << std::endl;
             return false;
         }
-
-        // Flush to ensure request is sent immediately
-        if (!bidi->Flush()) {
-            std::cerr << "Failed to flush stream" << std::endl;
-        }
-
-        // Close the send direction (sends FIN) to signal end of request.
-        // hq-interop protocol: server waits for client FIN before responding.
-        bidi->Close();
-
-        std::cout << "Sent request: GET " << path << std::endl;
 
         // Wait for download to complete
         {
@@ -441,81 +452,96 @@ public:
 
             std::cout << "Downloading: " << url << " -> " << filepath << std::endl;
 
-            // Create stream (serially, thread-safe)
-            std::shared_ptr<IQuicStream> stream;
-            for (int retry = 0; retry < 300; retry++) {
-                stream = conn->MakeStream(StreamDirection::kBidi);
-                if (stream) break;
-                std::this_thread::sleep_for(std::chrono::milliseconds(20));
-            }
-            if (!stream) {
-                std::cerr << "Failed to create stream for " << url << " after retries" << std::endl;
-                state->completed++;
-                continue;
-            }
-
-            auto bidi = std::dynamic_pointer_cast<IQuicBidirectionStream>(stream);
-            if (!bidi) {
-                std::cerr << "Failed to cast stream for " << url << std::endl;
-                state->completed++;
-                continue;
-            }
-
-            auto ctx = std::make_shared<DownloadContext>();
-            ctx->filepath = filepath;
-            ctx->file = fopen(filepath.c_str(), "wb");
-            if (!ctx->file) {
-                std::cerr << "Failed to open file: " << filepath << std::endl;
-                state->completed++;
-                continue;
-            }
-
-            bidi->SetStreamReadCallBack([ctx, state](std::shared_ptr<IBufferRead> data, bool is_last, uint32_t error) {
-                if (error != 0) {
-                    std::lock_guard<std::mutex> lock(ctx->mtx);
-                    if (ctx->file) {
-                        fclose(ctx->file);
-                        ctx->file = nullptr;
+            // Stream creation MUST go through MakeStreamAsync: StreamManager
+            // containers (streams_map_, pending_stream_requests_) and
+            // SendManager::wait_frame_list_ are event-loop-thread-only. The
+            // old direct conn->MakeStream() call from this application
+            // thread raced the loop thread and corrupted those containers
+            // (ASan-confirmed heap-use-after-free in GetPendingFrames and
+            // unordered_map rehash under 1999-stream multiplexing). The
+            // callback runs on the connection's event loop, so everything
+            // touching the stream below is single-threaded again.
+            // MakeStreamAsync also queues the request when MAX_STREAMS is
+            // exhausted, replacing the old 300x retry poll.
+            bool posted = conn->MakeStreamAsync(StreamDirection::kBidi,
+                [path, filepath, state](std::shared_ptr<IQuicStream> stream) {
+                    if (!stream) {
+                        std::cerr << "Stream creation failed for " << filepath << std::endl;
+                        state->completed++;
+                        state->cv.notify_all();
+                        return;
                     }
-                    ctx->done = true;
-                    state->completed++;
-                    state->cv.notify_all();
-                    return;
-                }
 
-                if (data) {
-                    uint32_t len = data->GetDataLength();
-                    if (len > 0) {
-                        std::vector<uint8_t> buf(len);
-                        uint32_t read = data->Read(buf.data(), len);
-                        if (ctx->file && read > 0) {
-                            fwrite(buf.data(), 1, read, ctx->file);
-                            ctx->bytes_received += read;
+                    auto bidi = std::dynamic_pointer_cast<IQuicBidirectionStream>(stream);
+                    if (!bidi) {
+                        std::cerr << "Failed to cast stream for " << filepath << std::endl;
+                        state->completed++;
+                        state->cv.notify_all();
+                        return;
+                    }
+
+                    auto ctx = std::make_shared<DownloadContext>();
+                    ctx->filepath = filepath;
+                    ctx->file = fopen(filepath.c_str(), "wb");
+                    if (!ctx->file) {
+                        std::cerr << "Failed to open file: " << filepath << std::endl;
+                        state->completed++;
+                        state->cv.notify_all();
+                        return;
+                    }
+
+                    bidi->SetStreamReadCallBack([ctx, state](std::shared_ptr<IBufferRead> data, bool is_last, uint32_t error) {
+                        if (error != 0) {
+                            std::lock_guard<std::mutex> lock(ctx->mtx);
+                            if (ctx->file) {
+                                fclose(ctx->file);
+                                ctx->file = nullptr;
+                            }
+                            ctx->done = true;
+                            state->completed++;
+                            state->cv.notify_all();
+                            return;
                         }
-                    }
-                }
 
-                if (is_last) {
-                    if (ctx->file) {
-                        fclose(ctx->file);
-                        ctx->file = nullptr;
-                    }
-                    std::cout << "Downloaded " << ctx->bytes_received << " bytes -> " << ctx->filepath << std::endl;
-                    ctx->success = true;
-                    ctx->done = true;
-                    state->succeeded++;
-                    state->completed++;
-                    state->cv.notify_all();
-                }
-            });
+                        if (data) {
+                            uint32_t len = data->GetDataLength();
+                            if (len > 0) {
+                                std::vector<uint8_t> buf(len);
+                                uint32_t read = data->Read(buf.data(), len);
+                                if (ctx->file && read > 0) {
+                                    fwrite(buf.data(), 1, read, ctx->file);
+                                    ctx->bytes_received += read;
+                                }
+                            }
+                        }
 
-            std::string request = "GET " + path + "\r\n";
-            bidi->Send(reinterpret_cast<uint8_t*>(request.data()), static_cast<uint32_t>(request.size()));
-            bidi->Flush();
-            // Close send direction (FIN) - server waits for FIN before responding
-            bidi->Close();
-            std::cout << "Sent request: GET " << path << std::endl;
-            initiated++;
+                        if (is_last) {
+                            if (ctx->file) {
+                                fclose(ctx->file);
+                                ctx->file = nullptr;
+                            }
+                            std::cout << "Downloaded " << ctx->bytes_received << " bytes -> " << ctx->filepath << std::endl;
+                            ctx->success = true;
+                            ctx->done = true;
+                            state->succeeded++;
+                            state->completed++;
+                            state->cv.notify_all();
+                        }
+                    });
+
+                    std::string request = "GET " + path + "\r\n";
+                    bidi->Send(reinterpret_cast<uint8_t*>(request.data()), static_cast<uint32_t>(request.size()));
+                    bidi->Flush();
+                    // Close send direction (FIN) - server waits for FIN before responding
+                    bidi->Close();
+                    std::cout << "Sent request: GET " << path << std::endl;
+                });
+            if (posted) {
+                initiated++;
+            } else {
+                // Connection already closing; the callback will not run.
+                state->completed++;
+            }
         }
 
         // Wait for all downloads to complete (or timeout)
@@ -551,20 +577,25 @@ public:
     void Shutdown() {
         if (shutdown_done_) return;
         shutdown_done_ = true;
+        // Same rule as InitiateMigration() above: never call into the connection
+        // (nor destroy it) while holding conn_mtx_. Connection methods can end up
+        // waiting on the event loop while loop-thread callbacks (OnConnection)
+        // take conn_mtx_ — and tearing down 1999 streams' buffers off-loop is the
+        // heaviest cross-thread PoolLargeFree path. Do it unlocked instead.
+        std::shared_ptr<IQuicConnection> conn;
         {
             std::lock_guard<std::mutex> lock(conn_mtx_);
-            if (conn_) {
-                conn_->Close();
-                conn_.reset();
-            }
+            conn = std::move(conn_);
+        }
+        if (conn) {
+            conn->Close();
         }
         if (quic_) {
-            quic_->AddTimer(500, [this]() {
-                if (quic_) {
-                    quic_->Destroy();
-                }
-            });
-            quic_->Join();
+            // Capture quic_ by value: the timer fires on the event loop thread
+            // while this thread is inside quic_->Join().
+            auto quic = quic_;
+            quic->AddTimer(500, [quic]() { quic->Destroy(); });
+            quic->Join();
             quic_.reset();
         }
     }
@@ -780,6 +811,10 @@ int main(int argc, char* argv[]) {
     if (!enable_http3 && testcase_detect && strcmp(testcase_detect, "http3") == 0) {
         enable_http3 = true;
     }
+    // connectionmigration needs no client-side awareness: the runner hands the
+    // client TESTCASE=transfer, and the migration is driven purely by the
+    // server's advertised preferred_address using a different port than the
+    // client's current path (see run_endpoint.sh's server branch).
 
     // Set environment variables from command-line arguments for HqInteropClient::Init()
     if (enable_zerortt) {
@@ -1039,6 +1074,33 @@ int main(int argc, char* argv[]) {
         }
         client2.Shutdown();
         std::cout << "Client finished successfully (two connections)" << std::endl;
+        return 0;
+    }
+
+    // Multiconnect (used by handshakeloss/handshakecorruption): one fresh
+    // connection per URL. The runner counts handshakes in the pcap and expects
+    // num_handshakes == number of files; downloading everything on one
+    // connection fails the check with "Expected N handshakes. Got: 1".
+    if (testcase_env && strcmp(testcase_env, "multiconnect") == 0) {
+        std::cout << "*** Multiconnect test (" << urls.size() << " connections) ***" << std::endl;
+        for (size_t i = 0; i < urls.size(); i++) {
+            std::cout << "--- Connection " << (i + 1) << "/" << urls.size() << ": " << urls[i] << " ---" << std::endl;
+            HqInteropClient mc(downloads_dir, qlog_dir);
+            if (!mc.Init()) {
+                return 1;
+            }
+            if (!mc.Connect(server, port)) {
+                mc.Shutdown();
+                return 1;
+            }
+            if (!mc.DownloadFile(urls[i])) {
+                std::cerr << "Failed to download: " << urls[i] << std::endl;
+                mc.Shutdown();
+                return 1;
+            }
+            mc.Shutdown();
+        }
+        std::cout << "Client finished successfully (multiconnect)" << std::endl;
         return 0;
     }
 

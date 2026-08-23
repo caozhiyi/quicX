@@ -60,6 +60,29 @@ public:
      */
     void StopIdleTimer();
 
+    // ==================== Keep-Alive ====================
+
+    /**
+     * @brief Start periodic keep-alive timer (client-side, RFC 9000 §10.1.2)
+     *
+     * A download-only client stops emitting packets the moment the server's
+     * path to it breaks (e.g. a NAT rebind): no received data means no ACKs,
+     * so the peer never observes the new network address and both sides idle
+     * out. A periodic PING keeps traffic flowing through the CURRENT mapping,
+     * which both refreshes the peer's idle timer and reveals address changes.
+     *
+     * Interval is max(idle_timeout/2, kMinKeepAliveMs) so the probe always
+     * lands well before the idle timer expires.
+     *
+     * @param callback Invoked every interval while the connection can send
+     */
+    void StartKeepAliveTimer(TimerCallback callback);
+
+    /**
+     * @brief Stop the keep-alive timer (called when connection closes)
+     */
+    void StopKeepAliveTimer();
+
     // ==================== PTO Timeout Check ====================
 
     /**
@@ -102,6 +125,11 @@ private:
     // Internal idle timeout callback
     void OnIdleTimeoutInternal();
 
+    // (Re-)arm the keep-alive timer on the given loop using the stored
+    // callback and interval. Shared by StartKeepAliveTimer and
+    // OnThreadTransferAfter.
+    void ArmKeepAliveTimer(const std::shared_ptr<common::IEventLoop>& loop);
+
 private:
     // Dependencies (injected)
     std::weak_ptr<::quicx::common::IEventLoop> event_loop_;
@@ -125,6 +153,13 @@ private:
     ::quicx::common::Timer idle_timer_;
     IdleTimeoutCallback idle_timeout_callback_;
     bool idle_timer_active_{false};
+
+    // Keep-alive state. Same lifetime rules as the idle timer above, plus the
+    // callback/interval needed to re-arm after a thread transfer.
+    ::quicx::common::Timer keep_alive_timer_;
+    bool keep_alive_active_{false};
+    TimerCallback keep_alive_callback_;
+    uint32_t keep_alive_interval_ms_{0};
 
     // User timers keep the uint64_t id contract of IQuicConnection::AddTimer,
     // so the id is a local counter and the handle lives here.

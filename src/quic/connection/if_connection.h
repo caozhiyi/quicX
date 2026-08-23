@@ -84,7 +84,10 @@ public:
     // no-op for connection types that never go through Worker::ProcessSend
     // (e.g. mock/test connections).
     virtual void SetSendSink(std::vector<std::shared_ptr<NetPacket>>* /*sink*/) {}
-    virtual void OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket>>& packets) = 0;
+    // Process decoded QUIC packets from a single UDP datagram.
+    // |datagram_size| is the raw UDP payload size (including PADDING) and
+    // credits the RFC 9000 §8.1 anti-amplification budget before dispatch.
+    virtual void OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket>>& packets, uint32_t datagram_size) = 0;
     // provide ECN value for the next OnPackets call (per received datagram)
     virtual void SetPendingEcn(uint8_t ecn) = 0;
     virtual EncryptionLevel GetCurEncryptionLevel() = 0;

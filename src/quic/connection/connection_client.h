@@ -15,7 +15,7 @@ namespace quic {
 class ClientConnection: public BaseConnection {
 public:
     ClientConnection(std::shared_ptr<TLSCtx> ctx, std::shared_ptr<common::IEventLoop> loop,
-        const ConnectionCallbacks& callbacks = {});
+        const ConnectionCallbacks& callbacks = {}, bool ecn_enabled = false);
     ~ClientConnection();
 
     bool Dial(const common::Address& addr, const std::string& alpn, const QuicTransportParams& tp_config,
@@ -35,6 +35,11 @@ protected:
 
     // HANDSHAKE_DONE frame handler (set as callback to frame processor)
     bool HandleHandshakeDoneFrame(std::shared_ptr<IFrame> frame);
+
+    // RFC 9000 §4.1.2: confirm the handshake when a 1-RTT packet is received,
+    // not only on HANDSHAKE_DONE.  Implements the base-class hook
+    // OnApplicationDataPacketProcessed().
+    void OnApplicationDataPacketProcessed() override;
 
     // RFC 9000 §7.3: in addition to the shared initial_source_connection_id check,
     // the client must verify original_destination_connection_id and, after a Retry,

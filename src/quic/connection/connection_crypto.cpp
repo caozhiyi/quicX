@@ -362,35 +362,28 @@ bool ConnectionCrypto::TriggerKeyUpdate() {
         return false;
     }
 
-    // Trigger key update for both read and write directions using version-aware method
-    // First update write keys (our outgoing traffic)
+    // RFC 9001 §6.1: The initiator updates ONLY its send (write) keys. Read keys
+    // must stay untouched: the peer keeps sending with its current keys until it
+    // sees our new key phase bit, so rotating read keys here would make every
+    // in-flight peer packet undecryptable and permanently desync both sides.
     auto result = cryptographer->KeyUpdateWithVersion(nullptr, 0, true, quic_version_);
     if (result != ICryptographer::Result::kOk) {
         LOG_ERROR("Key update failed for write keys: %d", static_cast<int>(result));
         return false;
     }
 
-    // Then update read keys (incoming traffic)
-    result = cryptographer->KeyUpdateWithVersion(nullptr, 0, false, quic_version_);
-    if (result != ICryptographer::Result::kOk) {
-        LOG_ERROR("Key update failed for read keys: %d", static_cast<int>(result));
-        return false;
-    }
-
-    // Flip key phase
+    // Flip the send-side key phase: packets built after this carry phase bit 1
     current_key_phase_ ^= 1;
 
     LOG_INFO("Key update completed successfully (version: %s, new key_phase: %u)", VersionToString(quic_version_),
         current_key_phase_);
 
-    // Log key_updated events for 1-RTT key update
+    // Log key_updated events for 1-RTT key update (write keys only)
     if (qlog_trace_) {
         common::KeyUpdatedData key_data;
         key_data.key_type = "1rtt";
         key_data.trigger = "key_update";
         key_data.is_write = true;
-        QLOG_KEY_UPDATED(qlog_trace_, key_data);
-        key_data.is_write = false;
         QLOG_KEY_UPDATED(qlog_trace_, key_data);
     }
 
@@ -407,36 +400,48 @@ bool ConnectionCrypto::TriggerReadKeyUpdate() {
         return false;
     }
 
-    // Update read keys first (to decrypt the incoming packet with new key)
+    // Update read keys first (to decrypt the incoming packet with the new key).
+    // KeyUpdateWithVersion preserves the old read key as prev_read so reordered
+    // in-flight packets from the previous phase can still be decrypted.
     auto result = cryptographer->KeyUpdateWithVersion(nullptr, 0, false, quic_version_);
     if (result != ICryptographer::Result::kOk) {
         LOG_ERROR("Passive key update failed for read keys: %d", static_cast<int>(result));
         return false;
     }
 
-    // Also update write keys (RFC 9001 §6.2: an endpoint SHOULD update its
-    // send keys in response to a peer's key update)
-    result = cryptographer->KeyUpdateWithVersion(nullptr, 0, true, quic_version_);
-    if (result != ICryptographer::Result::kOk) {
-        LOG_ERROR("Passive key update failed for write keys: %d", static_cast<int>(result));
-        return false;
+    // Advance the expected phase of received packets
+    uint8_t old_read_phase = read_key_phase_;
+    read_key_phase_ ^= 1;
+
+    // Also update write keys in response (RFC 9001 §6.1). Only respond when our
+    // send phase has not advanced past the peer's old phase yet: responding to
+    // every peer update (including the peer's response to our own update) would
+    // flip both directions once per RTT and the phases would never converge.
+    bool responded = false;
+    if (current_key_phase_ == old_read_phase) {
+        result = cryptographer->KeyUpdateWithVersion(nullptr, 0, true, quic_version_);
+        if (result != ICryptographer::Result::kOk) {
+            LOG_ERROR("Passive key update failed for write keys: %d", static_cast<int>(result));
+            return false;
+        }
+        current_key_phase_ ^= 1;
+        responded = true;
     }
 
-    // Flip key phase to match the peer's
-    current_key_phase_ ^= 1;
+    LOG_INFO("Passive key update completed successfully (version: %s, new key_phase: %u, responded: %d)",
+        VersionToString(quic_version_), current_key_phase_, responded);
 
-    LOG_INFO("Passive key update completed successfully (version: %s, new key_phase: %u)",
-        VersionToString(quic_version_), current_key_phase_);
-
-    // Log key_updated events
+    // Log key_updated events (read always; write only when we responded)
     if (qlog_trace_) {
         common::KeyUpdatedData key_data;
         key_data.key_type = "1rtt";
         key_data.trigger = "remote_update";
         key_data.is_write = false;
         QLOG_KEY_UPDATED(qlog_trace_, key_data);
-        key_data.is_write = true;
-        QLOG_KEY_UPDATED(qlog_trace_, key_data);
+        if (responded) {
+            key_data.is_write = true;
+            QLOG_KEY_UPDATED(qlog_trace_, key_data);
+        }
     }
 
     return true;

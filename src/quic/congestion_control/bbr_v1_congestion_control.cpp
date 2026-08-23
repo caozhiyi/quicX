@@ -73,6 +73,20 @@ void BBRv1CongestionControl::Configure(const CcConfigV2& cfg) {
     pacer_.reset(new NormalPacer());
 }
 
+void BBRv1CongestionControl::Reset() {
+    // RFC 9000 §9.4 / BBR spec flow-reset on path change: the old path's
+    // bandwidth filter, RTprop, full-bw detection and ProbeBW phase are all
+    // path-specific. Configure() restarts Startup mode with a clean model;
+    // bytes_in_flight and srtt are preserved (still-unacked packets / pacing
+    // needs a sane rate immediately; GetPacingRate handles max_bw==0).
+    uint64_t bif = bytes_in_flight_;
+    uint64_t srtt = srtt_us_;
+    Configure(cfg_);
+    bytes_in_flight_ = bif;
+    srtt_us_ = srtt;
+    if (pacer_) pacer_->OnPacingRateUpdated(GetPacingRateBytesPerSec());
+}
+
 void BBRv1CongestionControl::OnPacketSent(const SentPacketEvent& ev) {
     bytes_in_flight_ += ev.bytes;
     // Update round-trip boundary: track the latest sent packet number

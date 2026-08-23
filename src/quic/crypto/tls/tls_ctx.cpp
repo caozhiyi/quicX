@@ -1,6 +1,8 @@
 #include "quic/crypto/tls/tls_ctx.h"
 #include "common/log/log.h"
 
+#include <cctype>
+
 namespace quicx {
 namespace quic {
 
@@ -29,22 +31,34 @@ bool TLSCtx::Init(bool enable_early_data, const std::string& cipher_suites) {
     SSL_CTX_set_min_proto_version(ssl_ctx_.get(), TLS1_3_VERSION);
     SSL_CTX_set_max_proto_version(ssl_ctx_.get(), TLS1_3_VERSION);
 
-    // Note: BoringSSL does not support configuring TLS 1.3 cipher suites via
-    // SSL_CTX_set_cipher_list. TLS 1.3 ciphers have a built-in preference order.
-    // BoringSSL automatically selects the best cipher based on:
-    // - Hardware support (AES-NI for AES-GCM, or ChaCha20 otherwise)
-    // - Security strength
-    //
-    // Supported TLS 1.3 ciphers:
-    // - TLS_AES_128_GCM_SHA256 (default)
-    // - TLS_AES_256_GCM_SHA384
-    // - TLS_CHACHA20_POLY1305_SHA256
-    //
-    // For interoperability testing, ChaCha20 can be tested by running on
-    // platforms without AES-NI hardware support.
+    // NOTE on TLS 1.3 cipher-suite selection in this vendored BoringSSL:
+    // - SSL_CTX_set_cipher_list() only configures the TLS 1.2 CIPHER_ORDER list
+    //   (see ssl_create_cipher_list in ssl_cipher.cc); the three TLS 1.3 suites
+    //   are tracked separately (NumTLS13Ciphers) and auto-negotiated, so passing
+    //   a TLS 1.3 name here yields NO_CIPHER_MATCH and breaks endpoint startup.
+    // - SSL_CTX_set_ciphersuites() is NOT exported by this version.
+    // - TLS 1.3 suite selection is instead driven by AES hardware availability:
+    //   with AES-NI it prefers AES-GCM, without it prefers ChaCha20
+    //   (AesHwCipherScorer in s3_both.cc, choose_tls13_cipher in tls13_server.cc).
+    // To honor a request for the ChaCha20 suite we emulate a "no AES hardware"
+    // environment via the public testing override, so BoringSSL prefers ChaCha20
+    // (0x1303) during TLS 1.3 negotiation. Both client and server inherit this
+    // override (ssl_lib.cc copies it into the SSL config).
     if (!cipher_suites.empty()) {
-        LOG_INFO("TLS cipher suites requested: %s (note: BoringSSL uses automatic TLS 1.3 cipher selection)",
-            cipher_suites.c_str());
+        std::string cs = cipher_suites;
+        for (char& c : cs) {
+            c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
+        }
+        if (cs.find("chacha20") != std::string::npos) {
+            bssl::SSL_CTX_set_aes_hw_override_for_testing(ssl_ctx_.get(), false);
+            LOG_INFO("TLS 1.3: ChaCha20 requested -> preferring ChaCha20 "
+                     "(BoringSSL AES-HW override = false)");
+        } else {
+            LOG_WARN("TLS 1.3 cipher override '%s' not directly enforceable by "
+                     "this BoringSSL build (only ChaCha20 preference is supported "
+                     "via the AES-HW override); default selection in effect",
+                     cipher_suites.c_str());
+        }
     }
 
     if (enable_early_data) {

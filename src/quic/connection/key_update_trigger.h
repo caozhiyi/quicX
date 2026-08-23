@@ -29,6 +29,13 @@ public:
     bool IsEnabled() const { return enabled_; }
 
     /**
+     * @brief Force a key update on the first 1-RTT packet sent.
+     * Used by interop --force-keyupdate. Implies SetEnabled(true).
+     */
+    void SetForce(bool force) { force_ = force; if (force) enabled_ = true; }
+    bool IsForced() const { return force_; }
+
+    /**
      * @brief Set bytes threshold for triggering key update
      * @param bytes_threshold Number of bytes to send before triggering
      */
@@ -80,6 +87,7 @@ public:
 private:
     bool enabled_;
     bool triggered_;
+    bool force_;
     uint32_t key_update_count_;
 
     // Bytes-based threshold

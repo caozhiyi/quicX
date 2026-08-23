@@ -116,6 +116,15 @@ public:
     bool RotateRemoteConnectionID();
 
     /**
+     * @brief Directly set the remote (peer) connection ID, bypassing the pooled
+     * CID rotation. Used for preferred-address migration (RFC 9000 §9.6), where
+     * the new DCID is the connection ID carried inside the server's
+     * preferred_address transport parameter rather than one from a
+     * NEW_CONNECTION_ID frame.
+     */
+    void SetRemoteConnectionID(const uint8_t* id, uint16_t len);
+
+    /**
      * @brief Flush a previously deferred RETIRE_CONNECTION_ID for the remote CID
      * rotated away from during migration.
      *

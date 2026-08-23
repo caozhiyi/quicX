@@ -115,6 +115,22 @@ public:
      */
     bool InitiateMigration(std::weak_ptr<void> owner);
 
+    /**
+     * @brief Migrate to a new PEER address (server's preferred address, §9.6).
+     *
+     * Unlike InitiateMigrationTo() this changes the remote endpoint, possibly
+     * across address families (IPv6 -> IPv4). Creates a socket matching the
+     * target family, pre-rotates the DCID, and validates the new path with
+     * PATH_CHALLENGE before switching.
+     *
+     * @param owner     Weak handle to the owning connection (see above).
+     * @param peer_ip   Server's preferred address IP.
+     * @param peer_port Server's preferred address port.
+     *
+     * @note Thread-safe with the same dispatch semantics as InitiateMigrationTo().
+     */
+    MigrationResult InitiateMigrationToPeer(std::weak_ptr<void> owner, const std::string& peer_ip, uint16_t peer_port);
+
     bool IsMigrationSupported() const;
     bool IsMigrationInProgress() const;
 
@@ -175,6 +191,12 @@ private:
 
     // Core migration logic. Only ever runs on the loop thread.
     MigrationResult InitiateMigrationToImpl(const std::string& local_ip, uint16_t local_port);
+
+    // Preferred-address migration core; loop thread only.
+    MigrationResult InitiateMigrationToPeerImpl(const std::string& peer_ip, uint16_t peer_port);
+
+    // Idempotent wiring of the probe-socket and completion callbacks.
+    void EnsureCallbacksInstalled();
 
     ConnectionStateMachine& state_machine_;
     PathManager& path_manager_;

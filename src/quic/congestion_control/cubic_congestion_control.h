@@ -16,6 +16,7 @@ public:
     ~CubicCongestionControl() override = default;
 
     void Configure(const CcConfigV2& cfg) override;
+    void Reset() override;
     void OnPacketSent(const SentPacketEvent& ev) override;
     void OnPacketAcked(const AckEvent& ev) override;
     void OnPacketLost(const LossEvent& ev) override;

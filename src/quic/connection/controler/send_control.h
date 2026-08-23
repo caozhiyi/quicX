@@ -92,6 +92,29 @@ public:
     uint32_t GetRtt() { return rtt_calculator_.GetSmoothedRtt(); }
     uint32_t GetPTO(uint32_t max_ack_delay) { return rtt_calculator_.GetPT0Interval(max_ack_delay); }
     RttCalculator& GetRttCalculator() { return rtt_calculator_; }
+
+    /**
+     * @brief Reset the congestion controller to its initial window.
+     *
+     * RFC 9000 §9.4 path migration: old-path capacity estimates must not be
+     * carried onto the new path. Called via SendManager::ResetPathSignals()
+     * when a probe-validated new peer address becomes the active path.
+     */
+    void ResetCongestionControl() {
+        if (congestion_control_) {
+            congestion_control_->Reset();
+        }
+    }
+
+    /**
+     * @brief Reset the RTT estimator for a new path (RFC 9000 §9.4).
+     *
+     * Old-path SRTT/variance would keep driving PTO and loss detection with
+     * values that may be entirely wrong on the new path. Negotiated
+     * max_ack_delay / ack_delay_exponent are NOT touched (unlike
+     * UpdateConfig, which would overwrite them).
+     */
+    void ResetRtt() { rtt_calculator_.Reset(); }
     // For test instrumentation only: returns the underlying CC's
     // bytes_in_flight / cwnd. Lets unit tests verify that send_control's
     // packet-tracking maintains exact contract with the CC layer (see
