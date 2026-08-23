@@ -44,7 +44,15 @@ bool InitPacket::Encode(std::shared_ptr<common::IBuffer> buffer) {
 
     // encode token
     cur_pos = common::EncodeVarint(cur_pos, end, token_length_);
+    if (cur_pos == nullptr) {
+        LOG_ERROR("encode token length failed");
+        return false;
+    }
     if (token_length_ > 0) {
+        if (cur_pos + token_length_ > end) {
+            LOG_ERROR("token too large for buffer. token_length:%u, free:%td", token_length_, end - cur_pos);
+            return false;
+        }
         uint8_t* token_ptr = token_span_.Valid() ? token_span_.GetStart() : token_raw_;
         std::memcpy(cur_pos, token_ptr, token_length_);
         cur_pos += token_length_;
@@ -54,14 +62,26 @@ bool InitPacket::Encode(std::shared_ptr<common::IBuffer> buffer) {
     length_ = payload_.GetLength() + header_.GetPacketNumberLength() +
               (crypto_grapher_ ? crypto_grapher_->GetTagLength() : 0);
     cur_pos = common::EncodeVarint(cur_pos, end, length_);
+    if (cur_pos == nullptr) {
+        LOG_ERROR("encode length failed");
+        return false;
+    }
 
     // encode packet number
     packet_num_offset_ = cur_pos - start_pos;
+    if (cur_pos + header_.GetPacketNumberLength() > end) {
+        LOG_ERROR("no space for packet number. free:%td", end - cur_pos);
+        return false;
+    }
     cur_pos = PacketNumber::Encode(cur_pos, header_.GetPacketNumberLength(), packet_number_);
 
     // encode payload
     if (!crypto_grapher_) {
         payload_offset_ = cur_pos - start_pos;
+        if (cur_pos + payload_.GetLength() > end) {
+            LOG_ERROR("payload too large for buffer. payload_len:%u, free:%td", payload_.GetLength(), end - cur_pos);
+            return false;
+        }
         std::memcpy(cur_pos, payload_.GetStart(), payload_.GetLength());
         cur_pos += payload_.GetLength();
         buffer->MoveWritePt(cur_pos - span.GetStart());
