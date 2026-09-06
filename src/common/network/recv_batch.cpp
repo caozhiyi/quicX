@@ -29,9 +29,11 @@
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
-#include <mswsock.h>
-#include <windows.h>
+// winsock2.h must come first: mswsock.h depends on types (SOCKET, BOOL,
+// FAR, ...) defined there. Including mswsock.h first breaks the SDK headers.
 #include <winsock2.h>
+#include <windows.h>
+#include <mswsock.h>
 #include <ws2tcpip.h>
 #else
 #include <arpa/inet.h>

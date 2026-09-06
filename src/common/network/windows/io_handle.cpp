@@ -3,9 +3,9 @@
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
-#include <mswsock.h>
-#include <windows.h>
 #include <winsock2.h>
+#include <windows.h>
+#include <mswsock.h>
 #include <ws2tcpip.h>
 
 #include <atomic>
