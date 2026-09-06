@@ -38,4 +38,4 @@ private:
     std::string GetNextArg(int& i, int argc, char* argv[]);
 };
 
-#endif
+#endif  // TOOL_QUICX_CURL_ARGS_PARSER

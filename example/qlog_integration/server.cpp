@@ -1,6 +1,5 @@
 #include <iostream>
 #include <memory>
-
 #include <quicx/http3/if_request.h>
 #include <quicx/http3/if_response.h>
 #include <quicx/http3/if_server.h>
@@ -59,9 +58,9 @@ int main() {
     config.quic_config_.config_.log_level_ = quicx::LogLevel::kDebug;
 
     // Configure QLog via Http3ServerConfig
-    config.quic_config_.config_.qlog_config_.enabled = true;
-    config.quic_config_.config_.qlog_config_.output_dir = "./qlog_output";
-    config.quic_config_.config_.qlog_config_.flush_interval_ms = 100;
+    config.quic_config_.config_.qlog_config_.enabled_ = true;
+    config.quic_config_.config_.qlog_config_.output_dir_ = "./qlog_output";
+    config.quic_config_.config_.qlog_config_.flush_interval_ms_ = 100;
 
     // 5. Initialize and Start
     server->Init(config);

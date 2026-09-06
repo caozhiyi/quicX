@@ -1,10 +1,10 @@
 #ifndef TOOL_QUICX_CURL_HTTP_CLIENT
 #define TOOL_QUICX_CURL_HTTP_CLIENT
 
-#include <quicx/http3/if_client.h>
 #include <condition_variable>
 #include <memory>
 #include <mutex>
+#include <quicx/http3/if_client.h>
 #include <string>
 
 struct HttpResponse {
@@ -42,4 +42,4 @@ private:
     static quicx::HttpMethod StringToMethod(const std::string& method);
 };
 
-#endif
+#endif  // TOOL_QUICX_CURL_HTTP_CLIENT

@@ -1,6 +1,7 @@
-#include "args_parser.h"
 #include <cstring>
 #include <iostream>
+
+#include "args_parser.h"
 
 bool ArgsParser::Parse(int argc, char* argv[], CurlArgs& args) {
     if (argc < 2) {

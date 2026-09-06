@@ -3,12 +3,11 @@
 #include <chrono>
 #include <iomanip>
 #include <iostream>
-#include <thread>
-#include <vector>
-
 #include <quicx/http3/if_client.h>
 #include <quicx/http3/if_request.h>
 #include <quicx/http3/if_response.h>
+#include <thread>
+#include <vector>
 
 class PerformanceBenchmark {
 private:

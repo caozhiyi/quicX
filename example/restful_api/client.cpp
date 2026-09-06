@@ -1,8 +1,8 @@
-#include <quicx/http3/if_client.h>
-#include <quicx/http3/if_response.h>
 #include <atomic>
 #include <chrono>
 #include <iostream>
+#include <quicx/http3/if_client.h>
+#include <quicx/http3/if_response.h>
 #include <thread>
 
 std::atomic<int> pending_requests(0);

@@ -74,7 +74,12 @@ settings.enable_http1 = true;
 settings.enable_http2 = true;
 settings.enable_http3 = true;
 
-// Create server and add listener
-auto server = IUpgrade::MakeUpgrade(event_loop);
+// Create server and add listener. The server owns a private event loop and
+// the thread that drives it, so no loop (and no thread plumbing) is required
+// from the caller.
+auto server = IUpgrade::MakeUpgrade();
 server->AddListener(settings);
+
+// ... later: stops the loop thread and closes every socket
+server->Stop();
 ```

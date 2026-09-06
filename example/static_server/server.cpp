@@ -42,18 +42,15 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <quicx/http3/if_request.h>
+#include <quicx/http3/if_response.h>
+#include <quicx/http3/if_server.h>
+#include <quicx/upgrade/if_upgrade.h>
+#include <quicx/upgrade/type.h>
 #include <sstream>
 #include <string>
 #include <thread>
 #include <unordered_map>
-
-#include <quicx/http3/if_request.h>
-#include <quicx/http3/if_response.h>
-#include <quicx/http3/if_server.h>
-
-#include <quicx/common/if_event_loop.h>
-#include <quicx/upgrade/if_upgrade.h>
-#include <quicx/upgrade/type.h>
 
 // Internal headers -- we use the same StdoutLogger that the upgrade_h3
 // example uses so that LOG_INFO/LOG_ERROR from the upgrade module
@@ -235,107 +232,48 @@ static Options ParseArgs(int argc, char* argv[]) {
     return o;
 }
 
-// ---- upgrade thread --------------------------------------------------------
+// ---- upgrade endpoint ------------------------------------------------------
 //
-// The upgrade module is event-loop driven. We run it on a dedicated thread so
-// it doesn't compete with the H3 server's own worker threads.
-//
-// IMPORTANT thread-affinity rule:
-//   `EventLoop::Init()` records `std::this_thread::get_id()` and from that
-//   point on every `RegisterFd / AddTimer / RemoveFd / ...` call goes through
-//   `AssertInLoopThread()` -- a hard `std::abort()` on mismatch.
-//   That means BOTH `Init()` AND `AddListener()` (which calls RegisterFd
-//   internally) must run on the same thread that will later call `Wait()`.
-//
-//   Earlier we did Init+AddListener on the main thread and then ran Wait()
-//   on a worker -- the very first incoming connection's `accept()` callback
-//   then tried to RegisterFd() the new client_fd from the worker thread,
-//   tripping AssertInLoopThread() and (silently, in release-style logger
-//   builds without an audible LOG_FATAL flush) leaving the new fd
-//   un-monitored. Curl saw `Connected` (TCP works in the kernel) but never
-//   got a ServerHello back -- a perfect "TLS hangs forever" symptom.
-struct UpgradeRuntime {
-    std::shared_ptr<quicx::common::IEventLoop> loop;
-    std::unique_ptr<quicx::upgrade::IUpgrade> server;
-    std::thread thr;
-    std::atomic<bool> running{false};
-    std::atomic<bool> init_ok{false};
-    std::atomic<bool> init_done{false};
-};
-
-static bool StartUpgrade(UpgradeRuntime& rt, const Options& opt) {
-    rt.running.store(true, std::memory_order_release);
-
-    rt.thr = std::thread([&rt, opt]() {
-        // 1. Init / AddListener on THIS thread so EventLoop's recorded
-        //    thread_id_ matches the thread that drives Wait().
-        rt.loop = quicx::common::MakeEventLoop();
-        if (!rt.loop || !rt.loop->Init()) {
-            std::cerr << "[upgrade] failed to init event loop\n";
-            rt.init_done.store(true, std::memory_order_release);
-            return;
-        }
-        rt.server = quicx::upgrade::IUpgrade::MakeUpgrade(rt.loop);
-        if (!rt.server) {
-            std::cerr << "[upgrade] MakeUpgrade returned null\n";
-            rt.init_done.store(true, std::memory_order_release);
-            return;
-        }
-
-        quicx::upgrade::UpgradeSettings s;
-        s.listen_addr = opt.host;
-        s.http_port = opt.http_port;
-        s.https_port = opt.https_port;
-        s.h3_port = opt.h3_port;  // for Alt-Svc advertisement only
-        s.enable_http1 = (opt.http_port != 0);
-        s.enable_http2 = (opt.https_port != 0);
-        s.enable_http3 = true;  // advertise h3
-        if (opt.https_port != 0) {
-            s.cert_file = opt.cert_path;
-            s.key_file = opt.key_path;
-        }
-        s.log_level = quicx::LogLevel::kInfo;
-
-        if (!rt.server->AddListener(s)) {
-            std::cerr << "[upgrade] AddListener failed (host=" << opt.host << " http=" << opt.http_port
-                      << " https=" << opt.https_port << ")\n";
-            rt.init_done.store(true, std::memory_order_release);
-            return;
-        }
-
-        rt.init_ok.store(true, std::memory_order_release);
-        rt.init_done.store(true, std::memory_order_release);
-
-        // 2. Pump the event loop forever (Wait() returns on each iteration
-        //    after firing fd/timer/task callbacks).
-        while (rt.running.load(std::memory_order_acquire)) {
-            rt.loop->Wait();
-        }
-    });
-
-    // Wait for the worker thread to finish initialising so the caller can
-    // report success/failure synchronously and so subsequent shutdown logic
-    // sees a fully-constructed `rt.server`.
-    while (!rt.init_done.load(std::memory_order_acquire)) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+// The upgrade module owns a private event loop and the thread that drives it,
+// so nothing here has to manage loops or threads. That matters because
+// `EventLoop::Init()` records `std::this_thread::get_id()` and from that point
+// on every `RegisterFd / AddTimer / RemoveFd / ...` goes through
+// `AssertInLoopThread()` -- a hard `std::abort()` on mismatch. An earlier
+// version of this example did Init+AddListener on main and Wait() on a
+// worker: the first `accept()` callback then tried to RegisterFd() the new
+// client_fd from the worker thread, tripped the assert, and left the fd
+// un-monitored -- curl saw `Connected` (TCP works in the kernel) but never
+// got a ServerHello back, the classic "TLS hangs forever" symptom.
+static bool StartUpgrade(std::unique_ptr<quicx::IUpgrade>& server, const Options& opt) {
+    server = quicx::IUpgrade::MakeUpgrade();
+    if (!server) {
+        std::cerr << "[upgrade] MakeUpgrade returned null\n";
+        return false;
     }
-    if (!rt.init_ok.load(std::memory_order_acquire)) {
-        rt.running.store(false, std::memory_order_release);
-        if (rt.thr.joinable()) rt.thr.join();
+
+    quicx::UpgradeSettings s;
+    s.listen_addr_ = opt.host;
+    s.http_port_ = opt.http_port;
+    s.https_port_ = opt.https_port;
+    s.h3_port_ = opt.h3_port;  // for Alt-Svc advertisement only
+    s.enable_http1_ = (opt.http_port != 0);
+    s.enable_http2_ = (opt.https_port != 0);
+    s.enable_http3_ = true;  // advertise h3
+    if (opt.https_port != 0) {
+        s.cert_file_ = opt.cert_path;
+        s.key_file_ = opt.key_path;
+    }
+    s.log_level_ = quicx::LogLevel::kInfo;
+
+    // Blocks until the listeners are bound and registered on the server's
+    // own loop thread, so a true return means the endpoint is serving.
+    if (!server->AddListener(s)) {
+        std::cerr << "[upgrade] AddListener failed (host=" << opt.host << " http=" << opt.http_port
+                  << " https=" << opt.https_port << ")\n";
+        server.reset();
         return false;
     }
     return true;
-}
-
-static void StopUpgrade(UpgradeRuntime& rt) {
-    rt.running.store(false, std::memory_order_release);
-    // Kick the loop so Wait() returns promptly even when idle.
-    if (rt.loop) {
-        rt.loop->PostTask([]() {});
-    }
-    if (rt.thr.joinable()) rt.thr.join();
-    rt.server.reset();
-    rt.loop.reset();
 }
 
 // ---- main ------------------------------------------------------------------
@@ -412,7 +350,7 @@ int main(int argc, char* argv[]) {
     // ------------------------------------------------------------------
     // 2. Upgrade endpoint (TCP) -- optional but on by default
     // ------------------------------------------------------------------
-    UpgradeRuntime up;
+    std::unique_ptr<quicx::IUpgrade> up;
     bool upgrade_ok = false;
     if (!opt.no_upgrade && (opt.http_port || opt.https_port)) {
         upgrade_ok = StartUpgrade(up, opt);
@@ -443,7 +381,11 @@ int main(int argc, char* argv[]) {
     }
     std::cout << "shutting down..." << std::endl;
 
-    if (upgrade_ok) StopUpgrade(up);
+    // Stops the upgrade loop thread and closes its sockets. The destructor
+    // does the same thing, so this is only about ordering it before the H3
+    // shutdown below.
+    if (upgrade_ok) up->Stop();
+    up.reset();
     h3->Stop();
     h3->Join();
     return 0;

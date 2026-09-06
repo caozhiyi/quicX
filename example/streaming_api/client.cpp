@@ -14,13 +14,12 @@
 #include <iostream>
 #include <memory>
 #include <mutex>
-#include <string>
-#include <thread>
-
 #include <quicx/http3/if_async_handler.h>
 #include <quicx/http3/if_client.h>
 #include <quicx/http3/if_request.h>
 #include <quicx/http3/if_response.h>
+#include <string>
+#include <thread>
 
 using namespace quicx;
 

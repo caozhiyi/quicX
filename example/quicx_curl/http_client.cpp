@@ -1,8 +1,8 @@
 #include <chrono>
 #include <iostream>
-
 #include <quicx/http3/if_client.h>
 #include <quicx/http3/if_response.h>
+
 #include "http_client.h"
 
 namespace {

@@ -6,12 +6,11 @@
 #include <iostream>
 #include <memory>
 #include <mutex>
-#include <thread>
-#include <vector>
-
 #include <quicx/http3/if_client.h>
 #include <quicx/http3/if_request.h>
 #include <quicx/http3/if_response.h>
+#include <thread>
+#include <vector>
 
 struct LoadTestConfig {
     std::string url;

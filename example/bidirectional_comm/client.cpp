@@ -3,11 +3,10 @@
 #include <iostream>
 #include <mutex>
 #include <queue>
-#include <thread>
-
 #include <quicx/http3/if_client.h>
 #include <quicx/http3/if_request.h>
 #include <quicx/http3/if_response.h>
+#include <thread>
 
 class BidirectionalClient {
 private:
