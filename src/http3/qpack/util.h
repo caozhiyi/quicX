@@ -28,6 +28,13 @@ bool QpackEncodePrefixedInteger(
 bool QpackDecodePrefixedInteger(
     const std::shared_ptr<common::IBuffer> buf, uint8_t prefix_bits, uint8_t& first_byte, uint64_t& value);
 
+// Variant of QpackDecodePrefixedInteger for callers that have already read
+// the first byte off the wire (e.g. a dispatch loop that consumed it to
+// pattern-match the instruction). Decodes the low |prefix_bits| of
+// |first_byte| as the value's first chunk, then any continuation bytes.
+bool QpackDecodePrefixedIntegerFrom(
+    const std::shared_ptr<common::IBuffer> buf, uint8_t prefix_bits, uint8_t first_byte, uint64_t& value);
+
 // QPACK string literal with Huffman flag in MSB of length prefix (prefix 7 bits)
 bool QpackEncodeStringLiteral(const std::string& s, std::shared_ptr<common::IBuffer> buf, bool huffman = false);
 bool QpackDecodeStringLiteral(const std::shared_ptr<common::IBuffer> buf, std::string& out);
@@ -45,7 +52,7 @@ bool QpackEncodeStringLiteralWithPrefix(const std::string& s, std::shared_ptr<co
 bool QpackDecodeStringLiteralWithPrefix(const std::shared_ptr<common::IBuffer> buf, uint8_t first_byte,
     uint8_t length_prefix_bits, uint8_t huffman_bit, std::string& out);
 
-}  // namespace http3
+}  // namespace quicx
 }  // namespace quicx
 
-#endif
+#endif  // HTTP3_QPACK_UTIL

@@ -41,4 +41,4 @@ enum Http3ErrorCode : uint32_t {
 }
 }  // namespace quicx
 
-#endif
+#endif  // HTTP3_HTTP_ERROR

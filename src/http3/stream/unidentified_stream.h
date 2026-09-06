@@ -3,9 +3,9 @@
 
 #include <functional>
 #include <memory>
+#include <quicx/quic/if_quic_recv_stream.h>
 #include <vector>
 
-#include <quicx/quic/if_quic_recv_stream.h>
 #include "http3/stream/if_recv_stream.h"
 
 namespace quicx {
@@ -53,4 +53,4 @@ private:
 }  // namespace http3
 }  // namespace quicx
 
-#endif
+#endif  // HTTP3_STREAM_UNIDENTIFIED_STREAM

@@ -2,6 +2,7 @@
 #define HTTP3_FRAME_QPACK_DECODER_FRAMES
 
 #include <cstdint>
+
 #include "common/buffer/if_buffer.h"
 
 namespace quicx {
@@ -99,4 +100,4 @@ private:
 }  // namespace http3
 }  // namespace quicx
 
-#endif
+#endif  // HTTP3_FRAME_QPACK_DECODER_FRAMES

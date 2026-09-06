@@ -27,4 +27,4 @@ enum SettingsType : uint16_t {
 }  // namespace http3
 }  // namespace quicx
 
-#endif
+#endif  // HTTP3_CONNECTION_TYPE

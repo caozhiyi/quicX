@@ -3,15 +3,28 @@
 #include "http3/config.h"
 #include "http3/connection/if_connection.h"
 #include "http3/connection/type.h"
+#include "http3/frame/qpack_decoder_frames.h"
+#include "http3/http/error.h"
+#include "http3/stream/qpack_decoder_receiver_stream.h"
+#include "http3/stream/qpack_decoder_sender_stream.h"
+#include "http3/stream/qpack_encoder_receiver_stream.h"
+#include "http3/stream/qpack_encoder_sender_stream.h"
+#include "http3/stream/req_resp_base_stream.h"
+#include "http3/stream/unidentified_stream.h"
 
 namespace quicx {
 namespace http3 {
 
-IConnection::IConnection(const std::string& unique_id, const std::shared_ptr<IQuicConnection>& quic_connection,
-    const std::function<void(const std::string& unique_id, uint32_t error_code)>& error_handler):
+IConnection::IConnection(const std::string& unique_id, const Http3Settings& settings,
+    const std::shared_ptr<IQuicConnection>& quic_connection,
+    const std::function<void(const std::string& unique_id, uint32_t error_code)>& error_handler,
+    uint64_t max_concurrent_streams, bool enable_push):
     unique_id_(unique_id),
     error_handler_(error_handler),
+    pending_settings_(settings),
     quic_connection_(quic_connection),
+    max_concurrent_streams_(max_concurrent_streams),
+    enable_push_(enable_push),
     cleanup_timer_id_(0),
     is_destroying_(std::make_shared<std::atomic<bool>>(false)) {
     qpack_encoder_ = std::make_shared<QpackEncoder>();
@@ -43,8 +56,89 @@ void IConnection::Init() {
         });
     }
 
+    // Role-agnostic control + QPACK stream assembly (see header).
+    SetupControlAndQpackStreams();
+
     // Start periodic cleanup timer for completed streams (runs every 100ms)
     StartCleanupTimer();
+}
+
+void IConnection::SetupControlAndQpackStreams() {
+    auto qc = quic_connection_.lock();
+    const Http3Settings& settings = pending_settings_;
+
+    // RFC 9114 §6.2.1: create our outbound control stream and send SETTINGS.
+    auto control_stream = qc ? qc->MakeStream(StreamDirection::kSend) : nullptr;
+    control_sender_stream_ = std::make_shared<ControlClientSenderStream>(
+        std::dynamic_pointer_cast<IQuicSendStream>(control_stream), MakeErrorHandler());
+
+    settings_ = AdaptSettings(settings);
+    control_sender_stream_->SendSettings(settings_);
+
+    // RFC 9204: QPACK is mandatory for HTTP/3 and the encoder/decoder streams
+    // MUST be created even if the dynamic table capacity is 0; the settings
+    // below only gate dynamic-table *usage*.
+    bool qpack_enabled = (settings.qpack_max_table_capacity > 0 || settings.qpack_blocked_streams > 0);
+    if (qpack_enabled) {
+        LOG_DEBUG("IConnection: QPACK dynamic table enabled (max_table_capacity=%llu, blocked_streams=%llu)",
+            settings.qpack_max_table_capacity, settings.qpack_blocked_streams);
+
+        // Enable our encoder's dynamic table (will be capped by peer's SETTINGS later)
+        qpack_encoder_->SetDynamicTableEnabled(true);
+        qpack_encoder_->SetMaxTableCapacity(settings.qpack_max_table_capacity);
+
+        // Set our decoder's table capacity (this is what WE advertise to the peer)
+        qpack_decoder_->SetMaxTableCapacity(settings.qpack_max_table_capacity);
+        qpack_decoder_->SetDynamicTableEnabled(true);
+
+        // Set max blocked streams on the registry
+        blocked_registry_->SetMaxBlockedStreams(settings.qpack_blocked_streams);
+    } else {
+        LOG_DEBUG("IConnection: QPACK dynamic table disabled (no dynamic table configuration)");
+    }
+
+    // QPACK encoder sender stream: carries our encoder instructions to the
+    // peer. Created unconditionally per RFC 9204 §6.2 (see above).
+    auto qpack_enc_stream = qc ? qc->MakeStream(StreamDirection::kSend) : nullptr;
+    auto encoder_sender = std::make_shared<QpackEncoderSenderStream>(
+        std::dynamic_pointer_cast<IQuicSendStream>(qpack_enc_stream), MakeErrorHandler());
+    streams_[encoder_sender->GetStreamID()] = encoder_sender;
+
+    // Use weak_ptr to avoid circular reference (encoder lambda -> shared_ptr -> connection -> encoder)
+    std::weak_ptr<QpackEncoderSenderStream> weak_enc = encoder_sender;
+    qpack_encoder_->SetInstructionSender([weak_enc](const std::vector<std::pair<std::string, std::string>>& inserts) {
+        auto enc = weak_enc.lock();
+        if (!enc) {
+            return;
+        }
+        enc->SendInstructions(inserts);
+    });
+
+    // QPACK decoder sender stream: carries our decoder feedback (Section Ack,
+    // Stream Cancel, Insert Count Increment) to the peer's encoder. This goes
+    // on qpack_decoder_ because it's the local decoder that emits feedback.
+    auto qpack_dec_sender_stream = qc ? qc->MakeStream(StreamDirection::kSend) : nullptr;
+    auto decoder_sender = std::make_shared<QpackDecoderSenderStream>(
+        std::dynamic_pointer_cast<IQuicSendStream>(qpack_dec_sender_stream), MakeErrorHandler());
+    streams_[decoder_sender->GetStreamID()] = decoder_sender;
+    qpack_decoder_->SetDecoderFeedbackSender([decoder_sender](uint8_t type, uint64_t value) {
+        if (!decoder_sender) {
+            return;
+        }
+        switch (type) {
+            case static_cast<uint8_t>(QpackDecoderInstrType::kSectionAck):
+                decoder_sender->SendSectionAck(value);
+                break;
+            case static_cast<uint8_t>(QpackDecoderInstrType::kStreamCancellation):
+                decoder_sender->SendStreamCancel(value);
+                break;
+            case static_cast<uint8_t>(QpackDecoderInstrType::kInsertCountInc):
+                decoder_sender->SendInsertCountIncrement(value);
+                break;
+            default:
+                break;
+        }
+    });
 }
 
 IConnection::~IConnection() {
@@ -256,6 +350,141 @@ std::function<void(const std::unordered_map<uint16_t, uint64_t>&)> IConnection::
     };
 }
 
+std::function<void(uint64_t)> IConnection::MakeGoawayHandler() {
+    std::weak_ptr<IConnection> weak_self = weak_from_this();
+    return [weak_self](uint64_t id) {
+        auto self = weak_self.lock();
+        if (!self) {
+            return;
+        }
+        self->HandleGoaway(id);
+    };
+}
+
+bool IConnection::HandleStreamCommon(const std::shared_ptr<IQuicStream>& stream, uint32_t error_code) {
+    if (error_code != 0) {
+        LOG_ERROR("IConnection::HandleStream: stream error: %d", error_code);
+        if (stream) {
+            streams_.erase(stream->GetStreamID());
+        }
+        return true;
+    }
+
+    // NOTE: the request-stream concurrency limit below must NOT gate
+    // unidirectional control/QPACK streams. Those are mandated by HTTP/3
+    // (RFC 9114 §6.2) and their count is bounded by the QUIC
+    // unidirectional-stream flow control (STREAMS_BLOCKED_UNIDIRECTIONAL),
+    // not by the request-stream limit. If we applied max_concurrent_streams_
+    // to them, a peer that opens several concurrent requests would push
+    // streams_.size() past the limit and cause HandleStream to return early,
+    // leaving the peer's QPACK encoder stream (type 0x02) with NO read
+    // callback. Its encoder instructions would then sit buffered in the
+    // RecvStream forever, the local decoder dynamic table would never be
+    // populated, header-block decode would stay blocked, and the connection
+    // would hang -> http3 interop failure.
+    if (stream->GetDirection() == StreamDirection::kBidi && streams_.size() >= max_concurrent_streams_) {
+        LOG_ERROR("IConnection::HandleStream: max concurrent streams reached");
+        Close(Http3ErrorCode::kStreamCreationError);
+        return true;
+    }
+    return false;
+}
+
+void IConnection::AttachUnidentifiedStream(const std::shared_ptr<IQuicStream>& stream) {
+    // RFC 9114 §6.2: all unidirectional streams begin with a stream type.
+    // Create an UnidentifiedStream to read the type byte first; it dispatches
+    // back into OnStreamTypeIdentified() (virtual CreateTypedStream) via a
+    // weak_ptr, so a late callback after destruction is a no-op.
+    auto recv_stream = std::dynamic_pointer_cast<IQuicRecvStream>(stream);
+    std::weak_ptr<IConnection> weak_self = weak_from_this();
+    auto unidentified = std::make_shared<UnidentifiedStream>(recv_stream, MakeErrorHandler(),
+        [weak_self](uint64_t stream_type, std::shared_ptr<IQuicRecvStream> s, std::shared_ptr<IBufferRead> remaining_data) {
+            auto self = weak_self.lock();
+            if (!self) {
+                return;
+            }
+            self->OnStreamTypeIdentified(stream_type, s, remaining_data);
+        });
+
+    // Store temporarily until stream type is identified
+    streams_[stream->GetStreamID()] = unidentified;
+}
+
+void IConnection::OnStreamTypeIdentified(
+    uint64_t stream_type, std::shared_ptr<IQuicRecvStream> stream, std::shared_ptr<IBufferRead> remaining_data) {
+    LOG_DEBUG("IConnection: stream type %llu identified for stream %llu", stream_type, stream->GetStreamID());
+
+    // Remove the temporary UnidentifiedStream
+    streams_.erase(stream->GetStreamID());
+
+    auto typed_stream = CreateTypedStream(stream_type, stream);
+    if (typed_stream) {
+        streams_[stream->GetStreamID()] = typed_stream;
+
+        // Feed remaining data to the new stream if any
+        typed_stream->OnData(remaining_data, false, 0);
+    }
+}
+
+std::shared_ptr<IRecvStream> IConnection::CreateTypedStream(
+    uint64_t stream_type, const std::shared_ptr<IQuicRecvStream>& stream) {
+    switch (stream_type) {
+        case static_cast<uint64_t>(StreamType::kQpackEncoder):  // QPACK Encoder Stream (RFC 9204 Section 4.2)
+            LOG_DEBUG("IConnection: creating QPACK Encoder Receiver Stream for stream %llu", stream->GetStreamID());
+            // RFC 9204: Peer's encoder instructions populate our LOCAL decoder table (qpack_decoder_)
+            return std::make_shared<QpackEncoderReceiverStream>(stream, qpack_decoder_, blocked_registry_, MakeErrorHandler());
+
+        case static_cast<uint64_t>(StreamType::kQpackDecoder):  // QPACK Decoder Stream (RFC 9204 Section 4.2)
+            LOG_DEBUG("IConnection: creating QPACK Decoder Receiver Stream for stream %llu", stream->GetStreamID());
+            return std::make_shared<QpackDecoderReceiverStream>(stream, qpack_encoder_, blocked_registry_, MakeErrorHandler());
+
+        default:
+            // RFC 9114 Section 6.2: unknown stream types MUST be ignored
+            LOG_WARN("IConnection: unknown stream type %llu on stream %llu, ignoring", stream_type, stream->GetStreamID());
+            return nullptr;
+    }
+}
+
+void IConnection::HandleGoaway(uint64_t id) {
+    // RFC 9114 §5.2: the GOAWAY id MUST NOT increase across multiple
+    // GOAWAYs; a peer that violates this MUST be treated as H3_ID_ERROR.
+    if (goaway_received_id_ != kNoGoaway && id > goaway_received_id_) {
+        LOG_ERROR("IConnection::HandleGoaway: peer GOAWAY id increased (%llu -> %llu), closing with H3_ID_ERROR",
+            (unsigned long long)goaway_received_id_, (unsigned long long)id);
+        Close(static_cast<uint32_t>(Http3ErrorCode::kIdError));
+        return;
+    }
+    LOG_INFO("IConnection::HandleGoaway: peer GOAWAY received, id=%llu", (unsigned long long)id);
+    goaway_received_id_ = id;
+    // Do NOT Close() here: in-flight transfers may still land. The role hook
+    // below decides whether more is needed (the server starts its symmetric
+    // drain so s2n-quic-style peers don't block on our GOAWAY).
+    OnGoawayReceived();
+}
+
+bool IConnection::SendGoawayFrame(uint64_t goaway_id) {
+    if (!control_sender_stream_) {
+        LOG_WARN("IConnection::SendGoawayFrame: no control sender stream");
+        return false;
+    }
+    return control_sender_stream_->SendGoaway(goaway_id);
+}
+
+void IConnection::WireReqRespStream(const std::shared_ptr<ReqRespBaseStream>& stream) {
+    // RFC 9114 §4.2.2: enforce the SETTINGS_MAX_FIELD_SECTION_SIZE we
+    // advertised in our SETTINGS, instead of only announcing it.
+    auto it = settings_.find(static_cast<uint16_t>(SettingsType::kMaxFieldSectionSize));
+    if (it != settings_.end()) {
+        stream->SetMaxFieldSectionSize(it->second);
+    }
+
+    // Propagate qlog trace from the QUIC connection to the HTTP/3 stream.
+    auto qlog_trace = GetQuicQlogTrace();
+    if (qlog_trace) {
+        stream->SetQlogTrace(qlog_trace);
+    }
+}
+
 const std::unordered_map<uint16_t, uint64_t> IConnection::AdaptSettings(const Http3Settings& settings) {
     std::unordered_map<uint16_t, uint64_t> settings_map;
     // RFC 9114 §7.2.4.1: Only valid HTTP/3 settings may be sent on the wire.
@@ -300,7 +529,7 @@ void IConnection::StartCleanupTimer() {
     // the owning QUIC connection (and thus its TimerCoordinator life token)
     // is destroyed.
     cleanup_timer_id_ = qc->AddTimer(std::move(cb), kStreamCleanupIntervalMs,
-                                     /*periodic=*/true);
+        /*periodic=*/true);
 }
 
 void IConnection::CleanupDestroyedStreams() {

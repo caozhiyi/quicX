@@ -18,14 +18,6 @@ enum FrameType : uint16_t {
     kUnknown = 0xff,
 };
 
-// RFC 9114 §7.1: a frame's Length is a variable-length integer, so a peer may
-// legally declare up to 2^62-1 bytes. The spec imposes no ceiling, but an
-// implementation must: without one, a peer declares a huge length, the decoder
-// parks the stream in kNeedMoreData forever, and the receive buffer grows until
-// the process dies. QUIC-layer flow control is only the outer bound and is far
-// too coarse to serve as the HTTP/3 frame limit.
-constexpr uint64_t kMaxFrameLength = 16 * 1024 * 1024;  // 16 MiB
-
 // returned by frame Decode() methods
 enum class DecodeResult {
     kSuccess,       // Frame decoded successfully
@@ -71,4 +63,4 @@ constexpr uint8_t kQpackDecInsertCountIncFirstByteMask = 0x00;  // 0000 0000
 }  // namespace http3
 }  // namespace quicx
 
-#endif
+#endif  // HTTP3_FRAME_TYPE

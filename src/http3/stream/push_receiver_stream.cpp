@@ -1,14 +1,16 @@
-#include "http3/stream/push_receiver_stream.h"
 #include "common/buffer/buffer_decode_wrapper.h"
 #include "common/buffer/multi_block_buffer.h"
 #include "common/log/log.h"
+
+#include "quic/quicx/global_resource.h"
+
 #include "http3/frame/data_frame.h"
 #include "http3/frame/headers_frame.h"
 #include "http3/http/error.h"
 #include "http3/http/response.h"
 #include "http3/stream/pseudo_header.h"
+#include "http3/stream/push_receiver_stream.h"
 #include "http3/stream/type.h"
-#include "quic/quicx/global_resource.h"
 
 namespace quicx {
 namespace http3 {
@@ -111,8 +113,6 @@ void PushReceiverStream::OnData(std::shared_ptr<IBufferRead> data, bool /*is_las
 }
 
 void PushReceiverStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
-    LOG_DEBUG("=== PushReceiverStream::HandleHeaders called ===");
-
     auto headers_frame = std::dynamic_pointer_cast<HeadersFrame>(frame);
     if (!headers_frame) {
         LOG_ERROR("IStream::HandleHeaders error");

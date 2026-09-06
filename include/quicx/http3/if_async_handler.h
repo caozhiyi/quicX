@@ -347,4 +347,4 @@ public:
 
 }  // namespace quicx
 
-#endif
+#endif  // HTTP3_INCLUDE_ASYNC_HANDLER

@@ -5,6 +5,7 @@
 #include <deque>
 #include <unordered_map>
 #include <utility>
+
 #include "http3/qpack/type.h"
 #include "http3/qpack/util.h"
 
@@ -79,4 +80,4 @@ private:
 }  // namespace http3
 }  // namespace quicx
 
-#endif
+#endif  // HTTP3_QPACK_DYNAMIC_TABLE

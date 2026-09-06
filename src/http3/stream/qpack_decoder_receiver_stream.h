@@ -1,9 +1,10 @@
 #ifndef HTTP3_STREAM_QPACK_DECODER_RECEIVER_STREAM
 #define HTTP3_STREAM_QPACK_DECODER_RECEIVER_STREAM
 
-#include <quicx/quic/if_quic_recv_stream.h>
 #include <functional>
 #include <memory>
+#include <quicx/quic/if_quic_recv_stream.h>
+
 #include "http3/qpack/blocked_registry.h"
 #include "http3/qpack/qpack_encoder.h"
 #include "http3/stream/if_recv_stream.h"
@@ -42,4 +43,4 @@ private:
 }  // namespace http3
 }  // namespace quicx
 
-#endif
+#endif  // HTTP3_STREAM_QPACK_DECODER_RECEIVER_STREAM

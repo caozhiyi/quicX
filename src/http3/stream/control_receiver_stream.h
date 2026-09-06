@@ -3,9 +3,9 @@
 
 #include <functional>
 #include <memory>
+#include <quicx/quic/if_quic_recv_stream.h>
 #include <unordered_map>
 
-#include <quicx/quic/if_quic_recv_stream.h>
 #include "http3/frame/frame_decoder.h"
 #include "http3/frame/if_frame.h"
 #include "http3/qpack/qpack_encoder.h"
@@ -51,4 +51,4 @@ protected:
 }  // namespace http3
 }  // namespace quicx
 
-#endif
+#endif  // HTTP3_STREAM_CONTROL_RECEIVER_STREAM

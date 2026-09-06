@@ -4,10 +4,11 @@
 #include <functional>
 #include <memory>
 
+#include "common/buffer/if_buffer.h"
 
 #include "quicx/quic/if_quic_send_stream.h"
+
 #include "http3/stream/if_stream.h"
-#include "common/buffer/if_buffer.h"
 
 namespace quicx {
 namespace http3 {
@@ -47,8 +48,7 @@ protected:
     // A dedicated single-block buffer always has a valid writable span, so the
     // frame encodes cleanly; we then append it as a new chunk and flush, which
     // is exactly the transmit path SendSettings already uses successfully.
-    bool EncodeAndAppendControlFrame(
-        const std::function<bool(std::shared_ptr<common::IBuffer>)>& encode);
+    bool EncodeAndAppendControlFrame(const std::function<bool(std::shared_ptr<common::IBuffer>)>& encode);
 
 protected:
     bool wrote_type_;  // Track whether stream type has been sent
@@ -58,4 +58,4 @@ protected:
 }  // namespace http3
 }  // namespace quicx
 
-#endif
+#endif  // HTTP3_STREAM_IF_SEND_STREAM

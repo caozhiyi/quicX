@@ -17,4 +17,4 @@ struct HeaderItem {
 }  // namespace http3
 }  // namespace quicx
 
-#endif
+#endif  // HTTP3_QPACK_TYPE

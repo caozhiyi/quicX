@@ -1,5 +1,6 @@
-#include "http3/qpack/huffman_table.h"
 #include <cassert>
+
+#include "http3/qpack/huffman_table.h"
 
 namespace quicx {
 namespace http3 {

@@ -2,6 +2,7 @@
 #define HTTP3_FRAME_PUSH_PROMISE_FRAME
 
 #include <cstdint>
+
 #include "http3/frame/if_frame.h"
 #include "http3/frame/type.h"
 
@@ -35,4 +36,4 @@ private:
 }  // namespace http3
 }  // namespace quicx
 
-#endif
+#endif  // HTTP3_FRAME_PUSH_PROMISE_FRAME

@@ -1,7 +1,7 @@
-
 #include <quicx/common/metrics.h>
-#include <quicx/common/metrics_std.h>
+
 #include "common/log/log.h"
+#include "common/metrics/metrics_std.h"
 
 #include "http3/frame/push_promise_frame.h"
 #include "http3/http/error.h"
@@ -89,13 +89,13 @@ void RequestStream::HandleHeaders() {
     // Metrics: Track HTTP/3 response status codes
     int status_code = response_->GetStatusCode();
     if (status_code >= 200 && status_code < 300) {
-        common::Metrics::CounterInc(common::MetricsStd::Http3Responses2xx);
+        Metrics::CounterInc(common::MetricsStd::Http3Responses2xx);
     } else if (status_code >= 300 && status_code < 400) {
-        common::Metrics::CounterInc(common::MetricsStd::Http3Responses3xx);
+        Metrics::CounterInc(common::MetricsStd::Http3Responses3xx);
     } else if (status_code >= 400 && status_code < 500) {
-        common::Metrics::CounterInc(common::MetricsStd::Http3Responses4xx);
+        Metrics::CounterInc(common::MetricsStd::Http3Responses4xx);
     } else if (status_code >= 500 && status_code < 600) {
-        common::Metrics::CounterInc(common::MetricsStd::Http3Responses5xx);
+        Metrics::CounterInc(common::MetricsStd::Http3Responses5xx);
     }
 
     bool has_content_length = false;
@@ -117,23 +117,55 @@ void RequestStream::HandleHeaders() {
     if (async_handler_) {
         async_handler_->OnHeaders(response_);
 
-        // For responses with no body, signal completion immediately
-        // OnBodyChunk will be called with (nullptr, 0, true) when FIN arrives
-        // but if there's no body at all, we rely on the FIN handler in HandleData
+        // when this HEADERS is the trailing frame
+        // of a batch that carried the FIN bit, neither HandleData nor
+        // HandleFinWithoutData will ever fire (both require a later read
+        // event), so the body stream must be ended here.
+        if (!has_content_length && is_last_data_) {
+            async_handler_->OnBodyChunk(nullptr, 0, true);
+            should_notify_completion_ = true;
+        }
 
     } else if (response_handler_) {
         LOG_DEBUG("RequestStream::HandleHeaders: checking completion condition. has_cl=%d, body_len=%u",
             has_content_length, body_length_);
-        // Complete mode: only call handler if no body expected
-        if (!has_content_length || body_length_ == 0) {
+        // Complete mode: only finish immediately when the peer explicitly
+        // declared an empty body (content-length: 0). Without a
+        // content-length header the body length is delimited by FIN — body
+        // providers stream unknown-length responses (RFC 9114 §4.1), so
+        // completion must wait for HandleData/HandleFinWithoutData. Treating
+        // a missing content-length as "no body" fired the handler with an
+        // empty response and dropped the DATA frames that followed.
+        if (has_content_length && body_length_ == 0) {
             LOG_DEBUG("RequestStream::HandleHeaders: calling response handler (no body expected)");
-            response_handler_(response_, 0);
+            if (!response_completed_) {
+                response_completed_ = true;
+                response_handler_(response_, 0);
+            }
 
             // CRITICAL: Notify connection that stream is complete and can be removed
             // For responses with no body, this is the only place to signal completion
             error_handler_(GetStreamID(), 0);
+        } else if (!has_content_length && is_last_data_) {
+            // FIN-delimited empty body whose HEADERS arrived in the same
+            // STREAM frame as the FIN bit (senders coalesce a body-less
+            // response — 204, HEAD, empty GET — into a single
+            // HEADERS+FIN frame). OnData()'s FIN fallback only fires when
+            // no frames were decoded, and HandleFinWithoutData() only
+            // fires on an empty trailing read event; neither will happen,
+            // so without this branch the FIN is dropped and the response
+            // handler never runs.
+            LOG_DEBUG("RequestStream::HandleHeaders: FIN arrived with headers, calling response handler");
+            if (!response_completed_) {
+                response_completed_ = true;
+                response_handler_(response_, 0);
+            }
+            // Defer completion notification to the parent (after the batch
+            // is fully processed), consistent with HandleData.
+            should_notify_completion_ = true;
         }
-        // If body_length_ > 0, wait for HandleData to receive and process the body
+        // Otherwise (explicit non-zero content-length, or unknown length
+        // bounded by FIN): wait for HandleData / HandleFinWithoutData.
     }
 }
 
@@ -151,7 +183,7 @@ void RequestStream::HandleData(const std::shared_ptr<common::IBuffer>& data, boo
 
     // Metrics: Track response bytes received (client side)
     if (data_length > 0) {
-        common::Metrics::CounterInc(common::MetricsStd::Http3ResponseBytesRx, data_length);
+        Metrics::CounterInc(common::MetricsStd::Http3ResponseBytesRx, data_length);
     }
 
     // Streaming mode: call handler immediately
@@ -203,6 +235,16 @@ void RequestStream::HandleData(const std::shared_ptr<common::IBuffer>& data, boo
     // Only call handler when all data is received
     if (body_length_ == received_body_length_ || is_last) {
         LOG_DEBUG("RequestStream::HandleData: calling response handler (complete)");
+        // Idempotence guard: a retransmitted data+FIN packet (perfectly legal
+        // — senders routinely re-segment under loss; quic-go resends FIN as a
+        // zero-length STREAM frame) re-delivers the FIN through
+        // RecvStream's duplicate-FIN normalization path, which surfaces here
+        // AND in HandleFinWithoutData. The response handler must run exactly
+        // once per request (integration tests count callbacks).
+        if (response_completed_) {
+            return;
+        }
+        response_completed_ = true;
         response_handler_(response_, 0);
 
         // CRITICAL: Defer stream completion notification until after all frames in current batch
@@ -255,7 +297,12 @@ void RequestStream::HandleFinWithoutData() {
         // Defer stream completion notification to avoid double-call to error_handler_
         should_notify_completion_ = true;
     } else if (response_handler_) {
-        // For complete mode, call the response handler
+        // For complete mode, call the response handler (idempotence guard:
+        // see HandleData — a re-delivered FIN must not fire it twice)
+        if (response_completed_) {
+            return;
+        }
+        response_completed_ = true;
         response_handler_(response_, 0);
         // Defer stream completion notification to avoid double-call to error_handler_
         should_notify_completion_ = true;

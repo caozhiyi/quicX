@@ -1,12 +1,13 @@
 #ifndef HTTP3_HTTP_RESPONSE
 #define HTTP3_HTTP_RESPONSE
 
+#include <memory>
 #include <quicx/http3/if_response.h>
 #include <quicx/http3/type.h>
-#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
+
 #include "common/buffer/if_buffer.h"
 
 namespace quicx {
@@ -62,4 +63,4 @@ private:
 }  // namespace http3
 }  // namespace quicx
 
-#endif
+#endif  // HTTP3_HTTP_RESPONSE

@@ -3,11 +3,10 @@
 
 #include <cstdint>
 #include <memory>
-#include <string>
-
 #include <quicx/http3/if_async_handler.h>
 #include <quicx/http3/type.h>
 #include <quicx/quic/if_quic_server.h>
+#include <string>
 
 namespace quicx {
 
@@ -49,11 +48,13 @@ public:
     /**
      * @brief Start the server on the given address and port
      *
+     * Non-blocking: starts the listener and returns immediately.
+     * Use Join() to block until the server is stopped.
+     *
      * @param addr The address to start the server
      * @param port The port to start the server
      * @return True if the server is started successfully, false otherwise
      */
-    // server will block until the server is stopped
     virtual bool Start(const std::string& addr, uint16_t port) = 0;
 
     /**
@@ -112,7 +113,8 @@ public:
      * @code
      * class FileUploadHandler : public IAsyncServerHandler {
      * public:
-     *     void OnHeaders(auto req, auto resp) override {
+     *     void OnHeaders(std::shared_ptr<IRequest> req,
+     *                   std::shared_ptr<IResponse> resp) override {
      *         file_ = fopen("upload.dat", "wb");
      *         resp->SetStatusCode(200);
      *     }
@@ -161,4 +163,4 @@ public:
 
 }  // namespace quicx
 
-#endif
+#endif  // HTTP3_INCLUDE_IF_SERVER

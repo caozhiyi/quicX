@@ -1,10 +1,11 @@
 #ifndef HTTP3_STREAM_PUSH_SENDER_STREAM
 #define HTTP3_STREAM_PUSH_SENDER_STREAM
 
-#include <memory>
 
+#include <memory>
 #include <quicx/http3/if_response.h>
 #include <quicx/quic/if_quic_send_stream.h>
+
 #include "http3/qpack/qpack_encoder.h"
 #include "http3/stream/if_send_stream.h"
 
@@ -41,4 +42,4 @@ private:
 }  // namespace http3
 }  // namespace quicx
 
-#endif
+#endif  // HTTP3_STREAM_PUSH_SENDER_STREAM

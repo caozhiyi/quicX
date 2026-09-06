@@ -5,6 +5,7 @@
 #include <memory>
 
 #include "common/buffer/if_buffer.h"
+
 #include "http3/frame/if_frame.h"
 
 namespace quicx {
@@ -55,4 +56,4 @@ private:
 }  // namespace http3
 }  // namespace quicx
 
-#endif
+#endif  // HTTP3_FRAME_FRAME_DECODER

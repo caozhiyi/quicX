@@ -2,6 +2,7 @@
 #define HTTP3_STREAM_IF_STREAM
 
 #include <functional>
+
 #include "http3/stream/type.h"
 
 namespace quicx {
@@ -44,4 +45,4 @@ protected:
 }  // namespace http3
 }  // namespace quicx
 
-#endif
+#endif  // HTTP3_STREAM_IF_STREAM

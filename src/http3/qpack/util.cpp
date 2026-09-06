@@ -1,7 +1,7 @@
 #include <vector>
 
-#include "http3/qpack/util.h"
 #include "http3/qpack/huffman_encoder.h"
+#include "http3/qpack/util.h"
 
 namespace quicx {
 namespace http3 {
@@ -32,33 +32,7 @@ bool QpackDecodePrefixedInteger(
     const std::shared_ptr<common::IBuffer> buf, uint8_t prefix_bits, uint8_t& first_byte, uint64_t& value) {
     if (prefix_bits == 0 || prefix_bits > 8) return false;
     if (buf->Read(&first_byte, 1) != 1) return false;
-    uint8_t max_in_prefix = static_cast<uint8_t>((1u << prefix_bits) - 1u);
-    value = first_byte & max_in_prefix;
-    if (value < max_in_prefix) return true;
-    uint64_t m = 0;
-    uint8_t b = 0;
-    do {
-        if (buf->Read(&b, 1) != 1) return false;
-
-        // The continuation run is peer-controlled and RFC 9204 §4.1.1 puts no
-        // cap on its length, so every step has to be checked:
-        //   - m >= 64 would make `<< m` undefined behaviour. Reachable with 10
-        //     continuation bytes.
-        //   - even below that, the shift or the addition can carry the value
-        //     past 2^64 and wrap silently.
-        // A value that cannot be represented is a malformed encoding, so reject
-        // rather than truncate.
-        if (m >= 64) return false;
-
-        const uint64_t chunk = static_cast<uint64_t>(b & 0x7f);
-        if (chunk > (UINT64_MAX >> m)) return false;
-        const uint64_t add = chunk << m;
-        if (value > UINT64_MAX - add) return false;
-
-        value += add;
-        m += 7;
-    } while (b & 0x80);
-    return true;
+    return QpackDecodePrefixedIntegerFrom(buf, prefix_bits, first_byte, value);
 }
 
 bool QpackEncodeStringLiteral(const std::string& s, std::shared_ptr<common::IBuffer> buf, bool huffman) {
@@ -82,7 +56,15 @@ bool QpackEncodeStringLiteral(const std::string& s, std::shared_ptr<common::IBuf
 }
 
 // Continues a prefixed integer whose first byte the caller already consumed.
-static bool QpackDecodePrefixedIntegerFrom(
+// The continuation run is peer-controlled and RFC 9204 §4.1.1 puts no cap on
+// its length, so every step has to be checked:
+//   - m >= 64 would make `<< m` undefined behaviour. Reachable with 10
+//     continuation bytes.
+//   - even below that, the shift or the addition can carry the value
+//     past 2^64 and wrap silently.
+// A value that cannot be represented is a malformed encoding, so reject
+// rather than truncate.
+bool QpackDecodePrefixedIntegerFrom(
     const std::shared_ptr<common::IBuffer> buf, uint8_t prefix_bits, uint8_t first_byte, uint64_t& value) {
     if (prefix_bits == 0 || prefix_bits > 8) return false;
     uint8_t max_in_prefix = static_cast<uint8_t>((1u << prefix_bits) - 1u);
@@ -121,8 +103,7 @@ static bool QpackReadStringBody(
 
     if (!huffman) {
         out.resize(static_cast<size_t>(len));
-        return buf->Read(reinterpret_cast<uint8_t*>(&out[0]), static_cast<uint32_t>(len))
-               == static_cast<uint32_t>(len);
+        return buf->Read(reinterpret_cast<uint8_t*>(&out[0]), static_cast<uint32_t>(len)) == static_cast<uint32_t>(len);
     }
     std::vector<uint8_t> tmp;
     tmp.resize(static_cast<size_t>(len));
@@ -186,8 +167,7 @@ bool QpackDecodeStringLiteral(const std::shared_ptr<common::IBuffer> buf, std::s
 
     if (!huffman) {
         out.resize(static_cast<size_t>(len));
-        return buf->Read(reinterpret_cast<uint8_t*>(&out[0]), static_cast<uint32_t>(len))
-               == static_cast<uint32_t>(len);
+        return buf->Read(reinterpret_cast<uint8_t*>(&out[0]), static_cast<uint32_t>(len)) == static_cast<uint32_t>(len);
     }
     // Huffman encoded: read into temp buffer then decode
     std::vector<uint8_t> tmp;

@@ -12,4 +12,4 @@ std::string HttpMethodToString(HttpMethod method);
 }
 }  // namespace quicx
 
-#endif
+#endif  // HTTP3_HTTP_UTIL

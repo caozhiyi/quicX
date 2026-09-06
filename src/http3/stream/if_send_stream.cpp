@@ -1,8 +1,9 @@
-#include "common/buffer/buffer_encode_wrapper.h"
-#include "common/buffer/buffer_chunk_pool.h"
 #include "common/buffer/buffer_chunk.h"
+#include "common/buffer/buffer_chunk_pool.h"
+#include "common/buffer/buffer_encode_wrapper.h"
 #include "common/buffer/single_block_buffer.h"
 #include "common/log/log.h"
+#include "common/util/hex.h"
 
 #include "quic/quicx/global_resource.h"
 
@@ -28,16 +29,11 @@ bool ISendStream::EnsureStreamPreamble() {
     // Log buffer state after encoding stream type
     if (buffer && buffer->GetDataLength() > 0) {
         auto span = buffer->GetReadableSpan();
-        std::string hex;
         uint32_t log_len = span.GetLength() < 16 ? span.GetLength() : 16;
-        for (uint32_t i = 0; i < log_len; i++) {
-            char buf[4];
-            snprintf(buf, sizeof(buf), "%02x ", static_cast<uint8_t>(span.GetStart()[i]));
-            hex += buf;
-        }
         LOG_DEBUG(
             "ISendStream::EnsureStreamPreamble: after encoding stream type, buffer length=%u, hex=[%s], stream_id=%llu",
-            buffer->GetDataLength(), hex.c_str(), stream_->GetStreamID());
+            buffer->GetDataLength(),
+            common::BytesToHex(span.GetStart(), log_len, ' ').c_str(), stream_->GetStreamID());
     }
 
     LOG_DEBUG("ISendStream::EnsureStreamPreamble: sent stream type on stream %llu", stream_->GetStreamID());
@@ -45,8 +41,7 @@ bool ISendStream::EnsureStreamPreamble() {
     return true;
 }
 
-bool ISendStream::EncodeAndAppendControlFrame(
-    const std::function<bool(std::shared_ptr<common::IBuffer>)>& encode) {
+bool ISendStream::EncodeAndAppendControlFrame(const std::function<bool(std::shared_ptr<common::IBuffer>)>& encode) {
     auto chunk = common::BufferChunkPool::Acquire(quic::GlobalResource::Instance().GetThreadLocalBlockPool());
     if (!chunk || !chunk->Valid()) {
         LOG_ERROR("ISendStream::EncodeAndAppendControlFrame: failed to allocate buffer chunk");

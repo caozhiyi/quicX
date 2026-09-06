@@ -5,8 +5,11 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 
 #include "common/buffer/if_buffer.h"
+
 #include "http3/qpack/dynamic_table.h"
 
 namespace quicx {
@@ -131,11 +134,88 @@ private:
         // negotiated cap.
         dynamic_table_.UpdateMaxTableSize(max_table_capacity_);
     }
-    // Write Required Insert Count and Base per RFC 9204 §4.5; here we set simple values for demo
-    void WritePrefix(std::shared_ptr<common::IBuffer> buffer, uint64_t required_insert_count, uint64_t base);
-    bool ReadPrefix(const std::shared_ptr<common::IBuffer> buffer, uint64_t& required_insert_count, uint64_t& base);
     void EncodeString(const std::string& str, std::shared_ptr<common::IBuffer> buffer);
     bool DecodeString(const std::shared_ptr<common::IBuffer> buffer, std::string& output);
+
+    // ==================== header-block encoding internals (RFC 9204 §4.5) ====================
+
+    // Wire representation chosen for one header during Pass 1 of Encode().
+    enum class EncodeAction {
+        kStaticIndexed,           // Indexed Header Field — static table
+        kStaticNameRef,           // Literal with name reference — static table
+        kDynamicIndexed,          // Indexed Header Field — dynamic table (pre-base)
+        kDynamicPostBaseIndexed,  // Indexed Header Field — dynamic table (post-base)
+        kLiteralNoNameRef,        // Literal without name reference
+    };
+    struct HeaderEncoding {
+        std::string name;
+        std::string value;
+        EncodeAction action;
+        int32_t index;  // static or dynamic absolute index
+    };
+
+    // RFC 9114 §4.3: pseudo-headers first in fixed order (:method, :scheme,
+    // :authority, :path, :status), then regular headers sorted alphabetically
+    // so the encoding is deterministic regardless of unordered_map iteration
+    // order.
+    static std::vector<std::pair<std::string, std::string>> OrderHeaders(
+        const std::unordered_map<std::string, std::string>& headers);
+
+    // Pass 1 of Encode(): pick the representation for one header — exact
+    // static match, static name-ref, acknowledged dynamic entry, or literal.
+    // May insert a new entry into the dynamic table (and announce it via
+    // instruction_sender_) when the dynamic table is enabled. Raises
+    // max_required_insert_count for every referenced dynamic entry so the
+    // caller can derive the header block's Required Insert Count.
+    HeaderEncoding DecideHeaderEncoding(const std::pair<std::string, std::string>& header, uint64_t base_insert_count,
+        uint64_t& max_required_insert_count);
+
+    // Pass 2 of Encode(): emit the wire bytes for one decision (RFC 9204
+    // §4.5.2–§4.5.6). |base| is the block's Base, needed to relativise
+    // dynamic-table absolute indexes.
+    void WriteHeaderRepresentation(
+        const HeaderEncoding& enc, int64_t base, const std::shared_ptr<common::IBuffer>& buffer);
+
+    // ==================== header-block decoding internals (RFC 9204 §4.5) ====================
+    //
+    // One method per wire pattern; Decode() is the dispatch loop only.
+    // |first_byte| is the pattern byte the loop already consumed; each method
+    // reads whatever varints/strings follow and inserts the header into
+    // |headers|. |base| is the block's decoded Base.
+
+    bool DecodeIndexedStatic(const std::shared_ptr<common::IBuffer>& buffer, uint8_t first_byte,
+        [[maybe_unused]] int64_t base, std::unordered_map<std::string, std::string>& headers);
+    bool DecodeIndexedDynamic(const std::shared_ptr<common::IBuffer>& buffer, uint8_t first_byte, int64_t base,
+        std::unordered_map<std::string, std::string>& headers);
+    bool DecodeLiteralNameRefStatic(const std::shared_ptr<common::IBuffer>& buffer, uint8_t first_byte,
+        [[maybe_unused]] int64_t base, std::unordered_map<std::string, std::string>& headers);
+    bool DecodeLiteralNameRefDynamic(const std::shared_ptr<common::IBuffer>& buffer, uint8_t first_byte, int64_t base,
+        std::unordered_map<std::string, std::string>& headers);
+    bool DecodeLiteralNoNameRef(const std::shared_ptr<common::IBuffer>& buffer, uint8_t first_byte,
+        [[maybe_unused]] int64_t base, std::unordered_map<std::string, std::string>& headers);
+    bool DecodePostBaseIndexed(const std::shared_ptr<common::IBuffer>& buffer, uint8_t first_byte, int64_t base,
+        std::unordered_map<std::string, std::string>& headers);
+    bool DecodePostBaseLiteralNameRef(const std::shared_ptr<common::IBuffer>& buffer, uint8_t first_byte, int64_t base,
+        std::unordered_map<std::string, std::string>& headers);
+
+    // ==================== encoder-instruction internals (RFC 9204 §4.3) ====================
+
+    // Insert With Name Reference (1Sxxxxxx): static index if the name is in
+    // the static table, dynamic relative index otherwise. Falls back to a
+    // literal-name insert when the name is in neither table.
+    bool EncodeInsertWithNameRef(
+        const std::pair<std::string, std::string>& insert, const std::shared_ptr<common::IBuffer>& instr_buf);
+    // Insert With Literal Name (01Hxxxxx): both name and value as string
+    // literals, the name sharing the instruction byte's 6-bit length prefix.
+    bool EncodeInsertWithLiteralName(
+        const std::pair<std::string, std::string>& insert, const std::shared_ptr<common::IBuffer>& instr_buf);
+
+    // Decoder-stream side: one method per instruction pattern;
+    // DecodeEncoderInstructions() is the dispatch loop only.
+    bool DecodeInstrInsertWithNameRef(const std::shared_ptr<common::IBuffer>& instr_buf, uint8_t fb);
+    bool DecodeInstrInsertWithLiteralName(const std::shared_ptr<common::IBuffer>& instr_buf, uint8_t fb);
+    bool DecodeInstrSetCapacity(const std::shared_ptr<common::IBuffer>& instr_buf, uint8_t fb);
+    bool DecodeInstrDuplicate(const std::shared_ptr<common::IBuffer>& instr_buf, uint8_t fb);
 
 private:
     DynamicTable dynamic_table_;
@@ -160,4 +240,4 @@ private:
 }  // namespace http3
 }  // namespace quicx
 
-#endif
+#endif  // HTTP3_QPACK_QPACK_ENCODER

@@ -12,4 +12,4 @@ std::string PathParse(const std::string& path, int& offset);
 }  // namespace http3
 }  // namespace quicx
 
-#endif
+#endif  // HTTP3_ROUTER_UTIL

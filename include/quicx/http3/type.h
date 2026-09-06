@@ -4,10 +4,9 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <quicx/quic/type.h>
 #include <string>
 #include <unordered_map>
-
-#include <quicx/quic/type.h>
 
 namespace quicx {
 
@@ -231,4 +230,4 @@ typedef std::function<void(const std::string& unique_id, uint32_t error_code)> e
 
 }  // namespace quicx
 
-#endif
+#endif  // HTTP3_INCLUDE_TYPE

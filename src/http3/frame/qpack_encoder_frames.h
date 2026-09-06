@@ -125,4 +125,4 @@ private:
 }  // namespace http3
 }  // namespace quicx
 
-#endif
+#endif  // HTTP3_FRAME_QPACK_ENCODER_FRAMES

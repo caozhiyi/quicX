@@ -1,21 +1,18 @@
 #ifndef HTTP3_CONNECTION_CLIENT_CONNECTION
 #define HTTP3_CONNECTION_CLIENT_CONNECTION
 
+
 #include <functional>
 #include <memory>
-#include <unordered_map>
-
 #include <quicx/http3/if_async_handler.h>
 #include <quicx/http3/type.h>
 #include <quicx/quic/if_quic_connection.h>
+#include <unordered_map>
+
 #include "http3/connection/if_connection.h"
-#include "http3/stream/control_client_sender_stream.h"
-#include "http3/stream/control_receiver_stream.h"
 
 namespace quicx {
 namespace http3 {
-
-class RequestStream;
 
 class ClientConnection: public IConnection {
 public:
@@ -52,14 +49,22 @@ public:
     virtual void CancelPush(uint64_t push_id);
 
 protected:
-    // RFC 9114 §5.2 graceful shutdown hooks (see IConnection):
-    //   - Client GOAWAY id is the largest push ID we will accept; we use
-    //     "current next_push_id high-water" — i.e., refuse anything ≥ it.
-    //     A pre-shutdown client typically has not yet allocated push ids,
-    //     so the value reduces to "max push id we ever allowed via
-    //     SetMaxPushID() / SendMaxPushId()".
-    bool SendGoawayFrame(uint64_t goaway_id) override;
+    // RFC 9114 §5.2 graceful shutdown hook (see IConnection): the client's
+    // GOAWAY id is the largest push ID we will accept. We use
+    // "current next_push_id high-water" — i.e., refuse anything ≥ it.
+    // A pre-shutdown client typically has not yet allocated push ids,
+    // so the value reduces to "max push id we ever allowed via
+    // SetMaxPushID() / SendMaxPushId()".
     uint64_t ComputeGoawayId() override;
+
+    /**
+     * @brief Role-specific typed-stream factory (see IConnection):
+     *        kControl -> ControlReceiverStream, kPush -> PushReceiverStream.
+     *        Everything else (QPACK streams, unknown types) falls through to
+     *        the base implementation.
+     */
+    std::shared_ptr<IRecvStream> CreateTypedStream(
+        uint64_t stream_type, const std::shared_ptr<IQuicRecvStream>& stream) override;
 
 private:
     // Helper to create and send RequestStream with http_response_handler
@@ -69,30 +74,15 @@ private:
     void CreateAndSendRequestStream(std::shared_ptr<IRequest> request, std::shared_ptr<IQuicStream> stream,
         std::shared_ptr<IAsyncClientHandler> handler);
 
-    // Pushes our advertised SETTINGS_MAX_FIELD_SECTION_SIZE down to a new stream so
-    // the receive path can enforce it (RFC 9114 §4.2.2).
-    void ApplyMaxFieldSectionSize(const std::shared_ptr<RequestStream>& stream);
-
     void HandleStream(std::shared_ptr<IQuicStream> stream, uint32_t error) override;
-    // Callback when stream type is identified (RFC 9114 Section 6.2)
-    void OnStreamTypeIdentified(
-        uint64_t stream_type, std::shared_ptr<IQuicRecvStream> stream, std::shared_ptr<IBufferRead> data);
-    // handle goaway frame
-    void HandleGoaway(uint64_t id);
-    // handle error
-    void HandleError(uint64_t stream_id, uint32_t error_code) override;
     // handle push promise
     void HandlePushPromise(std::unordered_map<std::string, std::string>& headers, uint64_t push_id);
+    // handle error
+    void HandleError(uint64_t stream_id, uint32_t error_code) override;
 
 private:
     http_response_handler push_handler_;
     std::function<bool(std::unordered_map<std::string, std::string>&)> push_promise_handler_;
-
-    // pending settings captured at construction, applied during Init()
-    Http3Settings pending_settings_;
-
-    std::shared_ptr<ControlClientSenderStream> control_sender_stream_;
-    std::shared_ptr<ControlReceiverStream> control_recv_stream_;
 
     // Metrics: Track request start times for duration calculation
     std::unordered_map<uint64_t, uint64_t> request_start_times_;
@@ -107,4 +97,4 @@ private:
 }  // namespace http3
 }  // namespace quicx
 
-#endif
+#endif  // HTTP3_CONNECTION_CLIENT_CONNECTION

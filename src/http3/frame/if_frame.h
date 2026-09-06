@@ -3,7 +3,9 @@
 
 #include <cstdint>
 #include <memory>
+
 #include "common/buffer/if_buffer.h"
+
 #include "http3/frame/type.h"
 
 namespace quicx {
@@ -65,4 +67,4 @@ protected:
 }  // namespace http3
 }  // namespace quicx
 
-#endif
+#endif  // HTTP3_FRAME_IF_FRAME
