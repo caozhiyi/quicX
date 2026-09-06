@@ -12,9 +12,9 @@
 #ifndef FD_SETSIZE
 #define FD_SETSIZE 1024
 #endif
-#include <mswsock.h>
-#include <windows.h>
 #include <winsock2.h>
+#include <windows.h>
+#include <mswsock.h>
 #include <ws2tcpip.h>
 
 #include "common/log/log.h"
