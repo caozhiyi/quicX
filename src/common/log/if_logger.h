@@ -132,4 +132,4 @@ protected:
 }  // namespace common
 }  // namespace quicx
 
-#endif
+#endif  // COMMON_LOG_IF_LOG

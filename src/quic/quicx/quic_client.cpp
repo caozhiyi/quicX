@@ -1,10 +1,11 @@
-#include "common/log/file_logger.h"
-#include "common/log/stdout_logger.h"
-#include "common/util/random.h"
 #include <atomic>
+
+#include "common/log/file_logger.h"
 #include "common/log/log.h"
+#include "common/log/stdout_logger.h"
 #include "common/network/io_handle.h"
 #include "common/qlog/qlog_manager.h"
+#include "common/util/random.h"
 
 #include "quic/connection/connection_base.h"
 #include "quic/connection/session_cache.h"
@@ -94,7 +95,7 @@ QuicClient::~QuicClient() {
     // 4) Close the UDP socket created in Init(). All threads have been joined
     //    above, so nobody can be reading from / writing to it any more.
     //    UdpReceiver deliberately does not close fds registered through
-    //    AddReceiver(fd, ...) (they belong to the caller), so this is the only
+    //    AddReceiver(sock, ...) (they belong to the caller), so this is the only
     //    place the fd can be released.
     if (sockfd_ >= 0) {
         common::Close(sockfd_);
@@ -120,10 +121,10 @@ bool QuicClient::Init(const QuicClientConfig& config) {
     }
 
     // Initialize QLog if enabled
-    if (config.config_.qlog_config_.enabled) {
+    if (config.config_.qlog_config_.enabled_) {
         common::QlogManager::Instance().SetConfig(config.config_.qlog_config_);
         common::QlogManager::Instance().Enable(true);
-        LOG_INFO("QLog enabled. Output dir: %s", config.config_.qlog_config_.output_dir.c_str());
+        LOG_INFO("QLog enabled. Output dir: %s", config.config_.qlog_config_.output_dir_.c_str());
     } else {
         common::QlogManager::Instance().Enable(false);
     }
@@ -176,7 +177,10 @@ bool QuicClient::Init(const QuicClientConfig& config) {
     }
 
     thread_mode_ = config.config_.thread_mode_;
-    auto sender = ISender::MakeSender(sockfd);
+    // Carry the creation-time family so the sender's fallback path (used
+    // until the first RX datagram installs the handle on the connection)
+    // never needs a family-probe syscall.
+    auto sender = ISender::MakeSender(common::SocketHandle(sockfd, sock_ret.family_));
 
     worker_map_.reserve(config.config_.worker_thread_num_);
     if (thread_mode_ == ThreadMode::kSingleThread) {
@@ -184,10 +188,10 @@ bool QuicClient::Init(const QuicClientConfig& config) {
             config.config_, tls_ctx, sender, params_, connection_state_cb_, master_event_loop_);
         // Set register socket callback for connection migration
         auto master_weak = std::weak_ptr<MasterWithThread>(master_);
-        worker->SetRegisterSocketCallback([master_weak](int32_t sockfd) -> bool {
+        worker->SetRegisterSocketCallback([master_weak](common::SocketHandle sock) -> bool {
             auto master = master_weak.lock();
             if (master) {
-                return master->AddListener(sockfd);
+                return master->AddListener(sock);
             }
             return false;
         });
@@ -217,10 +221,10 @@ bool QuicClient::Init(const QuicClientConfig& config) {
                 config.config_, tls_ctx, sender, params_, connection_state_cb_, worker_loop);
             // Set register socket callback for connection migration
             auto master_weak2 = std::weak_ptr<MasterWithThread>(master_);
-            worker_ptr->SetRegisterSocketCallback([master_weak2](int32_t sockfd) -> bool {
+            worker_ptr->SetRegisterSocketCallback([master_weak2](common::SocketHandle sock) -> bool {
                 auto master = master_weak2.lock();
                 if (master) {
-                    return master->AddListener(sockfd);
+                    return master->AddListener(sock);
                 }
                 return false;
             });
@@ -246,9 +250,9 @@ bool QuicClient::Init(const QuicClientConfig& config) {
         }
     }
 
-    // add socket to receiver
-    if (!master_->AddListener(sender->GetSocket())) {
-        LOG_ERROR("add listener failed. err:%d", sender->GetSocket());
+    // add socket to receiver (carry the creation-time family: no kernel probe)
+    if (!master_->AddListener(common::SocketHandle(sockfd, sock_ret.family_))) {
+        LOG_ERROR("add listener failed. err:%d", sockfd);
         return false;
     }
     return true;
@@ -265,8 +269,7 @@ void QuicClient::Destroy() {
 void QuicClient::AddTimer(uint32_t timeout_ms, std::function<void()> cb) {
     // Fire-and-forget by contract (IQuicClient hands back no handle), so this is
     // PostDelayed rather than a cancellable timer.
-    master_event_loop_->RunInLoop(
-        [this, timeout_ms, cb]() { master_event_loop_->PostDelayed(cb, timeout_ms); });
+    master_event_loop_->RunInLoop([this, timeout_ms, cb]() { master_event_loop_->PostDelayed(cb, timeout_ms); });
 }
 
 bool QuicClient::Connection(const std::string& ip, uint16_t port, const std::string& alpn, int32_t timeout_ms,

@@ -46,4 +46,4 @@ private:
 }  // namespace common
 }  // namespace quicx
 
-#endif
+#endif  // COMMON_LOG_LOG_STREAM

@@ -2,6 +2,7 @@
 #define QUIC_FRAME_STREAM_DATA_BLOCKED_FRAME
 
 #include <cstdint>
+
 #include "quic/frame/if_stream_frame.h"
 
 namespace quicx {
@@ -26,4 +27,4 @@ private:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_FRAME_STREAM_DATA_BLOCKED_FRAME

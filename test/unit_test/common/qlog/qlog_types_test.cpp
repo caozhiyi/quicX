@@ -1,10 +1,9 @@
-// Use of this source code is governed by a BSD 3-Clause License
-// that can be found in the LICENSE file.
-
-#include <gtest/gtest.h>
 #include <string>
 
+#include <gtest/gtest.h>
+
 #include "common/qlog/util/qlog_types.h"
+
 #include "quic/frame/type.h"
 #include "quic/packet/type.h"
 

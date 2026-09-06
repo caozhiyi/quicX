@@ -1,8 +1,10 @@
 #include <algorithm>
 
 #include "common/buffer/multi_block_buffer.h"
-#include "http3/http/response.h"
+
 #include "quic/quicx/global_resource.h"
+
+#include "http3/http/response.h"
 
 namespace quicx {
 

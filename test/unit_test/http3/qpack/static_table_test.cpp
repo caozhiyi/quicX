@@ -1,6 +1,7 @@
+#include <gtest/gtest.h>
+
 // static_table_test.cpp
 #include "http3/qpack/static_table.h"
-#include <gtest/gtest.h>
 
 namespace quicx {
 namespace http3 {

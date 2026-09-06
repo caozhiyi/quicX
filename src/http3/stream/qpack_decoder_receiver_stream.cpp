@@ -1,14 +1,14 @@
-#include "http3/stream/qpack_decoder_receiver_stream.h"
 #include "common/log/log.h"
+
 #include "http3/frame/qpack_decoder_frames.h"
 #include "http3/qpack/blocked_registry.h"
+#include "http3/stream/qpack_decoder_receiver_stream.h"
 
 namespace quicx {
 namespace http3 {
 
 QpackDecoderReceiverStream::QpackDecoderReceiverStream(const std::shared_ptr<IQuicRecvStream>& stream,
-    const std::shared_ptr<QpackEncoder>& local_encoder,
-    const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
+    const std::shared_ptr<QpackEncoder>& local_encoder, const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler):
     IRecvStream(StreamType::kQpackDecoder, stream, error_handler),
     local_encoder_(local_encoder),

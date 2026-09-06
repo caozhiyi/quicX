@@ -2,6 +2,7 @@
 #define HTTP3_ROUTER_ROUTER_NODE_DYNAMIC_PARAM
 
 #include <string>
+
 #include "http3/router/router_node.h"
 
 namespace quicx {
@@ -27,4 +28,4 @@ private:
 }  // namespace http3
 }  // namespace quicx
 
-#endif
+#endif  // HTTP3_ROUTER_ROUTER_NODE_DYNAMIC_PARAM

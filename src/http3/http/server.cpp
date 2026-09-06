@@ -1,11 +1,11 @@
 #include <quicx/common/metrics.h>
-#include "common/log/log.h"
-
-#include <quicx/quic/if_quic_server.h>
-
 #include <quicx/http3/if_async_handler.h>
 #include <quicx/http3/if_request.h>
 #include <quicx/http3/if_response.h>
+#include <quicx/quic/if_quic_server.h>
+
+#include "common/log/log.h"
+
 #include "http3/config.h"
 #include "http3/http/server.h"
 #include "http3/metric/metrics_handler.h"
@@ -58,12 +58,12 @@ bool Server::Init(const Http3ServerConfig& config) {
     }
 
     // Initialize global metrics
-    common::Metrics::Initialize(config.metrics_);
+    Metrics::Initialize(config.metrics_);
 
     // Auto-register metrics endpoint if enabled
-    if (config.metrics_.http_enable) {
-        AddHandler(HttpMethod::kGet, config.metrics_.http_path, MetricsHandler::Handle);
-        LOG_INFO("Metrics endpoint registered at %s", config.metrics_.http_path.c_str());
+    if (config.metrics_.http_enable_) {
+        AddHandler(HttpMethod::kGet, config.metrics_.http_path_, MetricsHandler::Handle);
+        LOG_INFO("Metrics endpoint registered at %s", config.metrics_.http_path_.c_str());
     }
 
     return true;
@@ -114,7 +114,6 @@ void Server::OnConnection(
     // no central per-server map, no cross-thread hashtable races, and no
     // re-entrant teardown hazard.
     std::string unique_id = addr + ":" + std::to_string(port);
-
 
     if (operation == ConnectionOperation::kConnectionClose) {
         LOG_INFO("connection close. error: %d, reason: %s", error, reason.c_str());

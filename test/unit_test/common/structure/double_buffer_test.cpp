@@ -1,11 +1,11 @@
-#include "common/structure/double_buffer.h"
-
 #include <memory>
 #include <mutex>
 #include <thread>
 #include <vector>
 
 #include "gtest/gtest.h"
+
+#include "common/structure/double_buffer.h"
 
 namespace quicx {
 namespace common {

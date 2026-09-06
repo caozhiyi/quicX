@@ -1,6 +1,3 @@
-// Use of this source code is governed by a BSD 3-Clause License
-// that can be found in the LICENSE file.
-
 #ifndef COMMON_QLOG_EVENT_QLOG_EVENT
 #define COMMON_QLOG_EVENT_QLOG_EVENT
 
@@ -110,4 +107,4 @@ struct QlogEvent {
 }  // namespace common
 }  // namespace quicx
 
-#endif
+#endif  // COMMON_QLOG_EVENT_QLOG_EVENT

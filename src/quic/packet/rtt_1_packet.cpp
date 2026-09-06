@@ -44,8 +44,8 @@ bool Rtt1Packet::Encode(std::shared_ptr<common::IBuffer> buffer) {
         payload_offset_ = cur_pos - start_pos;
         if (payload_.Valid()) {
             if (cur_pos + payload_.GetLength() > end) {
-                LOG_ERROR("payload too large for buffer. payload_len:%u, free:%td", payload_.GetLength(),
-                    end - cur_pos);
+                LOG_ERROR(
+                    "payload too large for buffer. payload_len:%u, free:%td", payload_.GetLength(), end - cur_pos);
                 return false;
             }
             std::memcpy(cur_pos, payload_.GetStart(), payload_.GetLength());

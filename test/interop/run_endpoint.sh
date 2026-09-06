@@ -244,12 +244,16 @@ run_server() {
     # nothing outside the ecn check inspects dsfield.ecn.
     export ENABLE_ECN=1
 
-    # The interop keyupdate test runs the server perspective as "transfer", so the
-    # framework never signals the server that it is a keyupdate scenario. Key
-    # Update is a mandatory RFC 9001 feature and is benign for every other
-    # testcase (it only fires after >=512KB of application data has been sent),
-    # so we unconditionally enable it on the server.
-    cmd+=" --enable-keyupdate"
+    # Key Update (RFC 9001 §6): the keyupdate testcase is client-driven — the
+    # client wrapper passes --force-keyupdate (first-packet key phase flip) and
+    # the server only needs the passive response path (connection_crypto
+    # OnPeerKeyUpdate), which is always compiled in. An unconditional ACTIVE
+    # server-side update (512KB threshold) used to break every tshark-based
+    # verdict (connectionmigration/rebind-*): the mid-transfer phase flip
+    # breaks wireshark's key-derivation chain, so the first packet on the new
+    # path — a perfectly valid standalone PATH_CHALLENGE — shows up as
+    # "Unknown QUIC connection" and the testcase fails. Do NOT re-enable the
+    # active update here; keyupdate coverage comes from the client side.
 
     # Enable QLOG
     if [ -n "${QLOGDIR}" ]; then

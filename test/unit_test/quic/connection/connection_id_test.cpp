@@ -1,6 +1,7 @@
-#include <gtest/gtest.h>
 #include <cstdint>
 #include <cstring>
+
+#include <gtest/gtest.h>
 
 #include "quic/connection/connection_id.h"
 #include "quic/connection/connection_id_generator.h"

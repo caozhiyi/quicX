@@ -58,4 +58,4 @@ protected:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_STREAM_STATE_IF_MACHINE_INTERFACE

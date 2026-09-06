@@ -1,10 +1,8 @@
-// Use of this source code is governed by a BSD 3-Clause License
-// that can be found in the LICENSE file.
-
-#include <gtest/gtest.h>
 #include <memory>
 #include <string>
 #include <vector>
+
+#include <gtest/gtest.h>
 
 #include "common/qlog/event/transport_events.h"
 #include "common/qlog/qlog_manager.h"
@@ -19,7 +17,7 @@ protected:
         // Reset manager to default state
         auto& manager = QlogManager::Instance();
         QlogConfig config;
-        config.enabled = false;  // Disabled by default for tests
+        config.enabled_ = false;  // Disabled by default for tests
         manager.SetConfig(config);
     }
 
@@ -56,18 +54,18 @@ TEST_F(QlogManagerTest, SetConfig) {
     auto& manager = QlogManager::Instance();
 
     QlogConfig config;
-    config.enabled = true;
-    config.output_dir = "/tmp/qlog_test";
-    config.sampling_rate = 0.5f;
-    config.flush_interval_ms = 200;
+    config.enabled_ = true;
+    config.output_dir_ = "/tmp/qlog_test";
+    config.sampling_rate_ = 0.5f;
+    config.flush_interval_ms_ = 200;
 
     manager.SetConfig(config);
 
     const QlogConfig& retrieved = manager.GetConfig();
-    EXPECT_TRUE(retrieved.enabled);
-    EXPECT_EQ("/tmp/qlog_test", retrieved.output_dir);
-    EXPECT_FLOAT_EQ(0.5f, retrieved.sampling_rate);
-    EXPECT_EQ(200u, retrieved.flush_interval_ms);
+    EXPECT_TRUE(retrieved.enabled_);
+    EXPECT_EQ("/tmp/qlog_test", retrieved.output_dir_);
+    EXPECT_FLOAT_EQ(0.5f, retrieved.sampling_rate_);
+    EXPECT_EQ(200u, retrieved.flush_interval_ms_);
 }
 
 // Test GetConfig
@@ -75,13 +73,13 @@ TEST_F(QlogManagerTest, GetConfig) {
     auto& manager = QlogManager::Instance();
 
     QlogConfig config;
-    config.enabled = true;
-    config.output_dir = "./test_qlogs";
+    config.enabled_ = true;
+    config.output_dir_ = "./test_qlogs";
     manager.SetConfig(config);
 
     const QlogConfig& retrieved = manager.GetConfig();
-    EXPECT_TRUE(retrieved.enabled);
-    EXPECT_EQ("./test_qlogs", retrieved.output_dir);
+    EXPECT_TRUE(retrieved.enabled_);
+    EXPECT_EQ("./test_qlogs", retrieved.output_dir_);
 }
 
 // Test SetOutputDirectory
@@ -91,7 +89,7 @@ TEST_F(QlogManagerTest, SetOutputDirectory) {
     manager.SetOutputDirectory("/var/log/qlog");
 
     const QlogConfig& config = manager.GetConfig();
-    EXPECT_EQ("/var/log/qlog", config.output_dir);
+    EXPECT_EQ("/var/log/qlog", config.output_dir_);
 }
 
 // Test SetEventWhitelist
@@ -104,10 +102,10 @@ TEST_F(QlogManagerTest, SetEventWhitelist) {
     manager.SetEventWhitelist(whitelist);
 
     const QlogConfig& config = manager.GetConfig();
-    EXPECT_EQ(3u, config.event_whitelist.size());
-    EXPECT_EQ("transport:packet_sent", config.event_whitelist[0]);
-    EXPECT_EQ("transport:packet_received", config.event_whitelist[1]);
-    EXPECT_EQ("recovery:metrics_updated", config.event_whitelist[2]);
+    EXPECT_EQ(3u, config.event_whitelist_.size());
+    EXPECT_EQ("transport:packet_sent", config.event_whitelist_[0]);
+    EXPECT_EQ("transport:packet_received", config.event_whitelist_[1]);
+    EXPECT_EQ("recovery:metrics_updated", config.event_whitelist_[2]);
 }
 
 // Test SetSamplingRate
@@ -115,13 +113,13 @@ TEST_F(QlogManagerTest, SetSamplingRate) {
     auto& manager = QlogManager::Instance();
 
     manager.SetSamplingRate(0.1f);
-    EXPECT_FLOAT_EQ(0.1f, manager.GetConfig().sampling_rate);
+    EXPECT_FLOAT_EQ(0.1f, manager.GetConfig().sampling_rate_);
 
     manager.SetSamplingRate(0.5f);
-    EXPECT_FLOAT_EQ(0.5f, manager.GetConfig().sampling_rate);
+    EXPECT_FLOAT_EQ(0.5f, manager.GetConfig().sampling_rate_);
 
     manager.SetSamplingRate(1.0f);
-    EXPECT_FLOAT_EQ(1.0f, manager.GetConfig().sampling_rate);
+    EXPECT_FLOAT_EQ(1.0f, manager.GetConfig().sampling_rate_);
 }
 
 // Test CreateTrace when disabled
@@ -140,9 +138,9 @@ TEST_F(QlogManagerTest, CreateTraceWhenEnabled) {
     auto& manager = QlogManager::Instance();
 
     QlogConfig config;
-    config.enabled = true;
-    config.output_dir = "./test_qlogs";
-    config.sampling_rate = 1.0f;  // Sample all connections
+    config.enabled_ = true;
+    config.output_dir_ = "./test_qlogs";
+    config.sampling_rate_ = 1.0f;  // Sample all connections
     manager.SetConfig(config);
 
     auto trace = manager.CreateTrace("conn-2", VantagePoint::kServer);
@@ -159,9 +157,9 @@ TEST_F(QlogManagerTest, CreateTraceClient) {
     auto& manager = QlogManager::Instance();
 
     QlogConfig config;
-    config.enabled = true;
-    config.output_dir = "./test_qlogs";
-    config.sampling_rate = 1.0f;
+    config.enabled_ = true;
+    config.output_dir_ = "./test_qlogs";
+    config.sampling_rate_ = 1.0f;
     manager.SetConfig(config);
 
     auto trace = manager.CreateTrace("client-conn-1", VantagePoint::kClient);
@@ -178,9 +176,9 @@ TEST_F(QlogManagerTest, RemoveTrace) {
     auto& manager = QlogManager::Instance();
 
     QlogConfig config;
-    config.enabled = true;
-    config.output_dir = "./test_qlogs";
-    config.sampling_rate = 1.0f;
+    config.enabled_ = true;
+    config.output_dir_ = "./test_qlogs";
+    config.sampling_rate_ = 1.0f;
     manager.SetConfig(config);
 
     auto trace = manager.CreateTrace("conn-3", VantagePoint::kServer);
@@ -199,9 +197,9 @@ TEST_F(QlogManagerTest, GetTrace) {
     auto& manager = QlogManager::Instance();
 
     QlogConfig config;
-    config.enabled = true;
-    config.output_dir = "./test_qlogs";
-    config.sampling_rate = 1.0f;
+    config.enabled_ = true;
+    config.output_dir_ = "./test_qlogs";
+    config.sampling_rate_ = 1.0f;
     manager.SetConfig(config);
 
     auto trace = manager.CreateTrace("conn-4", VantagePoint::kServer);
@@ -226,9 +224,9 @@ TEST_F(QlogManagerTest, MultipleTraces) {
     auto& manager = QlogManager::Instance();
 
     QlogConfig config;
-    config.enabled = true;
-    config.output_dir = "./test_qlogs";
-    config.sampling_rate = 1.0f;
+    config.enabled_ = true;
+    config.output_dir_ = "./test_qlogs";
+    config.sampling_rate_ = 1.0f;
     manager.SetConfig(config);
 
     auto trace1 = manager.CreateTrace("conn-5", VantagePoint::kServer);
@@ -259,9 +257,9 @@ TEST_F(QlogManagerTest, SamplingZeroPercent) {
     auto& manager = QlogManager::Instance();
 
     QlogConfig config;
-    config.enabled = true;
-    config.output_dir = "./test_qlogs";
-    config.sampling_rate = 0.0f;  // Never sample
+    config.enabled_ = true;
+    config.output_dir_ = "./test_qlogs";
+    config.sampling_rate_ = 0.0f;  // Never sample
     manager.SetConfig(config);
 
     auto trace = manager.CreateTrace("conn-8", VantagePoint::kServer);
@@ -275,9 +273,9 @@ TEST_F(QlogManagerTest, SamplingHundredPercent) {
     auto& manager = QlogManager::Instance();
 
     QlogConfig config;
-    config.enabled = true;
-    config.output_dir = "./test_qlogs";
-    config.sampling_rate = 1.0f;  // Always sample
+    config.enabled_ = true;
+    config.output_dir_ = "./test_qlogs";
+    config.sampling_rate_ = 1.0f;  // Always sample
     manager.SetConfig(config);
 
     // Create multiple traces - all should succeed
@@ -294,9 +292,9 @@ TEST_F(QlogManagerTest, Flush) {
     auto& manager = QlogManager::Instance();
 
     QlogConfig config;
-    config.enabled = true;
-    config.output_dir = "./test_qlogs";
-    config.sampling_rate = 1.0f;
+    config.enabled_ = true;
+    config.output_dir_ = "./test_qlogs";
+    config.sampling_rate_ = 1.0f;
     manager.SetConfig(config);
 
     auto trace = manager.CreateTrace("conn-9", VantagePoint::kServer);
@@ -320,8 +318,8 @@ TEST_F(QlogManagerTest, GetWriter) {
     auto& manager = QlogManager::Instance();
 
     QlogConfig config;
-    config.enabled = true;
-    config.output_dir = "./test_qlogs";
+    config.enabled_ = true;
+    config.output_dir_ = "./test_qlogs";
     manager.SetConfig(config);
 
     auto* writer = manager.GetWriter();
@@ -333,9 +331,9 @@ TEST_F(QlogManagerTest, ConfigPersistenceAcrossEnableDisable) {
     auto& manager = QlogManager::Instance();
 
     QlogConfig config;
-    config.enabled = true;
-    config.output_dir = "/custom/path";
-    config.sampling_rate = 0.7f;
+    config.enabled_ = true;
+    config.output_dir_ = "/custom/path";
+    config.sampling_rate_ = 0.7f;
     manager.SetConfig(config);
 
     // Disable
@@ -344,8 +342,8 @@ TEST_F(QlogManagerTest, ConfigPersistenceAcrossEnableDisable) {
 
     // Config should still be there
     const QlogConfig& retrieved1 = manager.GetConfig();
-    EXPECT_EQ("/custom/path", retrieved1.output_dir);
-    EXPECT_FLOAT_EQ(0.7f, retrieved1.sampling_rate);
+    EXPECT_EQ("/custom/path", retrieved1.output_dir_);
+    EXPECT_FLOAT_EQ(0.7f, retrieved1.sampling_rate_);
 
     // Re-enable
     manager.Enable(true);
@@ -353,8 +351,8 @@ TEST_F(QlogManagerTest, ConfigPersistenceAcrossEnableDisable) {
 
     // Config should still be preserved
     const QlogConfig& retrieved2 = manager.GetConfig();
-    EXPECT_EQ("/custom/path", retrieved2.output_dir);
-    EXPECT_FLOAT_EQ(0.7f, retrieved2.sampling_rate);
+    EXPECT_EQ("/custom/path", retrieved2.output_dir_);
+    EXPECT_FLOAT_EQ(0.7f, retrieved2.sampling_rate_);
 }
 
 // Test duplicate connection IDs (should handle gracefully)
@@ -362,9 +360,9 @@ TEST_F(QlogManagerTest, DuplicateConnectionIds) {
     auto& manager = QlogManager::Instance();
 
     QlogConfig config;
-    config.enabled = true;
-    config.output_dir = "./test_qlogs";
-    config.sampling_rate = 1.0f;
+    config.enabled_ = true;
+    config.output_dir_ = "./test_qlogs";
+    config.sampling_rate_ = 1.0f;
     manager.SetConfig(config);
 
     auto trace1 = manager.CreateTrace("conn-dup", VantagePoint::kServer);
@@ -382,10 +380,10 @@ TEST_F(QlogManagerTest, EventWhitelistAppliedToTrace) {
     auto& manager = QlogManager::Instance();
 
     QlogConfig config;
-    config.enabled = true;
-    config.output_dir = "./test_qlogs";
-    config.sampling_rate = 1.0f;
-    config.event_whitelist = {"transport:packet_sent"};
+    config.enabled_ = true;
+    config.output_dir_ = "./test_qlogs";
+    config.sampling_rate_ = 1.0f;
+    config.event_whitelist_ = {"transport:packet_sent"};
     manager.SetConfig(config);
 
     auto trace = manager.CreateTrace("conn-10", VantagePoint::kServer);
@@ -441,18 +439,18 @@ TEST_F(QlogManagerTest, ConfigurationExtremeValues) {
     auto& manager = QlogManager::Instance();
 
     QlogConfig config;
-    config.enabled = true;
-    config.async_queue_size = 1;           // Minimum
-    config.flush_interval_ms = 0;          // Immediate
-    config.max_file_size_mb = UINT64_MAX;  // Maximum
-    config.sampling_rate = 1.0f;
+    config.enabled_ = true;
+    config.async_queue_size_ = 1;           // Minimum
+    config.flush_interval_ms_ = 0;          // Immediate
+    config.max_file_size_mb_ = UINT64_MAX;  // Maximum
+    config.sampling_rate_ = 1.0f;
 
     manager.SetConfig(config);
 
     const QlogConfig& retrieved = manager.GetConfig();
-    EXPECT_EQ(1u, retrieved.async_queue_size);
-    EXPECT_EQ(0u, retrieved.flush_interval_ms);
-    EXPECT_EQ(UINT64_MAX, retrieved.max_file_size_mb);
+    EXPECT_EQ(1u, retrieved.async_queue_size_);
+    EXPECT_EQ(0u, retrieved.flush_interval_ms_);
+    EXPECT_EQ(UINT64_MAX, retrieved.max_file_size_mb_);
 }
 
 }  // namespace

@@ -1,10 +1,8 @@
-// Use of this source code is governed by a BSD 3-Clause License
-// that can be found in the LICENSE file.
-
 #ifndef COMMON_QLOG_EVENT_SECURITY_EVENTS
 #define COMMON_QLOG_EVENT_SECURITY_EVENTS
 
 #include <sstream>
+
 #include "common/qlog/event/qlog_event.h"
 
 namespace quicx {
@@ -57,4 +55,4 @@ public:
 }  // namespace common
 }  // namespace quicx
 
-#endif
+#endif  // COMMON_QLOG_EVENT_SECURITY_EVENTS

@@ -2,7 +2,7 @@
 #include <benchmark/benchmark.h>
 #include <cstdint>
 
-#include "quic/connection/controler/rtt_calculator.h"
+#include "quic/connection/controller/rtt_calculator.h"
 
 namespace quicx {
 namespace quic {
@@ -16,7 +16,7 @@ static void BM_Rtt_Update_And_PTO(benchmark::State& state) {
             rtt.UpdateRtt(/*send_time*/ now, /*now*/ now + 3000 + (i % 100), /*ack_delay*/ 1000);
             now += 3000;
         }
-        auto pto = rtt.GetPT0Interval(/*max_ack_delay*/ 1000);
+        auto pto = rtt.GetPTOInterval(/*max_ack_delay*/ 1000);
         benchmark::DoNotOptimize(pto);
     }
 }

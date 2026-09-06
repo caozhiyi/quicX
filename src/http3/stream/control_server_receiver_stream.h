@@ -42,4 +42,4 @@ private:
 }  // namespace http3
 }  // namespace quicx
 
-#endif
+#endif  // HTTP3_STREAM_CONTROL_RECEIVER_RECEIVER_STREAM

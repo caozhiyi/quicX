@@ -1,16 +1,18 @@
-#include <gtest/gtest.h>
 #include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <memory>
+#include <quicx/upgrade/if_upgrade.h>
 #include <string>
 #include <thread>
 #include <vector>
 
-#include <quicx/common/if_event_loop.h>
-#include <quicx/upgrade/if_upgrade.h>
+#include <gtest/gtest.h>
+
 #include "common/network/if_event_driver.h"
+#include "common/network/if_event_loop.h"
+
 #include "upgrade/network/tcp_socket.h"
 
 namespace quicx {
@@ -26,27 +28,23 @@ protected:
     std::shared_ptr<common::IEventLoop> event_loop_;
 };
 
-// Test complete UpgradeServer + EventLoop basic lifecycle
+// Test complete UpgradeServer lifecycle: the server owns its own event loop
+// and thread, so the caller only ever sees AddListener()/Stop().
 TEST_F(NetworkIntegrationTest, CompleteUpgradeLifecycle) {
-    ASSERT_TRUE(event_loop_->Init());
-    auto server = IUpgrade::MakeUpgrade(event_loop_);
+    auto server = IUpgrade::MakeUpgrade();
     ASSERT_NE(server, nullptr);
 
     UpgradeSettings settings;
-    settings.listen_addr = "127.0.0.1";
-    settings.http_port = 8080;
-    settings.https_port = 0;
+    settings.listen_addr_ = "127.0.0.1";
+    settings.http_port_ = 8080;
+    settings.https_port_ = 0;
     EXPECT_TRUE(server->AddListener(settings));
 
-    std::atomic<bool> timer_fired(false);
-    auto owner = std::make_shared<int>(0);
-    common::Timer timer = event_loop_->AddTimer(owner, [&timer_fired]() { timer_fired = true; }, 1);
-    EXPECT_TRUE(timer.IsActive());
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
-
-    event_loop_->Wait();
-    EXPECT_TRUE(timer_fired);
+    // Stop() is idempotent, and a stopped server refuses new listeners
+    // (otherwise AddListener() would silently resurrect the loop thread).
+    server->Stop();
+    server->Stop();
+    EXPECT_FALSE(server->AddListener(settings));
 }
 
 // Test TCP socket basics
@@ -109,35 +107,25 @@ TEST_F(NetworkIntegrationTest, MultipleTcpSockets) {
     EXPECT_EQ(it, fds.end());  // All FDs should be unique
 }
 
-// Test multiple listeners via UpgradeServer and timers on event loop
-TEST_F(NetworkIntegrationTest, MultipleListenersAndTimers) {
-    ASSERT_TRUE(event_loop_->Init());
-    auto server = IUpgrade::MakeUpgrade(event_loop_);
+// Test multiple listeners on one server: every AddListener() call is handed
+// to the server's own loop thread, so both ports end up registered there.
+TEST_F(NetworkIntegrationTest, MultipleListeners) {
+    auto server = IUpgrade::MakeUpgrade();
     ASSERT_NE(server, nullptr);
 
     UpgradeSettings s1;
-    s1.listen_addr = "127.0.0.1";
-    s1.http_port = 8080;
-    s1.https_port = 0;
+    s1.listen_addr_ = "127.0.0.1";
+    s1.http_port_ = 8080;
+    s1.https_port_ = 0;
     UpgradeSettings s2;
-    s2.listen_addr = "127.0.0.1";
-    s2.http_port = 8081;
-    s2.https_port = 0;
+    s2.listen_addr_ = "127.0.0.1";
+    s2.http_port_ = 8081;
+    s2.https_port_ = 0;
 
     EXPECT_TRUE(server->AddListener(s1));
     EXPECT_TRUE(server->AddListener(s2));
 
-    std::atomic<int> t1(0), t2(0);
-    auto owner = std::make_shared<int>(0);
-    common::Timer timer1 = event_loop_->AddTimer(owner, [&t1]() { t1++; }, 5);
-    common::Timer timer2 = event_loop_->AddTimer(owner, [&t2]() { t2++; }, 10);
-    EXPECT_TRUE(timer1.IsActive());
-    EXPECT_TRUE(timer2.IsActive());
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(15));
-    event_loop_->Wait();
-    EXPECT_GT(t1, 0);
-    EXPECT_GT(t2, 0);
+    server->Stop();
 }
 
 // Test error handling basics

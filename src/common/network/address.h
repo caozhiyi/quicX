@@ -98,7 +98,7 @@ private:
     mutable bool cached_v6_valid_ = false;
 };
 
-}  // namespace common
+}  // namespace quicx
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_COMMON_NETWORK_ADDRESS

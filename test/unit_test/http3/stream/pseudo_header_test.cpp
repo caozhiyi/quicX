@@ -1,7 +1,8 @@
-#include "http3/stream/pseudo_header.h"
 #include <gtest/gtest.h>
+
 #include "http3/http/request.h"
 #include "http3/http/response.h"
+#include "http3/stream/pseudo_header.h"
 
 namespace quicx {
 namespace http3 {

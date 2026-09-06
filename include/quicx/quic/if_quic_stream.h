@@ -30,4 +30,4 @@ public:
 
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_INCLUDE_IF_STREAM

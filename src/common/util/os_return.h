@@ -17,4 +17,4 @@ using SysCallInt32Result = SysCallResult<int32_t>;
 }  // namespace common
 }  // namespace quicx
 
-#endif
+#endif  // COMMON_UTIL_OS_RETURN

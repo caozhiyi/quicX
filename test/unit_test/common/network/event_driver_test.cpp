@@ -1,8 +1,9 @@
-#include <gtest/gtest.h>
 #include <atomic>
 #include <chrono>
 #include <thread>
 #include <vector>
+
+#include <gtest/gtest.h>
 
 #include "common/network/if_event_driver.h"
 #include "common/network/io_handle.h"

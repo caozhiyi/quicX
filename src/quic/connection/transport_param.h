@@ -2,10 +2,10 @@
 #define QUIC_CONNECTION_TRANSPORT_PARAM
 
 #include <cstdint>
+#include <quicx/quic/type.h>
 #include <string>
 #include <vector>
 
-#include <quicx/quic/type.h>
 #include "common/buffer/buffer_span.h"
 
 namespace quicx {
@@ -170,11 +170,11 @@ private:
     uint64_t ack_delay_exponent_;  // no client
     uint64_t max_ack_delay_;       // no client
     bool disable_active_migration_;
-    std::string preferred_address_;  // client: raw wire bytes of the received preferred_address param
+    std::string preferred_address_;      // client: raw wire bytes of the received preferred_address param
     std::string preferred_address_cid_;  // no client: CID inside binary preferred_address
     PreferredAddress preferred_address_binary_;
     bool has_preferred_address_binary_ = false;
-    bool enable_keep_alive_ = false;  // local only, never encoded on the wire
+    bool enable_keep_alive_ = false;       // local only, never encoded on the wire
     uint32_t keep_alive_interval_ms_ = 0;  // local only; 0 = derive from idle timeout
     // Peer's declared disable_active_migration (captured by Merge()). Kept
     // separate from disable_active_migration_ (our own wire declaration) so
@@ -196,4 +196,4 @@ private:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_CONNECTION_TRANSPORT_PARAM

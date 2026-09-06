@@ -1,5 +1,7 @@
-#include "quic/crypto/aes_256_gcm_cryptographer.h"
 #include <gtest/gtest.h>
+
+#include "quic/crypto/aes_256_gcm_cryptographer.h"
+
 #include "test/unit_test/quic/crypto/aead_base_cryptographer_test.h"
 
 namespace quicx {

@@ -5,8 +5,9 @@
 #include <memory>
 #include <set>
 
-#include <quicx/common/if_timer_scheduler.h>
+#include "common/timer/if_timer_scheduler.h"
 
+#include "quic/config.h"
 #include "quic/connection/transport_param.h"
 #include "quic/packet/if_packet.h"
 #include "quic/packet/type.h"
@@ -98,6 +99,29 @@ private:
     uint64_t pkt_num_largest_recvd_[PacketNumberSpace::kNumberSpaceCount];
     uint64_t largest_recv_time_[PacketNumberSpace::kNumberSpaceCount];
     std::set<uint64_t> wait_ack_packet_numbers_[PacketNumberSpace::kNumberSpaceCount];
+    // ACK-ELICITING subset of wait_ack_packet_numbers_ — these are the only
+    // packets that carry an ACK obligation (RFC 9000 §13.2). ACK-only packets
+    // are reported in ACK ranges but never make a space "ack due"; keying the
+    // Initial/Handshake MUST-ACK path on the combined set caused an unbounded
+    // ACK-of-ACK ping-pong between two quicx endpoints (2026-09-01).
+    std::set<uint64_t> wait_ack_eliciting_[PacketNumberSpace::kNumberSpaceCount];
+    // Bounded ACK-of-ACK budget per PN space (see OnPacketRecv): replies to
+    // ACK-only packets in Initial/Handshake are the sole recovery channel for
+    // peers that only send ACK-only handshake packets after losing their
+    // Finished (quinn), but must be capped so two quicx endpoints don't ACK
+    // each other's ACK-only packets forever. Reset by any ack-eliciting
+    // packet in the same space.
+    uint32_t ack_only_replies_[PacketNumberSpace::kNumberSpaceCount]{0, 0, 0};
+    // RFC 9000 §13.2.1 para 6: "an endpoint SHOULD acknowledge at least
+    // every second ACK-only packet" it receives. Consecutive ACK-only
+    // packets in the Application space are the peer's only loss-detection
+    // clock when our own data/response datagram was lost: peers whose PTO
+    // sends probes without retransmitting stream data (observed: aioquic
+    // corruption runs, 2026-09-03) rely on our ACK ranges (the gap at the
+    // lost packet) to declare it lost and retransmit. Keyed on *consecutive*
+    // ACK-only packets; any ack-eliciting packet resets the counter, so a
+    // quicx<->quicx exchange self-terminates instead of ping-ponging.
+    uint32_t ack_only_seq_[PacketNumberSpace::kNumberSpaceCount]{0, 0, 0};
     // ECN counters per PN space
     uint64_t ect0_count_[PacketNumberSpace::kNumberSpaceCount]{0};
     uint64_t ect1_count_[PacketNumberSpace::kNumberSpaceCount]{0};
@@ -134,4 +158,4 @@ private:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_CONNECTION_CONTROLER_RECV_CONTROL

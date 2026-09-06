@@ -2,10 +2,10 @@
 #define COMMON_BUFFER_IF_BUFFER
 
 #include <cstdint>
-#include <string>
-
 #include <quicx/common/if_buffer_read.h>
 #include <quicx/common/if_buffer_write.h>
+#include <string>
+
 #include "common/buffer/buffer_span.h"
 #include "common/buffer/shared_buffer_span.h"
 
@@ -89,4 +89,4 @@ public:
 }  // namespace common
 }  // namespace quicx
 
-#endif
+#endif  // COMMON_BUFFER_IF_BUFFER

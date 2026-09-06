@@ -5,13 +5,16 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <quicx/quic/type.h>
 #include <vector>
 
-#include <quicx/quic/type.h>
-#include "quic/connection/type.h"
 #include "common/network/address.h"
-#include <quicx/common/if_timer_scheduler.h>
+#include "common/network/socket_handle.h"
+#include "common/timer/if_timer_scheduler.h"
+
 #include "quic/common/constants.h"
+#include "quic/config.h"
+#include "quic/connection/type.h"
 
 namespace quicx {
 
@@ -52,8 +55,9 @@ public:
     using SetPeerAddressCallback = std::function<void(const ::quicx::common::Address&)>;
     using MigrationCompleteCallback = std::function<void(const MigrationInfo&)>;
     using GetSocketCallback = std::function<int32_t()>;
-    // Hands the freshly created probe fd to its owner (MigrationController).
-    using ProbeSocketReadyCallback = std::function<void(int32_t)>;
+    // Hands the freshly created probe socket (fd + family) to its owner
+    // (MigrationController).
+    using ProbeSocketReadyCallback = std::function<void(common::SocketHandle)>;
 
     /**
      * @brief Construction-time dependencies for PathManager.
@@ -129,6 +133,19 @@ public:
      * @param addr New observed peer address
      */
     void OnObservedPeerAddress(const ::quicx::common::Address& addr);
+
+    /**
+     * @brief Handle a datagram that arrived on a different LOCAL socket
+     *
+     * RFC 9000 §9 defines a path by its local AND remote addresses. A
+     * datagram arriving on a different local listener (e.g. the
+     * preferred_address socket) opens a new path even when the peer's
+     * source address is unchanged, in which case OnObservedPeerAddress()
+     * alone never fires. The worker has already switched the active socket
+     * by the time this runs, so the synchronous probe leaves on the new
+     * path and carries PATH_CHALLENGE in its first packet.
+     */
+    void OnLocalSocketAddressChanged();
 
     /**
      * @brief Record bytes received from candidate path (for anti-amp budget)
@@ -246,7 +263,7 @@ private:
      * @brief Internal implementation for starting path validation probe
      * @param dcid_pre_rotated true if DCID was already rotated by caller (InitiateMigration)
      */
-    void StartPathValidationProbeInternal(bool dcid_pre_rotated);
+    void StartPathValidationProbeInternal(bool dcid_pre_rotated, bool probe_state_pre_set = false);
 
     /**
      * @brief Schedule retry of path probe
@@ -277,9 +294,10 @@ private:
      *                   current peer's family (needed when migrating to a
      *                   preferred address of a different family, e.g. IPv6 ->
      *                   IPv4). Unset = derive the family from the current peer.
-     * @return Socket fd on success, -1 on failure
+     * @return Socket handle (fd + family); fd < 0 on failure.
      */
-    int32_t CreateBoundSocket(const ::quicx::common::Address& local_addr, std::optional<bool> force_ipv4 = std::nullopt);
+    common::SocketHandle CreateBoundSocket(
+        const ::quicx::common::Address& local_addr, std::optional<bool> force_ipv4 = std::nullopt);
 
 private:
     // Dependencies (injected)
@@ -306,11 +324,6 @@ private:
 
     // Queue of pending candidate addresses for path validation
     std::vector<::quicx::common::Address> pending_candidate_addrs_;
-
-    // Probe retry limits
-    static constexpr uint32_t kMaxProbeRetries = 5;
-    static constexpr uint32_t kInitialProbeDelayMs = 100;
-    static constexpr uint32_t kMaxProbeDelayMs = 2000;
 
     // Flag: true if DCID was pre-rotated before starting probe (for client-initiated migration)
     // When true, OnPathResponse() will skip CID rotation (already done)
@@ -355,7 +368,7 @@ private:
     uint16_t preferred_cid_len_{0};
 };
 
-}  // namespace quic
+}  // namespace quicx
 }  // namespace quicx
 
 #endif  // QUIC_CONNECTION_PATH_MANAGER_H

@@ -1,8 +1,8 @@
-
 #ifndef QUIC_PACKET_RTT_1_PACKET
 #define QUIC_PACKET_RTT_1_PACKET
 
 #include <memory>
+
 #include "quic/common/constants.h"
 #include "quic/packet/header/short_header.h"
 #include "quic/packet/if_packet.h"
@@ -55,4 +55,4 @@ protected:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_PACKET_RTT_1_PACKET

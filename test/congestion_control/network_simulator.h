@@ -243,4 +243,4 @@ private:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // TEST_CONGESTION_CONTROL_NETWORK_SIMULATOR

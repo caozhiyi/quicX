@@ -2,7 +2,8 @@
 #define QUIC_STREAM_FIX_BUFFER_FRAME_VISITOR
 
 #include <vector>
-#include "quic/connection/controler/send_control.h"
+
+#include "quic/connection/controller/send_control.h"
 #include "quic/stream/if_frame_visitor.h"
 
 namespace quicx {
@@ -87,4 +88,4 @@ private:
 
 }  // namespace quic
 }  // namespace quicx
-#endif
+#endif  // QUIC_STREAM_FIX_BUFFER_FRAME_VISITOR

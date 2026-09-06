@@ -1,6 +1,6 @@
-#include <cstdint>
 #ifdef __APPLE__
 
+#include <cstdint>
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/event.h>

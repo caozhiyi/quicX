@@ -1,8 +1,8 @@
-
 #ifndef QUIC_PACKET_HEADER_SHORT_PACKET
 #define QUIC_PACKET_HEADER_SHORT_PACKET
 
 #include <memory>
+
 #include "quic/common/constants.h"
 #include "quic/packet/header/if_header.h"
 
@@ -31,4 +31,4 @@ protected:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_PACKET_HEADER_SHORT_PACKET

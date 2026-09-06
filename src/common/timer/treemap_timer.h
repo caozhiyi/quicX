@@ -3,6 +3,7 @@
 
 #include <map>
 #include <unordered_map>
+
 #include "common/timer/if_timer.h"
 
 namespace quicx {
@@ -38,4 +39,4 @@ private:
 }  // namespace common
 }  // namespace quicx
 
-#endif
+#endif  // COMMON_TIMER_TREEMAP_TIMER

@@ -1,5 +1,6 @@
-#include "quic/crypto/tls/tls_ctx_client.h"
 #include "common/log/log.h"
+
+#include "quic/crypto/tls/tls_ctx_client.h"
 
 namespace quicx {
 namespace quic {

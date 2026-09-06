@@ -1,7 +1,3 @@
-#include <gtest/gtest.h>
-#include "common/log/file_logger.h"
-#include "common/log/log.h"
-#include "common/log/stdout_logger.h"
 #ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -16,6 +12,12 @@ public:
     void TearDown() override { WSACleanup(); }
 };
 #endif
+
+#include <gtest/gtest.h>
+
+#include "common/log/file_logger.h"
+#include "common/log/log.h"
+#include "common/log/stdout_logger.h"
 
 int main(int argc, char** argv) {
     testing::InitGoogleTest(&argc, argv);

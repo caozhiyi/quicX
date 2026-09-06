@@ -32,4 +32,4 @@ struct RemoteTransportParamSnapshot {
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_CONNECTION_REMOTE_TRANSPORT_PARAM_SNAPSHOT

@@ -86,17 +86,17 @@ public:
     virtual void AddTimer(uint32_t timeout_ms, std::function<void()> cb) = 0;
 
     /**
-     * @brief Establish a QUIC connection using an explicit resumption ticket.
+     * @brief Establish a QUIC connection, optionally with an explicit resumption ticket.
      *
      * Passing non-empty session bytes allows the client to attempt 0-RTT if the
-     * ticket is still valid on the server. The API shape mirrors the basic
-     * Connection() call but adds the ticket parameter.
+     * ticket is still valid on the server.
      *
      * @param ip Remote IP (IPv4 or IPv6 textual form).
      * @param port Remote UDP port.
      * @param alpn ALPN identifier (e.g. "h3").
      * @param timeout_ms Connection timeout in milliseconds.
-     * @param resumption_session_der Serialized TLS session (DER).
+     * @param resumption_session_der Serialized TLS session (DER); empty for a full handshake.
+     * @param server_name TLS SNI / certificate verification name; empty derives it from `ip`.
      * @return true if the connect attempt was dispatched, false otherwise.
      */
     virtual bool Connection(const std::string& ip, uint16_t port, const std::string& alpn, int32_t timeout_ms,
@@ -125,4 +125,4 @@ public:
 
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_INCLUDE_IF_QUIC_CLIENT

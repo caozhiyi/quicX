@@ -1,5 +1,6 @@
-#include "network_simulator.h"
 #include <algorithm>
+
+#include "network_simulator.h"
 
 namespace quicx {
 namespace quic {

@@ -1,10 +1,10 @@
-#include <gtest/gtest.h>
-#include <quicx/common/if_timer_scheduler.h>
-
 #include <memory>
 #include <thread>
 #include <utility>
 
+#include <gtest/gtest.h>
+
+#include "common/timer/if_timer_scheduler.h"
 #include "common/timer/timer_core.h"
 
 namespace quicx {

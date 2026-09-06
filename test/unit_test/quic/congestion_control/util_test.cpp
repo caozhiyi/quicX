@@ -1,5 +1,6 @@
-#include "quic/congestion_control/util.h"
 #include <cassert>
+
+#include "quic/congestion_control/util.h"
 
 namespace quicx {
 namespace quic {

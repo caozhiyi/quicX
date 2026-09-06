@@ -2,6 +2,7 @@
 #define QUIC_FRAME_MAX_STREAMS_FRAME
 
 #include <cstdint>
+
 #include "quic/frame/if_frame.h"
 
 namespace quicx {
@@ -28,4 +29,4 @@ private:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_FRAME_MAX_STREAMS_FRAME

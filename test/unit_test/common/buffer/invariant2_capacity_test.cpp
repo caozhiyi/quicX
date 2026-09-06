@@ -20,11 +20,11 @@
 // These tests pin that contract before the implementation switches over,
 // hence they are expected to be RED until B2 is implemented.
 
-#include <gtest/gtest.h>
-
 #include <array>
 #include <cstdint>
 #include <memory>
+
+#include <gtest/gtest.h>
 
 #include "common/allocator/pool_block.h"
 #include "common/buffer/buffer_chunk.h"

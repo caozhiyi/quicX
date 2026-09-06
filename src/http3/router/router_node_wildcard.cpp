@@ -1,5 +1,5 @@
-#include "http3/router/router_node_wildcard.h"
 #include "http3/router/if_router_node.h"
+#include "http3/router/router_node_wildcard.h"
 
 namespace quicx {
 namespace http3 {
@@ -15,5 +15,5 @@ bool RouterNodeWildcard::Match(
     return true;
 }
 
-}  // namespace http3
+}  // namespace quicx
 }  // namespace quicx

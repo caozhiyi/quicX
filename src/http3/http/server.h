@@ -1,12 +1,13 @@
 #ifndef HTTP3_HTTP_SERVER
 #define HTTP3_HTTP_SERVER
 
+
 #include <memory>
+#include <quicx/http3/if_server.h>
+#include <quicx/quic/if_quic_server.h>
 #include <string>
 #include <vector>
 
-#include <quicx/http3/if_server.h>
-#include <quicx/quic/if_quic_server.h>
 #include "http3/connection/connection_server.h"
 #include "http3/router/router.h"
 #include "http3/stream/response_stream.h"
@@ -89,4 +90,4 @@ private:
 }  // namespace http3
 }  // namespace quicx
 
-#endif
+#endif  // HTTP3_HTTP_SERVER

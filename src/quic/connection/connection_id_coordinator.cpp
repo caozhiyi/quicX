@@ -8,28 +8,13 @@
 #include "common/qlog/qlog.h"
 
 #include "quic/connection/connection_id_coordinator.h"
+#include "quic/connection/controller/send_manager.h"
 #include "quic/connection/stateless_reset_token_generator.h"
-#include "quic/connection/controler/send_manager.h"
 #include "quic/frame/new_connection_id_frame.h"
 #include "quic/frame/retire_connection_id_frame.h"
 
 namespace quicx {
 namespace quic {
-
-namespace {
-// Helper to convert ConnectionID to hex string for qlog
-std::string CIDToHexString(const ConnectionID& cid) {
-    std::ostringstream oss;
-    const uint8_t* id = cid.GetID();
-    uint8_t len = cid.GetLength();
-    for (uint8_t i = 0; i < len; ++i) {
-        char buf[3];
-        snprintf(buf, sizeof(buf), "%02x", id[i]);
-        oss << buf;
-    }
-    return oss.str();
-}
-}  // anonymous namespace
 
 void ConnectionIDCoordinator::AddPeerStatelessResetToken(const uint8_t* token) {
     if (token == nullptr) {
@@ -181,7 +166,7 @@ void ConnectionIDCoordinator::CheckAndReplenishLocalCIDPool() {
         if (qlog_trace_) {
             common::ConnectionIdUpdatedData cid_data;
             cid_data.owner = "local";
-            cid_data.new_id = CIDToHexString(new_cid);
+            cid_data.new_id = new_cid.ToHexString();
             cid_data.trigger = "pool_replenish";
             QLOG_CONNECTION_ID_UPDATED(qlog_trace_, cid_data);
         }
@@ -222,8 +207,8 @@ bool ConnectionIDCoordinator::RotateRemoteConnectionID() {
     if (qlog_trace_) {
         common::ConnectionIdUpdatedData cid_data;
         cid_data.owner = "remote";
-        cid_data.old_id = CIDToHexString(old_cid);
-        cid_data.new_id = CIDToHexString(new_cid);
+        cid_data.old_id = old_cid.ToHexString();
+        cid_data.new_id = new_cid.ToHexString();
         cid_data.trigger = "cid_rotation";
         QLOG_CONNECTION_ID_UPDATED(qlog_trace_, cid_data);
     }

@@ -17,6 +17,7 @@
 #include <gtest/gtest.h>
 
 #include "common/network/address.h"
+
 #include "quic/connection/util.h"
 
 namespace quicx {
@@ -27,8 +28,8 @@ namespace {
 
 TEST(PreferredAddressParseTest, RejectsBareIpv6InsteadOfCrashing) {
     common::Address out;
-    //Ambiguous without brackets: is the last group a port or part of the
-    // address? Reject rather than guess. This used to throw.
+    // Ambiguous without brackets: is the last group a port or part of the
+    //  address? Reject rather than guess. This used to throw.
     EXPECT_FALSE(ParsePreferredAddress("::1:4433", out));
 }
 
@@ -64,8 +65,8 @@ TEST(PreferredAddressParseTest, RejectsEmptyString) {
     EXPECT_FALSE(ParsePreferredAddress("", out));
 }
 
-//Ports must fit a uint16_t. The old code cast a parsed int straight to
-// uint16_t, so65536 silently became 0 and 65537 became 1.
+// Ports must fit a uint16_t. The old code cast a parsed int straight to
+//  uint16_t, so65536 silently became 0 and 65537 became 1.
 TEST(PreferredAddressParseTest, RejectsPortAboveUint16RangeInsteadOfTruncating) {
     common::Address out;
     EXPECT_FALSE(ParsePreferredAddress("127.0.0.1:65536", out));

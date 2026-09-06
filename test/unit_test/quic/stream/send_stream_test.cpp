@@ -1,7 +1,8 @@
-#include <gtest/gtest.h>
 #include <cstdint>
 #include <cstring>
 #include <memory>
+
+#include <gtest/gtest.h>
 
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"

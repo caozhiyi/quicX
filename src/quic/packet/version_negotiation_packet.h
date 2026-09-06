@@ -3,6 +3,7 @@
 
 #include <memory>
 #include <vector>
+
 #include "quic/packet/header/long_header.h"
 #include "quic/packet/if_packet.h"
 #include "quic/packet/type.h"
@@ -35,4 +36,4 @@ private:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_PACKET_VERSION_NEGOTIATION_PACKET

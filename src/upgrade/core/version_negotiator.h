@@ -4,6 +4,7 @@
 #include <quicx/upgrade/type.h>
 #include <string>
 #include <vector>
+
 #include "upgrade/handlers/connection_context.h"
 
 namespace quicx {
@@ -47,4 +48,4 @@ private:
 }  // namespace upgrade
 }  // namespace quicx
 
-#endif  // UPGRADE_CORE_VERSION_NEGOTIATOR_H
+#endif  // UPGRADE_CORE_VERSION_NEGOTIATOR

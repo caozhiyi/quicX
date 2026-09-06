@@ -1,5 +1,6 @@
-#include <gtest/gtest.h>
 #include <vector>
+
+#include <gtest/gtest.h>
 
 #include "quic/connection/connection_id_manager.h"
 

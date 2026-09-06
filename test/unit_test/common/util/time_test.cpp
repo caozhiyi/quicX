@@ -1,6 +1,8 @@
-#include "common/util/time.h"
-#include <gtest/gtest.h>
 #include <string>
+
+#include <gtest/gtest.h>
+
+#include "common/util/time.h"
 
 namespace quicx {
 namespace common {

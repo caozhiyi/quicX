@@ -1,17 +1,18 @@
 #ifndef HTTP3_HTTP_CLIENT
 #define HTTP3_HTTP_CLIENT
 
+
 #include <memory>
 #include <queue>
+#include <quicx/http3/if_client.h>
+#include <quicx/quic/if_quic_client.h>
+#include <quicx/quic/if_quic_connection.h>
 #include <shared_mutex>
 #include <string>
 #include <unordered_map>
 #include <variant>
 #include <vector>
 
-#include <quicx/http3/if_client.h>
-#include <quicx/quic/if_quic_client.h>
-#include <quicx/quic/if_quic_connection.h>
 #include "http3/connection/connection_client.h"
 
 namespace quicx {
@@ -142,4 +143,4 @@ private:
 }  // namespace http3
 }  // namespace quicx
 
-#endif
+#endif  // HTTP3_HTTP_CLIENT

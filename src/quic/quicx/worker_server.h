@@ -1,12 +1,12 @@
 #ifndef QUIC_QUICX_WORKER_SERVER
 #define QUIC_QUICX_WORKER_SERVER
 
+#include <quicx/quic/if_quic_server.h>
 #include <string>
 #include <unordered_map>
 
-#include <quicx/common/if_event_loop.h>
+#include "common/network/if_event_loop.h"
 
-#include <quicx/quic/if_quic_server.h>
 #include "quic/connection/retry_token_manager.h"
 #include "quic/quicx/connection_rate_monitor.h"
 #include "quic/quicx/ip_rate_limiter.h"
@@ -51,7 +51,7 @@ public:
     void Shutdown() override;
 
 protected:
-    void SendVersionNegotiatePacket(const common::Address& addr, int32_t socket, const uint8_t* client_dcid,
+    void SendVersionNegotiatePacket(const common::Address& addr, common::SocketHandle socket, const uint8_t* client_dcid,
         uint8_t client_dcid_len, const uint8_t* client_scid, uint8_t client_scid_len);
 
     /**
@@ -62,14 +62,14 @@ protected:
      * @param original_scid Original source connection ID from client's Initial
      * @return true if Retry packet was sent successfully
      */
-    bool SendRetryPacket(const common::Address& addr, int32_t socket, const ConnectionID& original_dcid,
+    bool SendRetryPacket(const common::Address& addr, common::SocketHandle socket, const ConnectionID& original_dcid,
         const ConnectionID& original_scid, uint32_t version);
 
     /**
      * @brief Check if a Retry token is valid
      * @param token Token from client's Initial packet
      * @param addr Client address
-     * @param original_dcid Original destination connection ID
+     * @param out_original_dcid [out] Original destination connection ID recovered from the token
      * @return true if token is valid
      */
     bool ValidateRetryToken(const std::string& token, const common::Address& addr, ConnectionID& out_original_dcid);
@@ -116,8 +116,8 @@ protected:
      *        cannot ping-pong ever-larger packets at each other (§10.3).
      * @return true if a reset was sent.
      */
-    bool SendStatelessReset(const common::Address& addr, int32_t socket, const ConnectionID& dcid,
-        uint32_t triggering_packet_size);
+    bool SendStatelessReset(
+        const common::Address& addr, common::SocketHandle socket, const ConnectionID& dcid, uint32_t triggering_packet_size);
 
     /** Bookkeeping for the per-IP concurrency cap. */
     void OnConnectionAdmitted(const common::Address& client_addr);
@@ -160,4 +160,4 @@ private:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_QUICX_WORKER_SERVER

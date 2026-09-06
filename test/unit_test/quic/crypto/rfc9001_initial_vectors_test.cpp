@@ -2,15 +2,15 @@
 // RFC 9001 Initial Packet test vectors. Byte arrays are hand-aligned to match
 // the RFC layout; do not reformat.
 
-#include <gtest/gtest.h>
 #include <memory>
 
+#include <gtest/gtest.h>
 
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
+
 #include "quic/crypto/aes_128_gcm_cryptographer.h"
 #include "quic/crypto/chacha20_poly1305_cryptographer.h"
-
 // RFC-aligned initial salt (QUIC v1): 0x38762cf7f55934b34d179ae6a4c80cadccbb7f0a
 // and a commonly used initial DCID: 0x8394c8f03e515708
 // These tests validate that our initial secret derivation can establish

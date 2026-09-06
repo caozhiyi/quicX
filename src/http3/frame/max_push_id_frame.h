@@ -28,4 +28,4 @@ private:
 }  // namespace http3
 }  // namespace quicx
 
-#endif
+#endif  // HTTP3_FRAME_MAX_PUSH_ID_FRAME

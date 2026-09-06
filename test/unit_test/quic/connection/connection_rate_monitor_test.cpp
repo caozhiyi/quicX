@@ -1,5 +1,6 @@
-#include <gtest/gtest.h>
 #include <thread>
+
+#include <gtest/gtest.h>
 
 #include "quic/quicx/connection_rate_monitor.h"
 

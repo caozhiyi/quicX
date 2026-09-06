@@ -1,7 +1,10 @@
+#include <cstring>
+
 #include <gtest/gtest.h>
 
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
+
 #include "quic/frame/ack_frame.h"
 
 namespace quicx {
@@ -27,6 +30,21 @@ TEST(AckFrameTest, codec) {
     EXPECT_TRUE(frame1.Encode(write_buffer));
 
     auto data_span = write_buffer->GetReadableSpan();
+
+    // Wire-level check: byte-exact encoding per RFC 9000 section 19.3 (varints per section 16)
+    static const uint8_t expected_wire[] = {
+        0x02,       // type = kAck
+        0x44, 0xD2, // largest acknowledged = 1234
+        0x40, 0x68, // ack delay = 104
+        0x03,       // ack range count = 3
+        0x05,       // first ack range = 5
+        0x03, 0x05, // gap = 3, ack range = 5
+        0x04, 0x06, // gap = 4, ack range = 6
+        0x02, 0x03, // gap = 2, ack range = 3
+    };
+    ASSERT_EQ(data_span.GetLength(), sizeof(expected_wire));
+    EXPECT_EQ(0, memcmp(data_span.GetStart(), expected_wire, sizeof(expected_wire)));
+
     auto pos_span = read_buffer->GetWritableSpan();
     memcpy(pos_span.GetStart(), data_span.GetStart(), data_span.GetLength());
     read_buffer->MoveWritePt(data_span.GetLength());
@@ -38,13 +56,13 @@ TEST(AckFrameTest, codec) {
     EXPECT_EQ(frame1.GetLargestAck(), frame2.GetLargestAck());
 
     auto range = frame2.GetAckRange();
-    EXPECT_EQ(range.size(), 3);
-    /*EXPECT_EQ(range[0].gap_, 3);
-    EXPECT_EQ(range[0].ack_range_, 5);
-    EXPECT_EQ(range[1].gap_, 4);
-    EXPECT_EQ(range[1].ack_range_, 6);
-    EXPECT_EQ(range[2].gap_, 2);
-    EXPECT_EQ(range[2].ack_range_, 3);*/
+    ASSERT_EQ(range.size(), 3u);
+    EXPECT_EQ(range[0].GetGap(), 3u);
+    EXPECT_EQ(range[0].GetAckRangeLength(), 5u);
+    EXPECT_EQ(range[1].GetGap(), 4u);
+    EXPECT_EQ(range[1].GetAckRangeLength(), 6u);
+    EXPECT_EQ(range[2].GetGap(), 2u);
+    EXPECT_EQ(range[2].GetAckRangeLength(), 3u);
 }
 
 TEST(AckEcnFrameTest, decod1) {
@@ -71,6 +89,24 @@ TEST(AckEcnFrameTest, decod1) {
     EXPECT_TRUE(frame1.Encode(write_buffer));
 
     auto data_span = write_buffer->GetReadableSpan();
+
+    // Wire-level check: byte-exact encoding per RFC 9000 section 19.4 (ACK_ECN)
+    static const uint8_t expected_wire[] = {
+        0x03,       // type = kAckEcn
+        0x50, 0xE1, // largest acknowledged = 4321
+        0x40, 0x68, // ack delay = 104
+        0x03,       // ack range count = 3
+        0x07,       // first ack range = 7
+        0x03, 0x05, // gap = 3, ack range = 5
+        0x04, 0x06, // gap = 4, ack range = 6
+        0x02, 0x03, // gap = 2, ack range = 3
+        0x43, 0xF1, // ect0 = 1009
+        0x47, 0xD3, // ect1 = 2003
+        0x40, 0xCB, // ecn ce = 203
+    };
+    ASSERT_EQ(data_span.GetLength(), sizeof(expected_wire));
+    EXPECT_EQ(0, memcmp(data_span.GetStart(), expected_wire, sizeof(expected_wire)));
+
     auto pos_span = read_buffer->GetWritableSpan();
     memcpy(pos_span.GetStart(), data_span.GetStart(), data_span.GetLength());
     read_buffer->MoveWritePt(data_span.GetLength());
@@ -82,13 +118,13 @@ TEST(AckEcnFrameTest, decod1) {
     EXPECT_EQ(frame1.GetLargestAck(), frame2.GetLargestAck());
 
     auto range = frame2.GetAckRange();
-    EXPECT_EQ(range.size(), 3);
-    /*EXPECT_EQ(range[0].gap_, 3);
-    EXPECT_EQ(range[0].ack_range_, 5);
-    EXPECT_EQ(range[1].gap_, 4);
-    EXPECT_EQ(range[1].ack_range_, 6);
-    EXPECT_EQ(range[2].gap_, 2);
-    EXPECT_EQ(range[2].ack_range_, 3);*/
+    ASSERT_EQ(range.size(), 3u);
+    EXPECT_EQ(range[0].GetGap(), 3u);
+    EXPECT_EQ(range[0].GetAckRangeLength(), 5u);
+    EXPECT_EQ(range[1].GetGap(), 4u);
+    EXPECT_EQ(range[1].GetAckRangeLength(), 6u);
+    EXPECT_EQ(range[2].GetGap(), 2u);
+    EXPECT_EQ(range[2].GetAckRangeLength(), 3u);
 
     EXPECT_EQ(frame1.GetEct0(), frame2.GetEct0());
     EXPECT_EQ(frame1.GetEct1(), frame2.GetEct1());

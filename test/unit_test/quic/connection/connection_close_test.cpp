@@ -1,13 +1,13 @@
-#include <gtest/gtest.h>
 #include <chrono>
 #include <memory>
+#include <quicx/quic/if_quic_send_stream.h>
 #include <thread>
 
-#include <quicx/quic/if_quic_send_stream.h>
+#include <gtest/gtest.h>
+
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
-#include "connection_test_util.h"
-#include "mock_sender.h"
+
 #include "quic/connection/connection_base.h"
 #include "quic/connection/connection_client.h"
 #include "quic/connection/connection_server.h"
@@ -15,6 +15,9 @@
 #include "quic/crypto/tls/tls_ctx_server.h"
 #include "quic/packet/packet_decode.h"
 #include "quic/quicx/global_resource.h"
+
+#include "connection_test_util.h"
+#include "mock_sender.h"
 
 namespace quicx {
 namespace quic {

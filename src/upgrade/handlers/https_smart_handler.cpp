@@ -2,14 +2,15 @@
 #include <cstring>
 #include <tuple>
 
-#include "common/log/log.h"
-#include "upgrade/handlers/https_smart_handler.h"
-#include "upgrade/network/if_tcp_socket.h"
-
 #include <openssl/err.h>
 #include <openssl/pem.h>
 #include <openssl/ssl.h>
 #include <openssl/x509.h>
+
+#include "common/log/log.h"
+
+#include "upgrade/handlers/https_smart_handler.h"
+#include "upgrade/network/if_tcp_socket.h"
 
 namespace quicx {
 namespace upgrade {
@@ -71,22 +72,22 @@ bool HttpsSmartHandler::InitializeSSL() {
 
     // Load certificate and private key
     bool cert_loaded = false;
-    if (!settings_.cert_file.empty() && !settings_.key_file.empty()) {
-        if (SSL_CTX_use_certificate_file(ssl_ctx_, settings_.cert_file.c_str(), SSL_FILETYPE_PEM) <= 0) {
-            LOG_ERROR("Failed to load certificate file: %s", settings_.cert_file.c_str());
+    if (!settings_.cert_file_.empty() && !settings_.key_file_.empty()) {
+        if (SSL_CTX_use_certificate_file(ssl_ctx_, settings_.cert_file_.c_str(), SSL_FILETYPE_PEM) <= 0) {
+            LOG_ERROR("Failed to load certificate file: %s", settings_.cert_file_.c_str());
             return false;
         }
 
-        if (SSL_CTX_use_PrivateKey_file(ssl_ctx_, settings_.key_file.c_str(), SSL_FILETYPE_PEM) <= 0) {
-            LOG_ERROR("Failed to load private key file: %s", settings_.key_file.c_str());
+        if (SSL_CTX_use_PrivateKey_file(ssl_ctx_, settings_.key_file_.c_str(), SSL_FILETYPE_PEM) <= 0) {
+            LOG_ERROR("Failed to load private key file: %s", settings_.key_file_.c_str());
             return false;
         }
         cert_loaded = true;
 
-    } else if (settings_.cert_pem && settings_.key_pem) {
+    } else if (settings_.cert_pem_ && settings_.key_pem_) {
         // Load certificate and key from memory
-        BIO* cert_bio = BIO_new_mem_buf(settings_.cert_pem, -1);
-        BIO* key_bio = BIO_new_mem_buf(settings_.key_pem, -1);
+        BIO* cert_bio = BIO_new_mem_buf(settings_.cert_pem_, -1);
+        BIO* key_bio = BIO_new_mem_buf(settings_.key_pem_, -1);
 
         if (!cert_bio || !key_bio) {
             LOG_ERROR("Failed to create BIO for certificate/key");

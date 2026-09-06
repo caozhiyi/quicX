@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "common/util/singleton.h"
+
 #include "http3/qpack/type.h"
 #include "http3/qpack/util.h"
 
@@ -39,4 +40,4 @@ private:
 }  // namespace http3
 }  // namespace quicx
 
-#endif
+#endif  // HTTP3_QPACK_STATIC_TABLE

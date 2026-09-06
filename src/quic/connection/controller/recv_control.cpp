@@ -1,12 +1,12 @@
 #include <algorithm>
 #include <cstring>
+#include <quicx/common/metrics.h>
 
 #include "common/log/log.h"
+#include "common/metrics/metrics_std.h"
 
-#include <quicx/common/metrics.h>
-#include <quicx/common/metrics_std.h>
 #include "quic/config.h"
-#include "quic/connection/controler/recv_control.h"
+#include "quic/connection/controller/recv_control.h"
 #include "quic/connection/util.h"
 #include "quic/frame/ack_frame.h"
 
@@ -31,16 +31,12 @@ void RecvControl::OnPacketRecv(uint64_t time, std::shared_ptr<IPacket> packet) {
     LOG_DEBUG("RecvControl::OnPacketRecv: packet_number=%llu, frame_type_bit=%u, is_ack_eliciting=%d",
         packet->GetPacketNumber(), packet->GetFrameTypeBit(), IsAckElictingPacket(packet->GetFrameTypeBit()) ? 1 : 0);
 
-    if (!IsAckElictingPacket(packet->GetFrameTypeBit())) {
-        LOG_DEBUG("RecvControl::OnPacketRecv: packet %llu is not ack-eliciting, skipping", packet->GetPacketNumber());
-        return;
-    }
-
     // Metrics: Packet received
-    common::Metrics::CounterInc(common::MetricsStd::QuicPacketsRx);
+    Metrics::CounterInc(common::MetricsStd::QuicPacketsRx);
 
     auto ns = CryptoLevel2PacketNumberSpace(packet->GetCryptoLevel());
     uint64_t pkt_num = packet->GetPacketNumber();
+    bool is_ack_eliciting = IsAckElictingPacket(packet->GetFrameTypeBit());
 
     // Update largest received packet number
     if (pkt_num_largest_recvd_[ns] < pkt_num) {
@@ -48,8 +44,85 @@ void RecvControl::OnPacketRecv(uint64_t time, std::shared_ptr<IPacket> packet) {
         largest_recv_time_[ns] = time;
     }
 
-    // Add to ACK queue
+    // RFC 9000 §13.2: Track ALL received packets (including ACK-only / non-
+    // ack-eliciting ones) in the ACK ranges so the next outgoing ACK frame
+    // reports the full set of received packet numbers. This is essential for
+    // corruption recovery: when the peer's Finished (an ack-eliciting packet)
+    // is lost but subsequent ACK-only packets arrive, the gap in our ACK
+    // ranges tells the peer exactly which packet to retransmit.
+    //
+    // CRITICAL (interop integration regression, 2026-09-01): ACK-only packets
+    // must NOT, by themselves, make a packet number space "ack due". Only
+    // ack-eliciting packets carry that obligation (RFC 9000 §13.2). The
+    // Initial/Handshake MUST-ACK-immediately path keys on the *eliciting*
+    // set below; keying it on the combined set made two quicx endpoints ACK
+    // each other's ACK-only packets in an unbounded ACK-of-ACK ping-pong,
+    // starving the application-space ACK until the peer's PTO retransmitted
+    // the whole response (duplicate data+FIN delivery → double response
+    // callback in HTTP/3).
     wait_ack_packet_numbers_[ns].insert(pkt_num);
+    if (is_ack_eliciting) {
+        wait_ack_eliciting_[ns].insert(pkt_num);
+        // A genuinely ack-eliciting packet resets the bounded-reply budget:
+        // normal traffic (peer retransmissions, probes) means the peer is
+        // making progress and future ACK-only packets deserve fresh replies.
+        ack_only_replies_[ns] = 0;
+        ack_only_seq_[ns] = 0;
+    } else {
+        // Non-ack-eliciting packet. RFC 9000 §13.2: it carries no ACK
+        // obligation — keying the MUST-ACK path on it made two quicx
+        // endpoints ACK each other's ACK-only packets in an unbounded
+        // ping-pong (integration regression 2026-09-01: the war dragged the
+        // scheduler to Handshake level and starved the application ACK
+        // until the peer PTO-retransmitted the whole response).
+        //
+        // BUT: in Initial/Handshake spaces a bounded reply is the ONLY
+        // recovery channel for peers that, after losing their Finished, keep
+        // sending ACK-only handshake packets and never PING-probe there
+        // (observed: quinn handshakeloss — our reply's ACK ranges expose the
+        // gap at the lost Finished, which triggers its retransmission).
+        // Cap the replies per space so a quicx↔quicx exchange self-terminates
+        // (~2x kMaxAckOnlyReplies packets) instead of looping forever.
+        if (ns == kInitialNumberSpace || ns == kHandshakeNumberSpace) {
+            if (ack_only_replies_[ns] < kMaxAckOnlyReplies) {
+                ack_only_replies_[ns]++;
+                LOG_DEBUG("RecvControl::OnPacketRecv: replying to ACK-only packet %llu in ns=%d (%u/%u)",
+                    (unsigned long long)pkt_num, ns, ack_only_replies_[ns], kMaxAckOnlyReplies);
+                if (immediate_ack_cb_) {
+                    immediate_ack_cb_(ns);
+                }
+            }
+        } else if (ns == kApplicationNumberSpace) {
+            // RFC 9000 §13.2.1 para 6: acknowledge at least every second
+            // consecutive ACK-only packet. Rationale (aioquic corruption
+            // runs, 2026-09-03): when the client's 1-RTT request datagram
+            // is corrupted, PTO-only clients retransmit no stream data and
+            // instead emit ACK-only / PING probes; our ACK (whose ranges
+            // expose the gap at the lost request pn) is the only signal
+            // that lets them declare the request lost and retransmit it.
+            // PING probes already get the immediate duplicate-ACK path
+            // above; this covers peers whose probes are pure ACK frames.
+            // Routing: through the regular send loop (ack_due_ +
+            // active_send_cb_), NOT the synchronous immediate path —
+            // high-rate synchronous sends from the recv stack race the
+            // worker's send loop (see P0 note in OnPacketRecv).
+            // Self-terminating: any ack-eliciting packet resets the
+            // counter, so this never fires during normal traffic.
+            ack_only_seq_[ns]++;
+            if (ack_only_seq_[ns] >= kAckOnlySeqThreshold) {
+                ack_only_seq_[ns] = 0;
+                LOG_INFO(
+                    "RecvControl::OnPacketRecv: %u consecutive ACK-only packets in ns=%d, sending anti-deadlock ACK",
+                    kAckOnlySeqThreshold, ns);
+                ack_due_[ns] = true;
+                if (active_send_cb_) {
+                    active_send_cb_();
+                }
+            }
+        }
+        LOG_DEBUG("RecvControl::OnPacketRecv: packet %llu is not ack-eliciting, tracking in ranges only", pkt_num);
+        return;
+    }
     LOG_DEBUG("RecvControl::OnPacketRecv: added packet %llu to ACK queue, ns=%d, queue size=%zu", pkt_num, ns,
         wait_ack_packet_numbers_[ns].size());
 
@@ -67,7 +140,40 @@ void RecvControl::OnPacketRecv(uint64_t time, std::shared_ptr<IPacket> packet) {
     // ECN-driven congestion-response responsiveness. Tracked as a
     // learning-only limitation in learning_project_roadmap.md §2.
     uint8_t ecn = 0;
-    bool need_immediate_ack = ShouldSendImmediateAck(ns, pkt_num, ecn);
+    // Probe-triggered immediate ACK (L1 handshakeloss evidence, 30% loss each
+    // direction): when the client's 1-RTT request datagram is lost, quinn and
+    // s2n-quic stop retransmitting the stream data and instead probe with
+    // PING-only 1-RTT packets (PTO). Our ACK is then the only signal that
+    // tells the peer the request pn is missing (the ACK gap triggers its
+    // retransmission). Through the normal delayed-ACK path that reply is a
+    // single ~35-byte datagram; if it is also lost, the peer keeps probing
+    // blind and the connection dies at idle timeout with a 0-byte transfer.
+    // Route PING probes through the synchronous immediate-ACK path, which
+    // also emits a second copy (see SendImmediateAck in connection_base.cpp):
+    // delivery probability goes ~70% -> ~91% per probe. Probes are rare (one
+    // per PTO cycle with exponential backoff), so the synchronous send from
+    // the recv stack does not reintroduce the high-rate ACK race noted below.
+    bool is_ping_probe = (packet->GetFrameTypeBit() & FrameTypeBit::kPingBit) != 0;
+    // Handshake-confirmation window control frames (NEW_CONNECTION_ID) get the
+    // same immediate duplicate-ACK treatment. Evidence (L1 conn 58403, run
+    // logs_l1_pingfix_1): quinn queues 2 NCID frames right after its Finished
+    // and they sit AHEAD of stream data (the GET) in quinn's transmit
+    // priority; each PTO cycle is capped at 2 probe packets, so until the
+    // NCIDs are ACKed the GET is never (re)transmitted. When our single
+    // delayed ACK for those NCIDs is lost, the next PTO re-sends NCIDs again
+    // (observed twice, both ACKs lost) and the request starves until the test
+    // timeout. Acking NCID-bearing packets immediately with a duplicate copy
+    // (~70% -> ~91% delivery) clears the client queue fast so the pending
+    // request goes out on the next PTO. NCID frames only appear in the early
+    // post-handshake window, so this never affects steady-state throughput.
+    bool is_ncid = (packet->GetFrameTypeBit() & FrameTypeBit::kNewConnectionIdBit) != 0;
+    if (is_ping_probe || is_ncid) {
+        LOG_INFO(
+            "RecvControl::OnPacketRecv: control frame probe (pn=%llu, ns=%d, ping=%d ncid=%d) -> immediate duplicate "
+            "ACK",
+            pkt_num, ns, is_ping_probe ? 1 : 0, is_ncid ? 1 : 0);
+    }
+    bool need_immediate_ack = is_ping_probe || is_ncid || ShouldSendImmediateAck(ns, pkt_num, ecn);
 
     if (need_immediate_ack) {
         LOG_DEBUG("RecvControl::OnPacketRecv: triggering immediate ACK for ns=%d", ns);
@@ -86,7 +192,7 @@ void RecvControl::OnPacketRecv(uint64_t time, std::shared_ptr<IPacket> packet) {
         // synchronous SendImmediateAck() from inside the recv stack
         // raced with the worker's own send loop and produced a
         // tail-of-transfer deadlock under sustained upload.
-        if (ns == kInitialNumberSpace || ns == kHandshakeNumberSpace) {
+        if (ns == kInitialNumberSpace || ns == kHandshakeNumberSpace || is_ping_probe || is_ncid) {
             if (immediate_ack_cb_) {
                 immediate_ack_cb_(ns);
             }
@@ -104,7 +210,7 @@ void RecvControl::OnPacketRecv(uint64_t time, std::shared_ptr<IPacket> packet) {
             set_timer_ = true;
             ArmAckDelayTimer();
         }
-        common::Metrics::CounterInc(common::MetricsStd::DiagRecvAckDelayed);
+        Metrics::CounterInc(common::MetricsStd::DiagRecvAckDelayed);
     }
 }
 
@@ -117,7 +223,8 @@ void RecvControl::ArmAckDelayTimer() {
     if (!scheduler_) {
         return;
     }
-    ack_delay_timer_ = scheduler_->AddTimer(life_token_,
+    ack_delay_timer_ = scheduler_->AddTimer(
+        life_token_,
         [this] {
             set_timer_ = false;
             // PERF FIX (P0): The max_ack_delay_ timer only ever fires for
@@ -151,7 +258,7 @@ void RecvControl::OnEcnCounters(uint8_t ecn, PacketNumberSpace ns) {
 }
 
 std::shared_ptr<IFrame> RecvControl::MayGenerateAckFrame(uint64_t now, PacketNumberSpace ns, bool ecn_enabled) {
-    common::Metrics::CounterInc(common::MetricsStd::DiagAckGenCalls);
+    Metrics::CounterInc(common::MetricsStd::DiagAckGenCalls);
     if (set_timer_) {
         ack_delay_timer_.Cancel();
         set_timer_ = false;
@@ -173,8 +280,8 @@ std::shared_ptr<IFrame> RecvControl::MayGenerateAckFrame(uint64_t now, PacketNum
     if (nums.empty()) {
         return nullptr;
     }
-    common::Metrics::CounterInc(common::MetricsStd::DiagAckGenEmitted);
-    common::Metrics::CounterInc(common::MetricsStd::DiagAckQueueDepth, nums.size());
+    Metrics::CounterInc(common::MetricsStd::DiagAckGenEmitted);
+    Metrics::CounterInc(common::MetricsStd::DiagAckQueueDepth, nums.size());
 
     // Collect runs as [high, low]
     std::vector<std::pair<uint64_t, uint64_t>> runs;
@@ -288,6 +395,7 @@ std::shared_ptr<IFrame> RecvControl::MayGenerateAckFrame(uint64_t now, PacketNum
     // Remove ONLY the packets that were actually included in this ACK frame
     for (uint64_t pn : acked_packets) {
         wait_ack_packet_numbers_[ns].erase(pn);
+        wait_ack_eliciting_[ns].erase(pn);
     }
 
     LOG_DEBUG("RecvControl::MayGenerateAckFrame: generated ACK for %zu packets, remaining in queue: %zu",
@@ -304,7 +412,7 @@ std::shared_ptr<IFrame> RecvControl::MayGenerateAckFrame(uint64_t now, PacketNum
     ack_count_++;
     if (last_ack_time_ > 0 && now > last_ack_time_) {
         uint64_t frequency = 1000 / (now - last_ack_time_);  // ACKs per second
-        common::Metrics::GaugeSet(common::MetricsStd::AckFrequency, frequency);
+        Metrics::GaugeSet(common::MetricsStd::AckFrequency, frequency);
     }
     last_ack_time_ = now;
 
@@ -314,8 +422,8 @@ std::shared_ptr<IFrame> RecvControl::MayGenerateAckFrame(uint64_t now, PacketNum
 void RecvControl::UpdateConfig(const TransportParam& tp) {
     max_ack_delay_ = static_cast<uint32_t>(tp.GetMaxAckDelay());
     // Defence in depth against a shift overflow; see SendControl::UpdateConfig.
-    ack_delay_exponent_ = static_cast<uint32_t>(
-        std::min<uint64_t>(tp.GetackDelayExponent(), TransportParam::kMaxAckDelayExponent));
+    ack_delay_exponent_ =
+        static_cast<uint32_t>(std::min<uint64_t>(tp.GetackDelayExponent(), TransportParam::kMaxAckDelayExponent));
 }
 
 // RFC 9000 Section 13.2.1: Determine if immediate ACK is required
@@ -323,24 +431,25 @@ bool RecvControl::ShouldSendImmediateAck(PacketNumberSpace ns, uint64_t pkt_num,
     // RFC 9000: Initial and Handshake packets MUST be ACKed immediately
     if (ns == kInitialNumberSpace || ns == kHandshakeNumberSpace) {
         LOG_DEBUG("ShouldSendImmediateAck: Initial/Handshake packet, immediate ACK required");
-        common::Metrics::CounterInc(common::MetricsStd::DiagRecvAckInitial);
+        Metrics::CounterInc(common::MetricsStd::DiagRecvAckInitial);
         return true;
     }
 
     // RFC 9000 Section 13.2.1: ECN CE packets SHOULD be ACKed immediately
     if ((ecn & 0x03) == 0x03) {  // CE codepoint = 0b11
         LOG_DEBUG("ShouldSendImmediateAck: ECN CE packet, immediate ACK");
-        common::Metrics::CounterInc(common::MetricsStd::DiagRecvAckEcn);
+        Metrics::CounterInc(common::MetricsStd::DiagRecvAckEcn);
         return true;
     }
 
     auto& acked_packets = wait_ack_packet_numbers_[ns];
+    (void)acked_packets;
 
     // RFC 9000: Immediate ACK if packet number < previously received packet (out of order)
     if (pkt_num < pkt_num_largest_recvd_[ns]) {
         LOG_DEBUG("ShouldSendImmediateAck: Out-of-order (pkt=%llu < largest=%llu), immediate ACK", pkt_num,
             pkt_num_largest_recvd_[ns]);
-        common::Metrics::CounterInc(common::MetricsStd::DiagRecvAckOoo);
+        Metrics::CounterInc(common::MetricsStd::DiagRecvAckOoo);
         return true;
     }
 
@@ -348,7 +457,7 @@ bool RecvControl::ShouldSendImmediateAck(PacketNumberSpace ns, uint64_t pkt_num,
     if (pkt_num > pkt_num_largest_recvd_[ns] + 1) {
         LOG_DEBUG("ShouldSendImmediateAck: Gap detected (expected=%llu, got=%llu), immediate ACK",
             pkt_num_largest_recvd_[ns] + 1, pkt_num);
-        common::Metrics::CounterInc(common::MetricsStd::DiagRecvAckGap);
+        Metrics::CounterInc(common::MetricsStd::DiagRecvAckGap);
         return true;
     }
 
@@ -362,9 +471,12 @@ bool RecvControl::ShouldSendImmediateAck(PacketNumberSpace ns, uint64_t pkt_num,
     // bounds worst-case delay if traffic is sparse.
     // The threshold is centralized in quic/config.h::kAckThreshold so it can
     // be tuned in one place without recompiling individual call sites.
-    if (acked_packets.size() >= kAckThreshold) {
-        LOG_DEBUG("ShouldSendImmediateAck: %zu+ packets in queue, sending ACK", kAckThreshold);
-        common::Metrics::CounterInc(common::MetricsStd::DiagRecvAckThreshold);
+    // Count ACK-ELICITING packets only: ACK-only packets tracked in the ranges
+    // do not carry an ACK obligation (RFC 9000 §13.2) and must not inflate the
+    // trigger (see OnPacketRecv).
+    if (wait_ack_eliciting_[ns].size() >= kAckThreshold) {
+        LOG_DEBUG("ShouldSendImmediateAck: %zu+ ack-eliciting packets in queue, sending ACK", kAckThreshold);
+        Metrics::CounterInc(common::MetricsStd::DiagRecvAckThreshold);
         return true;
     }
 
@@ -374,6 +486,9 @@ bool RecvControl::ShouldSendImmediateAck(PacketNumberSpace ns, uint64_t pkt_num,
 // RFC 9000 Section 4.10: Discard packet number space state
 void RecvControl::DiscardPacketNumberSpace(PacketNumberSpace ns) {
     wait_ack_packet_numbers_[ns].clear();
+    wait_ack_eliciting_[ns].clear();
+    ack_only_replies_[ns] = 0;
+    ack_only_seq_[ns] = 0;
     pkt_num_largest_recvd_[ns] = 0;
     largest_recv_time_[ns] = 0;
     ect0_count_[ns] = 0;
@@ -397,8 +512,14 @@ bool RecvControl::ShouldSendAckNow(PacketNumberSpace ns) const {
     }
     // RFC 9000 §13.2.1: Initial and Handshake packets MUST be ACKed
     // immediately. We don't defer them under any circumstance.
+    // Key on the ACK-ELICITING set: ACK-only packets tracked in the ranges
+    // carry no ACK obligation — keying on the combined set makes two quicx
+    // endpoints ACK each other's ACK-only packets forever (ACK-of-ACK
+    // ping-pong) and starves the application-space ACK (2026-09-01
+    // integration regression: double response callback via full response
+    // retransmission).
     if (ns == kInitialNumberSpace || ns == kHandshakeNumberSpace) {
-        return true;
+        return !wait_ack_eliciting_[ns].empty();
     }
     return ack_due_[ns];
 }

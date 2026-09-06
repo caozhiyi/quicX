@@ -67,4 +67,4 @@ private:
 }  // namespace common
 }  // namespace quicx
 
-#endif
+#endif  // COMMON_BUFFER_SHARED_BUFFER_SPAN

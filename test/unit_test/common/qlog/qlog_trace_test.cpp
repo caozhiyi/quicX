@@ -1,11 +1,9 @@
-// Use of this source code is governed by a BSD 3-Clause License
-// that can be found in the LICENSE file.
-
-#include <gtest/gtest.h>
 #include <chrono>
 #include <memory>
 #include <string>
 #include <thread>
+
+#include <gtest/gtest.h>
 
 #include "common/qlog/event/connectivity_events.h"
 #include "common/qlog/event/recovery_events.h"
@@ -20,9 +18,9 @@ namespace {
 // Helper function to create a basic config
 QlogConfig CreateTestConfig() {
     QlogConfig config;
-    config.enabled = true;
-    config.output_dir = "./test_qlogs";
-    config.format = QlogFileFormat::kSequential;
+    config.enabled_ = true;
+    config.output_dir_ = "./test_qlogs";
+    config.format_ = QlogFileFormat::kSequential;
     return config;
 }
 
@@ -244,7 +242,7 @@ TEST(QlogTraceTest, EventCounterIncrements) {
 TEST(QlogTraceTest, EventWhitelistFilter) {
     std::shared_ptr<AsyncWriter> writer;
     QlogConfig config = CreateTestConfig();
-    config.event_whitelist = {"transport:packet_sent", "transport:packet_received"};
+    config.event_whitelist_ = {"transport:packet_sent", "transport:packet_received"};
 
     auto trace = std::make_unique<QlogTrace>("conn-11", VantagePoint::kServer, config);
     writer = std::make_shared<AsyncWriter>(config);
@@ -279,7 +277,7 @@ TEST(QlogTraceTest, EventWhitelistFilter) {
 TEST(QlogTraceTest, EventBlacklistFilter) {
     std::shared_ptr<AsyncWriter> writer;
     QlogConfig config = CreateTestConfig();
-    config.event_blacklist = {"recovery:metrics_updated"};
+    config.event_blacklist_ = {"recovery:metrics_updated"};
 
     auto trace = std::make_unique<QlogTrace>("conn-12", VantagePoint::kServer, config);
     writer = std::make_shared<AsyncWriter>(config);

@@ -1,6 +1,6 @@
-
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
+
 #include "test/unit_test/http3/stream/mock_quic_stream.h"
 
 namespace quicx {
@@ -12,10 +12,6 @@ StreamDirection MockQuicStream::GetDirection() {
 
 uint64_t MockQuicStream::GetStreamID() {
     return stream_id_;
-}
-
-void MockQuicStream::Close() {
-    // No-op for mock
 }
 
 void MockQuicStream::Reset(uint32_t error) {
@@ -51,6 +47,30 @@ inline void DeliverToPeer(std::shared_ptr<MockQuicStream> peer, std::shared_ptr<
     }
 }
 }  // namespace
+
+void MockQuicStream::Close() {
+    // Model FIN like real QUIC: closing the send direction emits a
+    // (possibly zero-length) STREAM frame carrying the FIN bit to the peer.
+    // Production code relies on this — e.g. RequestStream waits for FIN to
+    // complete a response that has no content-length (RFC 9114 §4.1 body
+    // framing), and ResponseStream closes after a body-less response.
+    // Idempotent: a second Close() must not deliver a second FIN.
+    if (fin_sent_) {
+        return;
+    }
+    fin_sent_ = true;
+
+    // Preserve wire ordering: flush any bytes still parked in send_buffer_
+    // before the FIN event reaches the peer.
+    Flush();
+
+    auto peer = peer_.lock();
+    if (peer) {
+        auto chunk = std::make_shared<common::StandaloneBufferChunk>(0);
+        auto buf = std::make_shared<common::SingleBlockBuffer>(chunk);
+        DeliverToPeer(peer, buf, true);
+    }
+}
 
 int32_t MockQuicStream::Send(uint8_t* data, uint32_t len) {
     if (write_cb_) {

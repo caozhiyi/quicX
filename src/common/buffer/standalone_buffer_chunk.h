@@ -52,4 +52,4 @@ private:
 }  // namespace common
 }  // namespace quicx
 
-#endif
+#endif  // COMMON_BUFFER_STANDALONE_BUFFER_CHUNK

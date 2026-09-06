@@ -4,7 +4,9 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+
 #include "common/util/singleton.h"
+
 #include "http3/qpack/huffman_table.h"
 
 namespace quicx {
@@ -55,4 +57,4 @@ private:
 }  // namespace http3
 }  // namespace quicx
 
-#endif
+#endif  // HTTP3_QPACK_HUFFMAN_ENCODER

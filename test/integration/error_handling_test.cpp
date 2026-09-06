@@ -1,15 +1,15 @@
 // Error Handling Integration Test
 // Tests timeout, protocol errors, and error recovery
 
-#include <gtest/gtest.h>
 #include <atomic>
 #include <chrono>
-#include <thread>
-
 #include <quicx/http3/if_client.h>
 #include <quicx/http3/if_request.h>
 #include <quicx/http3/if_response.h>
 #include <quicx/http3/if_server.h>
+#include <thread>
+
+#include <gtest/gtest.h>
 
 #include "test_server_helper.h"
 

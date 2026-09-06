@@ -3,13 +3,11 @@
 
 #include <cstdint>
 #include <map>
+#include <quicx/common/type.h>
 #include <string>
 #include <vector>
 
-#include <quicx/common/type.h>
-
 namespace quicx {
-namespace common {
 
 using MetricID = uint32_t;
 constexpr MetricID kInvalidMetricID = static_cast<MetricID>(-1);
@@ -46,7 +44,6 @@ public:
     static uint64_t NowUs();
 };
 
-}  // namespace common
 }  // namespace quicx
 
-#endif  // COMMON_METRICS_METRICS_H
+#endif  // COMMON_METRICS_METRICS

@@ -69,6 +69,17 @@ public:
     virtual void OnPacketLost(const LossEvent& ev) = 0;
     virtual void OnRoundTripSample(uint64_t latest_rtt, uint64_t ack_delay = 0) = 0;
 
+    /**
+     * @brief Account for packets discarded with a packet number space
+     * (RFC 9002 §7 / Appendix A.10: OnPacketNumberSpaceDiscarded).
+     *
+     * When Initial/Handshake keys are dropped, the unacked bytes in those
+     * spaces must leave bytes_in_flight — but they were NOT lost: firing
+     * OnPacketLost for them wrongly collapses the cwnd. Default no-op so
+     * controllers without the accounting keep compiling.
+     */
+    virtual void OnPacketsDiscarded(uint64_t discarded_bytes) { (void)discarded_bytes; }
+
     enum class SendState { kOk, kBlockedByCwnd, kBlockedByPacing };
     virtual SendState CanSend(uint64_t now, uint64_t& can_send_bytes) const = 0;
 
@@ -90,4 +101,4 @@ public:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_CONGESTION_CONTROL_IF_CONGESTION_CONTROL

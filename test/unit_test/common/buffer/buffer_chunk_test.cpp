@@ -1,4 +1,3 @@
-
 #include <gtest/gtest.h>
 
 #include "common/allocator/pool_block.h"

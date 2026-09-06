@@ -1,9 +1,11 @@
-#include <gtest/gtest.h>
 #include <atomic>
 #include <chrono>
 #include <thread>
 
+#include <gtest/gtest.h>
+
 #include "common/network/address.h"
+
 #include "quic/connection/connection_id.h"
 #include "quic/connection/retry_token_manager.h"
 

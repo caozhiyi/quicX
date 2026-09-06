@@ -1,11 +1,12 @@
 #include <quicx/common/metrics.h>
-#include <quicx/common/metrics_std.h>
-#include "common/log/log.h"
-#include "common/util/time.h"
-#include "quic/config.h"
 
+#include "common/log/log.h"
+#include "common/metrics/metrics_std.h"
+#include "common/util/time.h"
+
+#include "quic/config.h"
 #include "quic/connection/connection_stream_manager.h"
-#include "quic/connection/controler/send_manager.h"
+#include "quic/connection/controller/send_manager.h"
 #include "quic/crypto/tls/type.h"
 #include "quic/frame/ack_frame.h"
 #include "quic/frame/type.h"
@@ -47,7 +48,7 @@ SendOperation SendManager::GetSendOperation() {
         // we still expect bulk transfer means the send loop is repeatedly
         // emptying the queue faster than the application is feeding it —
         // i.e. application-limited rather than network-limited.
-        common::Metrics::CounterInc(common::MetricsStd::DiagSendAllDone);
+        Metrics::CounterInc(common::MetricsStd::DiagSendAllDone);
         return SendOperation::kAllSendDone;
 
     } else {
@@ -84,7 +85,7 @@ SendOperation SendManager::GetSendOperation() {
                 // and cwnd-exhausted yields. Distinguishing them in the dump
                 // would require a second counter; in practice on loopback
                 // pacing rarely fires so this is effectively cwnd_blocked.
-                common::Metrics::CounterInc(common::MetricsStd::DiagSendBlockedCwnd);
+                Metrics::CounterInc(common::MetricsStd::DiagSendBlockedCwnd);
                 return SendOperation::kNextPeriod;
             }
         }
@@ -94,7 +95,7 @@ SendOperation SendManager::GetSendOperation() {
     // per second the worker is allowed to attempt"; cross-check against
     // pkts_tx in the same dump line — a large gap means TrySend itself is
     // failing later (e.g. PacketBuilder produced an empty payload).
-    common::Metrics::CounterInc(common::MetricsStd::DiagSendImmediateOk);
+    Metrics::CounterInc(common::MetricsStd::DiagSendImmediateOk);
     return SendOperation::kSendAgainImmediately;
 }
 
@@ -210,8 +211,7 @@ bool SendManager::CheckAndChargeAmpBudget(uint32_t bytes) {
     amp_blocked_ = true;
     LOG_WARN("anti-amplification budget exhausted. want:%u, remaining:%llu, recv:%llu, sent:%llu", bytes,
         (unsigned long long)amp_controller_.GetRemainingBudget(),
-        (unsigned long long)amp_controller_.GetBytesReceived(),
-        (unsigned long long)amp_controller_.GetBytesSent());
+        (unsigned long long)amp_controller_.GetBytesReceived(), (unsigned long long)amp_controller_.GetBytesSent());
     return false;
 }
 
@@ -351,7 +351,7 @@ void SendManager::SetFlowControlBlocked() {
     // "throughput is governed by peer's flow-control window-extension cadence
     // rather than CPU or network". We deliberately collapse both call sites
     // into one counter for dashboard simplicity.
-    common::Metrics::CounterInc(common::MetricsStd::DiagFlowControlBlocked);
+    Metrics::CounterInc(common::MetricsStd::DiagFlowControlBlocked);
     if (!flow_control_recheck_scheduled_ && scheduler_) {
         flow_control_recheck_scheduled_ = true;
         ArmFlowControlRecheckTimer();
@@ -365,7 +365,8 @@ void SendManager::ArmPacingTimer(uint32_t delay_ms) {
     if (!scheduler_) {
         return;
     }
-    pacing_timer_ = scheduler_->AddTimer(life_token_,
+    pacing_timer_ = scheduler_->AddTimer(
+        life_token_,
         [this]() {
             if (send_retry_cb_) {
                 send_retry_cb_();
@@ -387,7 +388,8 @@ void SendManager::ArmFlowControlRecheckTimer() {
     if (!scheduler_) {
         return;
     }
-    flow_control_recheck_timer_ = scheduler_->AddTimer(life_token_,
+    flow_control_recheck_timer_ = scheduler_->AddTimer(
+        life_token_,
         [this]() {
             flow_control_recheck_scheduled_ = false;
             if (!is_flow_control_blocked_) {
@@ -401,8 +403,8 @@ void SendManager::ArmFlowControlRecheckTimer() {
         kFlowControlRecheckIntervalMs);
 }
 
-std::vector<std::shared_ptr<IFrame>> SendManager::GetPendingFrames(EncryptionLevel level, uint32_t max_bytes,
-    bool exempt_only) {
+std::vector<std::shared_ptr<IFrame>> SendManager::GetPendingFrames(
+    EncryptionLevel level, uint32_t max_bytes, bool exempt_only) {
     std::vector<std::shared_ptr<IFrame>> result;
     uint32_t total_bytes = 0;
 
@@ -447,8 +449,9 @@ std::vector<std::shared_ptr<IFrame>> SendManager::GetPendingFrames(EncryptionLev
         }
 
         if (static_cast<FrameType>(frame->GetType()) == FrameType::kPathChallenge) {
-            LOG_DEBUG("SendManager: PATH_CHALLENGE dispatched to burst builder (streams_allowed=%d, exempt_only=%d, "
-                      "max_bytes=%u)",
+            LOG_DEBUG(
+                "SendManager: PATH_CHALLENGE dispatched to burst builder (streams_allowed=%d, exempt_only=%d, "
+                "max_bytes=%u)",
                 streams_allowed_ ? 1 : 0, exempt_only ? 1 : 0, max_bytes);
         }
         result.push_back(frame);

@@ -3,6 +3,7 @@
 #include "common/decode/decode.h"
 #include "common/log/log.h"
 
+#include "http3/config.h"
 #include "http3/frame/headers_frame.h"
 
 namespace quicx {

@@ -20,7 +20,7 @@
 #include <vector>
 
 #include "quic/congestion_control/congestion_control_factory.h"
-#include "quic/connection/controler/rtt_calculator.h"
+#include "quic/connection/controller/rtt_calculator.h"
 
 namespace quicx {
 namespace perf {
@@ -59,7 +59,7 @@ static void BM_Recovery_RttGetters(benchmark::State& state) {
         uint32_t b = rtt.GetSmoothedRtt();
         uint32_t c = rtt.GetMinRtt();
         uint32_t d = rtt.GetRttVar();
-        uint32_t e = rtt.GetPT0Interval(/*max_ack_delay=*/25);
+        uint32_t e = rtt.GetPTOInterval(/*max_ack_delay=*/25);
         benchmark::DoNotOptimize(a);
         benchmark::DoNotOptimize(b);
         benchmark::DoNotOptimize(c);

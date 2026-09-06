@@ -14,12 +14,12 @@
 // holder can produce it". The tests below pin both halves, plus the constant-time
 // Verify() path that the receive side depends on.
 
-#include <gtest/gtest.h>
-
 #include <cstdlib>
 #include <cstring>
 #include <set>
 #include <vector>
+
+#include <gtest/gtest.h>
 
 #include "quic/connection/stateless_reset_token_generator.h"
 
@@ -142,8 +142,8 @@ TEST(StatelessResetTokenTest, VerifyAcceptsTheTokenItDerived) {
     const auto cid = Cid(0x55);
     const auto token = TokenFor(cid);
 
-    EXPECT_TRUE(StatelessResetTokenGenerator::Instance().Verify(cid.data(), static_cast<uint8_t>(cid.size()),
-        token.data()));
+    EXPECT_TRUE(
+        StatelessResetTokenGenerator::Instance().Verify(cid.data(), static_cast<uint8_t>(cid.size()), token.data()));
 }
 
 TEST(StatelessResetTokenTest, VerifyRejectsAForeignOrTamperedToken) {
@@ -152,22 +152,22 @@ TEST(StatelessResetTokenTest, VerifyRejectsAForeignOrTamperedToken) {
     auto token = TokenFor(cid);
 
     // Right token, wrong CID.
-    EXPECT_FALSE(StatelessResetTokenGenerator::Instance().Verify(other.data(), static_cast<uint8_t>(other.size()),
-        token.data()));
+    EXPECT_FALSE(StatelessResetTokenGenerator::Instance().Verify(
+        other.data(), static_cast<uint8_t>(other.size()), token.data()));
 
     // Right CID, token altered in the last byte -- the case a short-circuiting
     // compare would be slowest to reject and therefore leak.
     token[kTokenLen - 1] ^= 0xFF;
-    EXPECT_FALSE(StatelessResetTokenGenerator::Instance().Verify(cid.data(), static_cast<uint8_t>(cid.size()),
-        token.data()));
+    EXPECT_FALSE(
+        StatelessResetTokenGenerator::Instance().Verify(cid.data(), static_cast<uint8_t>(cid.size()), token.data()));
 }
 
 TEST(StatelessResetTokenTest, RejectsNullBuffers) {
     const auto cid = Cid(0x88);
-    EXPECT_FALSE(StatelessResetTokenGenerator::Instance().Generate(cid.data(), static_cast<uint8_t>(cid.size()),
-        nullptr));
-    EXPECT_FALSE(StatelessResetTokenGenerator::Instance().Verify(cid.data(), static_cast<uint8_t>(cid.size()),
-        nullptr));
+    EXPECT_FALSE(
+        StatelessResetTokenGenerator::Instance().Generate(cid.data(), static_cast<uint8_t>(cid.size()), nullptr));
+    EXPECT_FALSE(
+        StatelessResetTokenGenerator::Instance().Verify(cid.data(), static_cast<uint8_t>(cid.size()), nullptr));
 }
 
 // The key is loaded once, on first use, so this asserts against the environment

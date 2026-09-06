@@ -1,5 +1,6 @@
-#include "common/http/url.h"
 #include <gtest/gtest.h>
+
+#include "common/http/url.h"
 
 namespace quicx {
 namespace common {

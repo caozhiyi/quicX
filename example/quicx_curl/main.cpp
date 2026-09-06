@@ -1,6 +1,7 @@
 #include <csignal>
 #include <cstdlib>
 #include <iostream>
+
 #include "args_parser.h"
 #include "http_client.h"
 #include "output_formatter.h"

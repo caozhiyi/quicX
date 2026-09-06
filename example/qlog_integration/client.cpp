@@ -3,7 +3,6 @@
 #include <condition_variable>
 #include <iostream>
 #include <mutex>
-
 #include <quicx/http3/if_client.h>
 #include <quicx/http3/if_response.h>
 
@@ -17,9 +16,9 @@ int main() {
     config.quic_config_.config_.log_level_ = quicx::LogLevel::kDebug;
 
     // Configure QLog via Http3Config
-    config.quic_config_.config_.qlog_config_.enabled = true;
-    config.quic_config_.config_.qlog_config_.output_dir = "./qlog_output_client";
-    config.quic_config_.config_.qlog_config_.flush_interval_ms = 100;
+    config.quic_config_.config_.qlog_config_.enabled_ = true;
+    config.quic_config_.config_.qlog_config_.output_dir_ = "./qlog_output_client";
+    config.quic_config_.config_.qlog_config_.flush_interval_ms_ = 100;
 
     client->Init(config);
 

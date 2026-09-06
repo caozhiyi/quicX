@@ -1,8 +1,8 @@
 #ifndef QUIC_INCLUDE_IF_QUIC_SERVER
 #define QUIC_INCLUDE_IF_QUIC_SERVER
 
-#include <quicx/quic/type.h>
 #include <cstdint>
+#include <quicx/quic/type.h>
 #include <string>
 
 namespace quicx {
@@ -60,7 +60,7 @@ struct QuicServerConfig {
     const char* cert_pem_ = nullptr;
     /** In-memory PEM private key. */
     const char* key_pem_ = nullptr;
-    /** ALPN label this server advertises (e.g. "hq-29", "h3"). */
+    /** ALPN label this server advertises (e.g. "h3"). */
     std::string alpn_ = "";
     /** Session ticket validity window in seconds (default: 2 days). */
     uint32_t session_ticket_timeout_ = 172800;
@@ -166,4 +166,4 @@ public:
 
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_INCLUDE_IF_QUIC_SERVER

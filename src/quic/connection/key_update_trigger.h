@@ -32,7 +32,10 @@ public:
      * @brief Force a key update on the first 1-RTT packet sent.
      * Used by interop --force-keyupdate. Implies SetEnabled(true).
      */
-    void SetForce(bool force) { force_ = force; if (force) enabled_ = true; }
+    void SetForce(bool force) {
+        force_ = force;
+        if (force) enabled_ = true;
+    }
     bool IsForced() const { return force_; }
 
     /**
@@ -100,7 +103,7 @@ private:
     uint64_t current_pn_;
 };
 
-}  // namespace quic
+}  // namespace quicx
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_CONNECTION_KEY_UPDATE_TRIGGER

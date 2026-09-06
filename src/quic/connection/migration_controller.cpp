@@ -11,12 +11,12 @@ namespace quicx {
 namespace quic {
 
 MigrationController::MigrationController(ConnectionStateMachine& state_machine, PathManager& path_manager,
-    TransportParam& transport_param, DatagramEmitter& emitter, std::weak_ptr<common::IEventLoop> event_loop)
-    : state_machine_(state_machine),
-      path_manager_(path_manager),
-      transport_param_(transport_param),
-      emitter_(emitter),
-      event_loop_(event_loop) {}
+    TransportParam& transport_param, DatagramEmitter& emitter, std::weak_ptr<common::IEventLoop> event_loop):
+    state_machine_(state_machine),
+    path_manager_(path_manager),
+    transport_param_(transport_param),
+    emitter_(emitter),
+    event_loop_(event_loop) {}
 
 bool MigrationController::IsMigrationSupported() const {
     // Gated by the PEER's disable_active_migration declaration (RFC 9000
@@ -32,8 +32,8 @@ bool MigrationController::InitiateMigration(std::weak_ptr<void> owner) {
     return GateBool(owner, [this]() { return InitiateMigrationImpl(); });
 }
 
-MigrationResult MigrationController::InitiateMigrationTo(std::weak_ptr<void> owner, const std::string& local_ip,
-    uint16_t local_port) {
+MigrationResult MigrationController::InitiateMigrationTo(
+    std::weak_ptr<void> owner, const std::string& local_ip, uint16_t local_port) {
     return GateResult(owner, [this, local_ip, local_port]() { return InitiateMigrationToImpl(local_ip, local_port); });
 }
 
@@ -91,8 +91,8 @@ MigrationResult MigrationController::InitiateMigrationToImpl(const std::string& 
     return path_manager_.InitiateMigrationToAddress(local_addr);
 }
 
-MigrationResult MigrationController::InitiateMigrationToPeer(std::weak_ptr<void> owner, const std::string& peer_ip,
-    uint16_t peer_port) {
+MigrationResult MigrationController::InitiateMigrationToPeer(
+    std::weak_ptr<void> owner, const std::string& peer_ip, uint16_t peer_port) {
     return GateResult(owner, [this, peer_ip, peer_port]() { return InitiateMigrationToPeerImpl(peer_ip, peer_port); });
 }
 
@@ -113,8 +113,8 @@ MigrationResult MigrationController::InitiateMigrationToPeerImpl(const std::stri
     // pooled NEW_CONNECTION_ID CID (which a server need not provide).
     const std::string& pref_cid = transport_param_.GetPreferredAddressCID();
     if (!pref_cid.empty()) {
-        path_manager_.SetPreferredConnectionID(reinterpret_cast<const uint8_t*>(pref_cid.data()),
-            static_cast<uint16_t>(pref_cid.size()));
+        path_manager_.SetPreferredConnectionID(
+            reinterpret_cast<const uint8_t*>(pref_cid.data()), static_cast<uint16_t>(pref_cid.size()));
     }
 
     common::Address peer_addr(peer_ip, peer_port);
@@ -127,19 +127,19 @@ void MigrationController::EnsureCallbacksInstalled() {
     if (callbacks_installed_) {
         return;
     }
-    path_manager_.SetSocketFactoryCallbacks([this]() { return emitter_.GetActiveSocket(); },
-        [this](int32_t probe_fd) {
-            emitter_.SetProbeSocket(probe_fd);
+    path_manager_.SetSocketFactoryCallbacks([this]() { return emitter_.GetActiveSocket().fd; },
+        [this](common::SocketHandle probe) {
+            emitter_.SetProbeSocket(probe);
 
             // Register immediately: PATH_RESPONSE arrives on the probe
             // socket, so it must be in the poll set before validation
             // starts. (The old code registered it after
             // InitiateMigrationToAddress returned, which left a window.)
-            if (register_socket_cb_ && probe_fd > 0) {
-                if (!register_socket_cb_(probe_fd)) {
-                    LOG_ERROR("MigrationController: failed to register probe socket %d with receiver", probe_fd);
+            if (register_socket_cb_ && probe.fd > 0) {
+                if (!register_socket_cb_(probe)) {
+                    LOG_ERROR("MigrationController: failed to register probe socket %d with receiver", probe.fd);
                 } else {
-                    LOG_INFO("MigrationController: registered probe socket %d with receiver", probe_fd);
+                    LOG_INFO("MigrationController: registered probe socket %d with receiver", probe.fd);
                 }
             }
         });
@@ -213,35 +213,35 @@ MigrationResult MigrationController::GateResult(std::weak_ptr<void> owner, std::
 }
 
 void MigrationController::OnMigrationComplete(const MigrationInfo& info) {
-    LOG_INFO("MigrationController::OnMigrationComplete: result=%d, is_nat_rebinding=%d",
-        static_cast<int>(info.result_), info.is_nat_rebinding_);
+    LOG_INFO("MigrationController::OnMigrationComplete: result=%d, is_nat_rebinding=%d", static_cast<int>(info.result_),
+        info.is_nat_rebinding_);
 
     if (info.result_ == MigrationResult::kSuccess) {
-        if (emitter_.GetProbeSocket() > 0) {
-            // Promote the probe socket; the emitter hands back the fd it
+        if (emitter_.GetProbeSocket().fd > 0) {
+            // Promote the probe socket; the emitter hands back the socket it
             // retired so we can dispose of it. Nobody used to do this, which
             // is how the old socket leaked (both sides of the old code assumed
             // the other side would close it).
-            const int32_t retired = emitter_.SwitchToProbeSocket();
+            const common::SocketHandle retired = emitter_.SwitchToProbeSocket();
 
             // Refresh the cached local address from the new socket.
             common::Address new_local;
-            if (local_addr_updated_cb_ && common::ParseLocalAddress(emitter_.GetActiveSocket(), new_local)) {
+            if (local_addr_updated_cb_ && common::ParseLocalAddress(emitter_.GetActiveSocket().fd, new_local)) {
                 local_addr_updated_cb_(new_local);
             }
 
-            LOG_INFO("MigrationController: switched to probe socket %d (retired: %d)", emitter_.GetActiveSocket(),
-                retired);
+            LOG_INFO("MigrationController: switched to probe socket %d (retired: %d)", emitter_.GetActiveSocket().fd,
+                retired.fd);
 
-            RetireSocket(retired, "migration succeeded");
+            RetireSocket(retired.fd, "migration succeeded");
         }
     } else {
         // Failure: the probe socket is ours to dispose of. PathManager no
         // longer closes it (it never holds it), so there is exactly one close.
-        const int32_t probe = emitter_.GetProbeSocket();
-        if (probe > 0) {
+        const common::SocketHandle probe = emitter_.GetProbeSocket();
+        if (probe.fd > 0) {
             emitter_.ClearProbeSocket();
-            RetireSocket(probe, "migration failed");
+            RetireSocket(probe.fd, "migration failed");
         }
     }
 

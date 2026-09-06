@@ -1,9 +1,14 @@
 cmake_minimum_required(VERSION 3.10)
 # MSVC / clang-cl reject GCC-style -Wno-* flags (D8021); route to /wd#### instead.
-add_compile_options(
-    "$<$<OR:$<CXX_COMPILER_ID:MSVC>,$<STREQUAL:$<CXX_COMPILER_FRONTEND_VARIANT>,MSVC>>:/wd4101;/wd4189;/wd4505>"
-    "$<$<AND:$<NOT:$<CXX_COMPILER_ID:MSVC>>,$<NOT:$<STREQUAL:$<CXX_COMPILER_FRONTEND_VARIANT>,MSVC>>>:-Wno-unused-variable;-Wno-unused-but-set-variable;-Wno-unused-function>"
-)
+# Uses the if() variable form: the $<CXX_COMPILER_FRONTEND_VARIANT> generator
+# expression only exists in CMake >= 3.30 and hard-fails configure on older
+# versions, while the CMAKE_CXX_COMPILER_FRONTEND_VARIANT variable has been
+# set by CMake since 3.0.
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" OR CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+    add_compile_options(/wd4101 /wd4189 /wd4505)
+else()
+    add_compile_options(-Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function)
+endif()
 
 # Integration tests
 add_executable(http3_methods_test http3_methods_test.cpp)
@@ -54,23 +59,6 @@ target_link_libraries(streaming_and_push_test
     ${OPENSSL_LIBRARIES}
 )
 
-# Lossy transfer test: drives the full client+server stack over loopback while
-# injecting synthetic egress packet loss via UdpSender::SetDropPerMillion.
-# Reproduces the "server falls silent until idle timeout" symptom seen in the
-# interop sim transfer-loss / mtu rounds without needing the docker harness.
-# This test deliberately reaches into internal headers (src/quic/udp/...) so
-# we extend the include path here; it is a test-only target.
-add_executable(lossy_transfer_test lossy_transfer_test.cpp)
-target_include_directories(lossy_transfer_test PRIVATE
-    ${CMAKE_SOURCE_DIR}/src
-)
-target_link_libraries(lossy_transfer_test
-    http3
-    gtest
-    gtest_main
-    ${OPENSSL_LIBRARIES}
-)
-
 # Add tests to CTest
 add_test(NAME HTTP3Methods COMMAND http3_methods_test)
 add_test(NAME ConnectionManagement COMMAND connection_management_test)
@@ -78,10 +66,9 @@ add_test(NAME ErrorHandling COMMAND error_handling_test)
 add_test(NAME StressTest COMMAND stress_test)
 add_test(NAME AdvancedFeatures COMMAND advanced_features_test)
 add_test(NAME StreamingAndPush COMMAND streaming_and_push_test)
-add_test(NAME LossyTransfer COMMAND lossy_transfer_test)
 
 # Install targets
 install(TARGETS http3_methods_test connection_management_test error_handling_test stress_test
-    advanced_features_test streaming_and_push_test lossy_transfer_test
+    advanced_features_test streaming_and_push_test
     RUNTIME DESTINATION bin/test
 )

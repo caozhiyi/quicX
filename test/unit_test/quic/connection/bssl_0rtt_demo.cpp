@@ -1,16 +1,14 @@
-#include <gtest/gtest.h>
-
 #include <cstring>
+// A minimal QUIC/TLS harness using only BoringSSL APIs to demonstrate 0-RTT.
+// This test does not use the project's QUIC code. It directly wires SSL_quic_method
+// callbacks and shuttles handshake/post-handshake messages between peers.
 #include <vector>
 
+#include <gtest/gtest.h>
 #include <openssl/bio.h>
 #include <openssl/crypto.h>
 #include <openssl/pem.h>
 #include <openssl/ssl.h>
-
-// A minimal QUIC/TLS harness using only BoringSSL APIs to demonstrate 0-RTT.
-// This test does not use the project's QUIC code. It directly wires SSL_quic_method
-// callbacks and shuttles handshake/post-handshake messages between peers.
 
 namespace quicx {
 namespace quic {

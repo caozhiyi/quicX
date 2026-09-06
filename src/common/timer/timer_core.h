@@ -151,13 +151,13 @@ public:
 
 private:
     struct Entry {
-        uint32_t gen = 1;     // release token
-        int8_t level = -1;    // -1 = node parked in idle_ (or absent); 0..2 wheel; 3 overflow
+        uint32_t gen = 1;   // release token
+        int8_t level = -1;  // -1 = node parked in idle_ (or absent); 0..2 wheel; 3 overflow
         uint32_t slot = 0;
         Slot::iterator it;
         uint32_t next_free = kNoEntry;
-        bool in_use = false;         // a live handle references this entry
-        bool has_node = false;       // a TimerNode exists for this entry
+        bool in_use = false;    // a live handle references this entry
+        bool has_node = false;  // a TimerNode exists for this entry
     };
 
     uint32_t AllocEntry();

@@ -679,7 +679,6 @@ void ReqRespBaseStream::HandleSent(uint32_t length, uint32_t error) {
     // the wire" within a window of order kBackpressureHighWatermark.
     // 256 KB is ~2× a typical loopback cwnd in our perf runs while still
     // being negligible against multi-MB / multi-GB payloads.
-    constexpr uint64_t kBackpressureHighWatermark = 16 * 1024 * 1024;  // EXPERIMENT: was 256KB
     if (stream_) {
         uint64_t pending = stream_->GetPendingSendBytes();
         if (pending >= kBackpressureHighWatermark) {
@@ -688,10 +687,6 @@ void ReqRespBaseStream::HandleSent(uint32_t length, uint32_t error) {
             return;
         }
     }
-
-    // Optimized batching: Read multiple chunks from provider and send as single DataFrame
-    // This reduces HTTP/3 frame overhead and improves throughput significantly
-    const size_t kMaxBatchSize = 64 * 1024;  // 64KB per batch - matches upload optimization
 
     // Create a single buffer for the entire batch
     auto batch_buffer =

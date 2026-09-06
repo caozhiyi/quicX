@@ -1,5 +1,3 @@
-// Copyright (c) the QuicX authors.
-// SPDX-License-Identifier: BSD-3-Clause
 #ifndef QUICX_COMMON_VERSION_H
 #define QUICX_COMMON_VERSION_H
 
@@ -7,8 +5,8 @@
 //
 // NOTE: This is the *product* version of the QuicX library.  Do NOT confuse it
 // with the on-the-wire QUIC protocol version (RFC 9000 / RFC 9369), which is
-// defined separately in <quic/common/version.h> as
-// `quicx::quic::kQuicVersion1` / `kQuicVersion2`.
+// defined separately in <quicx/quic/type.h> as
+// `quicx::kQuicVersion1` / `quicx::kQuicVersion2`.
 //
 // QuicX is a *learning reference* implementation of QUIC / HTTP/3.  The
 // `1.0.0` milestone marks completion of the learning-reference goal (the

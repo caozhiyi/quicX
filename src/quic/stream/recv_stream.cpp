@@ -1,7 +1,7 @@
 #include <quicx/common/metrics.h>
-#include <quicx/common/metrics_std.h>
 
 #include "common/log/log.h"
+#include "common/metrics/metrics_std.h"
 
 #include "quic/config.h"
 #include "quic/connection/error.h"
@@ -236,8 +236,8 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
             // stream forever incomplete. Normalize to an empty frame at
             // except_offset_ and fall through so the FIN can complete delivery.
             if (!stream_frame->IsFin()) {
-                LOG_DEBUG("stream recv fully duplicate frame. stream id:%llu, offset:%llu, except offset:%llu", stream_id_,
-                    stream_frame->GetOffset(), except_offset_);
+                LOG_DEBUG("stream recv fully duplicate frame. stream id:%llu, offset:%llu, except offset:%llu",
+                    stream_id_, stream_frame->GetOffset(), except_offset_);
                 return 0;
             }
             common::SharedBufferSpan empty_span;
@@ -374,8 +374,9 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
         // limit, whose threshold was too tight and killed legitimate large
         // transfers (P0: quicx self-loop transfer/chacha20/rebind-*/connectionmigration).
         if (out_order_bytes_ + frame_len > kMaxOutOfOrderBytes) {
-            LOG_ERROR("out-of-order buffer exceeded byte limit. stream id:%d, buffered bytes:%llu, "
-                      "frame len:%u, limit:%llu",
+            LOG_ERROR(
+                "out-of-order buffer exceeded byte limit. stream id:%d, buffered bytes:%llu, "
+                "frame len:%u, limit:%llu",
                 stream_id_, out_order_bytes_, frame_len, (uint64_t)kMaxOutOfOrderBytes);
             if (connection_close_cb_) {
                 connection_close_cb_(
@@ -418,7 +419,7 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
     }
 
     // Metrics: Stream data received
-    common::Metrics::CounterInc(common::MetricsStd::QuicStreamsBytesRx, stream_frame->GetLength());
+    Metrics::CounterInc(common::MetricsStd::QuicStreamsBytesRx, stream_frame->GetLength());
 
     return stream_frame->GetLength();
 }
@@ -486,7 +487,7 @@ void RecvStream::OnResetStreamFrame(std::shared_ptr<IFrame> frame) {
     }
 
     // Metrics: RESET_STREAM received
-    common::Metrics::CounterInc(common::MetricsStd::QuicStreamsResetRx);
+    Metrics::CounterInc(common::MetricsStd::QuicStreamsResetRx);
 }
 
 }  // namespace quic

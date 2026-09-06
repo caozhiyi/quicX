@@ -21,4 +21,4 @@ public:
 }  // namespace common
 }  // namespace quicx
 
-#endif
+#endif  // COMMON_UTIL_C_SMART_PTR

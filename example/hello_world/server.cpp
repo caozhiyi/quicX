@@ -1,6 +1,3 @@
-#include <quicx/http3/if_request.h>
-#include <quicx/http3/if_response.h>
-#include <quicx/http3/if_server.h>
 #include <atomic>
 #include <chrono>
 #include <csignal>
@@ -8,13 +5,16 @@
 #include <cstdlib>
 #include <iostream>
 #include <memory>
+#include <quicx/http3/if_request.h>
+#include <quicx/http3/if_response.h>
+#include <quicx/http3/if_server.h>
 #include <string>
 #include <thread>
-
 // Use an atomic flag instead of calling Stop() directly from the signal
 // handler: Stop() -> Destroy() takes locks and frees memory, neither of which
 // is async-signal-safe. Calling them from the signal context aborts (verified
 // experimentally — server SIGABRTs and heaptrack output is 0 bytes).
+
 static std::atomic<bool> g_shutdown{false};
 
 static void HandleSignal(int) {
@@ -103,15 +103,15 @@ int main(int argc, char** argv) {
     config.quic_config_.config_.log_path_ = "/tmp/h3_server_logs";
 
     // Enable QLog so we can visualize the connection in qvis
-    config.quic_config_.config_.qlog_config_.enabled = true;
-    config.quic_config_.config_.qlog_config_.output_dir = "./qlog_output_server";
-    config.quic_config_.config_.qlog_config_.flush_interval_ms = 100;
+    config.quic_config_.config_.qlog_config_.enabled_ = true;
+    config.quic_config_.config_.qlog_config_.output_dir_ = "./qlog_output_server";
+    config.quic_config_.config_.qlog_config_.flush_interval_ms_ = 100;
 
     // Expose Prometheus metrics over HTTP/3 at GET /metrics so we can probe
     // server internal state with: quicx-curl https://localhost:7001/metrics
-    config.metrics_.enable = true;
-    config.metrics_.http_enable = true;
-    config.metrics_.http_path = "/metrics";
+    config.metrics_.enable_ = true;
+    config.metrics_.http_enable_ = true;
+    config.metrics_.http_path_ = "/metrics";
 
     server->Init(config);
     if (!server->Start("0.0.0.0", listen_port)) {

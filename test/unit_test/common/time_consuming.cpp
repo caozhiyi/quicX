@@ -1,5 +1,6 @@
-#include "time_consuming.h"
 #include <iostream>
+
+#include "time_consuming.h"
 
 namespace quicx {
 namespace common {
@@ -15,5 +16,5 @@ TimeConsuming::~TimeConsuming() {
     std::cout << name_ << " used " << time_span.count() << " ms." << std::endl;
 }
 
-}  // namespace common
+}  // namespace quicx
 }  // namespace quicx

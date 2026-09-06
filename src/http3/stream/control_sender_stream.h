@@ -3,9 +3,9 @@
 
 #include <functional>
 #include <memory>
+#include <quicx/quic/if_quic_send_stream.h>
 #include <unordered_map>
 
-#include <quicx/quic/if_quic_send_stream.h>
 #include "http3/stream/if_send_stream.h"
 
 namespace quicx {
@@ -36,4 +36,4 @@ public:
 }  // namespace http3
 }  // namespace quicx
 
-#endif
+#endif  // HTTP3_STREAM_CONTROL_SENDER_STREAM

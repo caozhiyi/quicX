@@ -1,5 +1,3 @@
-#include "common/timer/timer_core.h"
-
 #ifdef _MSC_VER
 #include <intrin.h>
 static inline int __builtin_ctzll(unsigned long long mask) {
@@ -17,6 +15,8 @@ static inline int __builtin_ctzll(unsigned long long mask) {
     return (int)index;
 }
 #endif
+
+#include "common/timer/timer_core.h"
 
 namespace quicx {
 namespace common {
@@ -283,7 +283,8 @@ bool TimerCore::Rearm(uint32_t index, uint32_t gen, uint32_t delay_ms, uint64_t 
     // Fast path for the dominant QUIC pattern (per-packet PTO / idle reset):
     // the timer being rearmed is the sole holder of the current minimum and the
     // new deadline is not later, so the cache can follow it without a rescan.
-    bool keep_min = armed && min_valid_ && min_holders_ == 1 && old_deadline == min_deadline_ && deadline <= min_deadline_;
+    bool keep_min =
+        armed && min_valid_ && min_holders_ == 1 && old_deadline == min_deadline_ && deadline <= min_deadline_;
 
     if (armed) {
         DetachArmed(index, /*destroy=*/false);
@@ -590,20 +591,20 @@ void TimerCore::FireSlot(uint32_t c0) {
         DetachArmed(index, /*destroy=*/false);
 
         // Lock the owner and keep it alive for the whole duration of the callback.
-    // This is the documented contract of the owner guard (if_timer_scheduler.h):
-    // it is what makes it safe for a callback to reference its owning object.
-    // Concretely, even if another thread drops the last external reference to
-    // the owner (e.g. the connection) while this callback is in flight, the
-    // owner cannot be destroyed — and its vptr/state torn — until the callback
-    // returns. Without this, TSan reports a dtor-vs-callback data race.
-    std::shared_ptr<void> owner_guard;
-    bool skip = false;
-    if (slab_[index].it->has_owner) {
-        owner_guard = slab_[index].it->owner.lock();
-        if (!owner_guard) {
-            skip = true;
+        // This is the documented contract of the owner guard (if_timer_scheduler.h):
+        // it is what makes it safe for a callback to reference its owning object.
+        // Concretely, even if another thread drops the last external reference to
+        // the owner (e.g. the connection) while this callback is in flight, the
+        // owner cannot be destroyed — and its vptr/state torn — until the callback
+        // returns. Without this, TSan reports a dtor-vs-callback data race.
+        std::shared_ptr<void> owner_guard;
+        bool skip = false;
+        if (slab_[index].it->has_owner) {
+            owner_guard = slab_[index].it->owner.lock();
+            if (!owner_guard) {
+                skip = true;
+            }
         }
-    }
         uint32_t interval = slab_[index].it->interval;
         // Snapshot the release token: if the callback releases this entry and a
         // nested Arm() recycles the slot, the post-fire bookkeeping below must

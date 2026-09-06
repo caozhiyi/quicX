@@ -14,13 +14,14 @@
 //     len = 0x100000000 read 0 bytes, compared 0 == 0, and reported success
 //     holding a 4 GiB string.
 
-#include <gtest/gtest.h>
-
 #include <memory>
 #include <vector>
 
+#include <gtest/gtest.h>
+
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
+
 #include "http3/qpack/util.h"
 
 namespace quicx {

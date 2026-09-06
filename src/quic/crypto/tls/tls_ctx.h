@@ -1,9 +1,11 @@
 #ifndef QUIC_CRYPTO_TLS_TLS_CTX
 #define QUIC_CRYPTO_TLS_TLS_CTX
 
-#include <openssl/ssl.h>
 #include <cstdio>
 #include <string>
+
+#include <openssl/ssl.h>
+
 #include "quic/crypto/tls/type.h"
 
 namespace quicx {
@@ -36,4 +38,4 @@ private:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_CRYPTO_TLS_TLS_CTX

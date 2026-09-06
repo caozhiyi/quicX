@@ -1,11 +1,11 @@
+#include <mutex>
+#include <shared_mutex>
+#include <vector>
+
 #include "common/http/url.h"
 #include "common/log/log.h"
 #include "common/network/address.h"
 #include "common/network/io_handle.h"
-
-#include <mutex>
-#include <shared_mutex>
-#include <vector>
 
 #include "http3/config.h"
 #include "http3/http/client.h"
@@ -272,7 +272,8 @@ void Client::OnConnection(
         // uses after we return (timer registration, log writes, etc.).
         if (is_closing_.load(std::memory_order_relaxed) && pending_close_count_.load(std::memory_order_relaxed) > 0) {
             pending_close_count_.fetch_sub(1, std::memory_order_relaxed);
-            if (pending_close_count_.load(std::memory_order_relaxed) == 0 && !destroy_scheduled_.load(std::memory_order_relaxed)) {
+            if (pending_close_count_.load(std::memory_order_relaxed) == 0 &&
+                !destroy_scheduled_.load(std::memory_order_relaxed)) {
                 destroy_scheduled_.store(true, std::memory_order_relaxed);
                 LOG_DEBUG("Client: all connections closed, destroying quic client immediately");
                 quic_->AddTimer(0, [this]() { quic_->Destroy(); });

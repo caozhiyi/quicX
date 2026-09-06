@@ -1,12 +1,13 @@
 #include <algorithm>
-
 #include <quicx/common/metrics.h>
-#include <quicx/common/metrics_std.h>
-#include "common/log/log.h"
 
+#include "common/log/log.h"
+#include "common/metrics/metrics_std.h"
+
+#include "quic/config.h"
 #include "quic/connection/connection_state_machine.h"
 #include "quic/connection/connection_timer_coordinator.h"
-#include "quic/connection/controler/send_manager.h"
+#include "quic/connection/controller/send_manager.h"
 #include "quic/connection/transport_param.h"
 
 namespace quicx {
@@ -37,6 +38,19 @@ TimerCoordinator::~TimerCoordinator() {
 
 // ==================== Idle Timeout Management ====================
 
+uint32_t TimerCoordinator::GetIdleTimeoutMs() const {
+    uint32_t negotiated = static_cast<uint32_t>(transport_param_.GetMaxIdleTimeout());
+    if (negotiated == 0) {
+        // Idle timeout disabled by configuration. The grace window widens an
+        // existing timeout; it must never switch one on.
+        return 0;
+    }
+    if (handshake_confirm_grace_ && !handshake_confirmed_) {
+        return std::max(negotiated, kHandshakeConfirmGraceMs);
+    }
+    return negotiated;
+}
+
 void TimerCoordinator::StartIdleTimer(IdleTimeoutCallback callback) {
     auto loop = event_loop_.lock();
     if (!loop) {
@@ -46,7 +60,7 @@ void TimerCoordinator::StartIdleTimer(IdleTimeoutCallback callback) {
 
     idle_timeout_callback_ = callback;
 
-    uint32_t timeout_ms = static_cast<uint32_t>(transport_param_.GetMaxIdleTimeout());
+    uint32_t timeout_ms = GetIdleTimeoutMs();
     if (timeout_ms == 0) {
         LOG_WARN("TimerCoordinator::StartIdleTimer: idle timeout is 0, timer not started");
         return;
@@ -56,6 +70,27 @@ void TimerCoordinator::StartIdleTimer(IdleTimeoutCallback callback) {
     idle_timer_active_ = true;
 
     LOG_DEBUG("TimerCoordinator: idle timer started with timeout %u ms", timeout_ms);
+}
+
+void TimerCoordinator::EnterHandshakeConfirmGrace() {
+    if (handshake_confirm_grace_) {
+        return;
+    }
+    handshake_confirm_grace_ = true;
+    // Re-arm immediately: the timer is already running on the negotiated
+    // (shorter) value, and the window we are widening is open right now.
+    ResetIdleTimer();
+}
+
+void TimerCoordinator::SetHandshakeConfirmed() {
+    if (handshake_confirmed_) {
+        return;
+    }
+    handshake_confirmed_ = true;
+    // Drop back to the negotiated timeout without waiting for the next packet;
+    // otherwise the widened value would linger for a full grace period on a
+    // connection that is now behaving normally.
+    ResetIdleTimer();
 }
 
 void TimerCoordinator::ResetIdleTimer() {
@@ -69,7 +104,7 @@ void TimerCoordinator::ResetIdleTimer() {
         return;
     }
 
-    uint32_t timeout_ms = static_cast<uint32_t>(transport_param_.GetMaxIdleTimeout());
+    uint32_t timeout_ms = GetIdleTimeoutMs();
 
     // Steady state: one packet in or out per call, so this is a hot path. Rearm
     // splices the existing node to its new slot -- no allocation, no re-copy of
@@ -116,10 +151,6 @@ void TimerCoordinator::StopIdleTimer() {
 
 // ==================== Keep-Alive ====================
 
-// Floor for the keep-alive interval: fast enough to survive the interop
-// runner's 5 s NAT-rebind cadence, cheap enough to be negligible on the wire.
-static constexpr uint32_t kMinKeepAliveMs = 1000;
-
 void TimerCoordinator::StartKeepAliveTimer(TimerCallback callback) {
     if (keep_alive_active_) {
         return;
@@ -161,7 +192,8 @@ void TimerCoordinator::ArmKeepAliveTimer(const std::shared_ptr<common::IEventLoo
     // Copy the callback into the timer body: keep_alive_callback_ itself may
     // be reassigned by a future Start/Stop while this timer is still armed.
     auto cb = keep_alive_callback_;
-    keep_alive_timer_ = loop->AddRepeatTimer(life_token_,
+    keep_alive_timer_ = loop->AddRepeatTimer(
+        life_token_,
         [this, cb]() {
             // Stay silent once the connection can no longer send (closing,
             // draining, terminating): a PING there would be dropped or, worse,
@@ -190,7 +222,7 @@ void TimerCoordinator::OnIdleTimeoutInternal() {
     idle_timer_active_ = false;
 
     // Metrics: idle timeout counter
-    common::Metrics::CounterInc(common::MetricsStd::IdleTimeoutTotal);
+    Metrics::CounterInc(common::MetricsStd::IdleTimeoutTotal);
 
     LOG_INFO("TimerCoordinator: idle timeout triggered");
 
@@ -208,15 +240,26 @@ void TimerCoordinator::CheckPTOTimeout() {
         return;
     }
 
+    // While the handshake is unconfirmed the PTO backoff is deliberately
+    // capped much lower (kMaxPTOBackoffUnconfirmed, quic/config.h), so PTOs
+    // accumulate roughly an order of magnitude faster than this counter was
+    // calibrated for. Counting them as "persistent timeout" here would close
+    // the connection inside the window we just widened for it -- the peer
+    // could still be retransmitting its Finished on schedule. The idle timer
+    // (running on the grace period) is the right arbiter for that phase.
+    if (!send_manager_.GetRttCalculator().IsHandshakeConfirmed()) {
+        return;
+    }
+
     // RFC 9002: Check consecutive PTO count, if too many then consider connection dead
     uint32_t consecutive_ptos = send_manager_.GetRttCalculator().GetConsecutivePTOCount();
 
     // RFC 9002: Close connection after persistent timeout (~3 PTO cycles)
-    if (consecutive_ptos >= RttCalculator::kMaxConsecutivePTOs) {
+    if (consecutive_ptos >= kMaxConsecutivePTOs) {
         LOG_WARN("TimerCoordinator: persistent timeout detected (%u consecutive PTOs without ACK)", consecutive_ptos);
 
         // Metrics: PTO counter
-        common::Metrics::CounterInc(common::MetricsStd::PtoCountTotal);
+        Metrics::CounterInc(common::MetricsStd::PtoCountTotal);
 
         // Trigger idle timeout callback (will cause connection close)
         if (idle_timeout_callback_) {
@@ -250,7 +293,7 @@ void TimerCoordinator::OnThreadTransferAfter() {
 
     // Re-arm idle timeout timer on the (possibly new) EventLoop
     if (idle_timer_active_) {
-        uint32_t timeout_ms = static_cast<uint32_t>(transport_param_.GetMaxIdleTimeout());
+        uint32_t timeout_ms = GetIdleTimeoutMs();
         idle_timer_ = loop->AddTimer(life_token_, [this]() { OnIdleTimeoutInternal(); }, timeout_ms);
         LOG_DEBUG("TimerCoordinator: re-added idle timer after thread transfer");
     }
@@ -279,19 +322,25 @@ uint64_t TimerCoordinator::AddTimer(TimerCallback callback, uint32_t timeout_ms,
         // NOT drop its entry after the first fire -- doing so would destroy the
         // Timer handle and cancel the underlying node. The id stays until an
         // explicit RemoveTimer or the coordinator's life token expires.
-        user_timers_[id] = loop->AddRepeatTimer(life_token_, [this, id, callback]() {
-            (void)id;
-            if (callback) {
-                callback();
-            }
-        }, timeout_ms);
+        user_timers_[id] = loop->AddRepeatTimer(
+            life_token_,
+            [this, id, callback]() {
+                (void)id;
+                if (callback) {
+                    callback();
+                }
+            },
+            timeout_ms);
     } else {
-        user_timers_[id] = loop->AddTimer(life_token_, [this, id, callback]() {
-            if (callback) {
-                callback();
-            }
-            user_timers_.erase(id);
-        }, timeout_ms);
+        user_timers_[id] = loop->AddTimer(
+            life_token_,
+            [this, id, callback]() {
+                if (callback) {
+                    callback();
+                }
+                user_timers_.erase(id);
+            },
+            timeout_ms);
     }
 
     return id;

@@ -5,7 +5,7 @@
 
 #include "common/log/log.h"
 
-#include "quic/connection/controler/rtt_calculator.h"
+#include "quic/connection/controller/rtt_calculator.h"
 
 namespace quicx {
 namespace quic {
@@ -71,8 +71,7 @@ bool RttCalculator::UpdateRtt(uint64_t send_time, uint64_t now, uint64_t ack_del
 
         // rttvar_sample = abs(smoothed_rtt - adjusted_rtt)
         uint32_t srtt2 = smoothed_rtt_.load(std::memory_order_relaxed);
-        uint32_t rttvar_sample =
-            srtt2 > adjusted_rtt ? srtt2 - adjusted_rtt : adjusted_rtt - srtt2;
+        uint32_t rttvar_sample = srtt2 > adjusted_rtt ? srtt2 - adjusted_rtt : adjusted_rtt - srtt2;
 
         // rttvar = 3/4 * rttvar + 1/4 * rttvar_sample
         uint32_t rv = rtt_var_.load(std::memory_order_relaxed);
@@ -98,37 +97,39 @@ void RttCalculator::Reset() {
     last_update_time_.store(0, std::memory_order_relaxed);
 }
 
-uint32_t RttCalculator::GetPT0Interval(uint32_t max_ack_delay) {
+uint32_t RttCalculator::GetPTOInterval(uint32_t max_ack_delay) {
     // PTO = smoothed_rtt + max(4*rttvar, kGranularity) + max_ack_delay
     // kGranularity is 1ms, so use 1 instead of 1000
     return smoothed_rtt_.load(std::memory_order_relaxed) +
-        std::max<uint32_t>(rtt_var_.load(std::memory_order_relaxed) << 2, 1) + max_ack_delay;
+           std::max<uint32_t>(rtt_var_.load(std::memory_order_relaxed) << 2, 1) + max_ack_delay;
 }
 
 // RFC 9002 Section 6.2: PTO with exponential backoff
 uint32_t RttCalculator::GetPTOWithBackoff(uint32_t max_ack_delay) {
-    uint32_t base_pto = GetPT0Interval(max_ack_delay);
+    uint32_t base_pto = GetPTOInterval(max_ack_delay);
 
     // Apply exponential backoff: PTO * (2 ^ pto_count)
-    // Limit backoff exponent to kMaxPTOBackoff (64x max)
-    uint32_t backoff_exp = std::min(pto_count_.load(std::memory_order_relaxed), kMaxPTOBackoff);
+    // The exponent is capped much lower while the handshake is unconfirmed so
+    // the probe sequence stays dense enough to matter inside the connection's
+    // own idle timeout -- see kMaxPTOBackoffUnconfirmed.
+    uint32_t cap = IsHandshakeConfirmed() ? kMaxPTOBackoff : kMaxPTOBackoffUnconfirmed;
+    uint32_t backoff_exp = std::min(pto_count_.load(std::memory_order_relaxed), cap);
     return base_pto << backoff_exp;  // Equivalent to base_pto * (2 ^ backoff_exp)
 }
 
 void RttCalculator::OnPTOExpired() {
     // Increment backoff for next PTO, capped at kMaxPTOBackoff
-    pto_count_.store(std::min(pto_count_.load(std::memory_order_relaxed) + 1, kMaxPTOBackoff),
-        std::memory_order_relaxed);
+    pto_count_.store(
+        std::min(pto_count_.load(std::memory_order_relaxed) + 1, kMaxPTOBackoff), std::memory_order_relaxed);
     consecutive_pto_count_.fetch_add(1, std::memory_order_relaxed);
 
-    LOG_DEBUG("PTO expired: pto_count=%u, consecutive_pto_count=%u",
-        pto_count_.load(std::memory_order_relaxed), consecutive_pto_count_.load(std::memory_order_relaxed));
+    LOG_DEBUG("PTO expired: pto_count=%u, consecutive_pto_count=%u", pto_count_.load(std::memory_order_relaxed),
+        consecutive_pto_count_.load(std::memory_order_relaxed));
 }
 
 void RttCalculator::OnPacketAcked() {
     // Reset backoff when we receive an ACK
-    if (pto_count_.load(std::memory_order_relaxed) > 0 ||
-        consecutive_pto_count_.load(std::memory_order_relaxed) > 0) {
+    if (pto_count_.load(std::memory_order_relaxed) > 0 || consecutive_pto_count_.load(std::memory_order_relaxed) > 0) {
         LOG_DEBUG("Packet ACKed: resetting PTO backoff (was pto_count=%u, consecutive=%u)",
             pto_count_.load(std::memory_order_relaxed), consecutive_pto_count_.load(std::memory_order_relaxed));
     }

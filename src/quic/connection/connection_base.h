@@ -1,23 +1,25 @@
 #ifndef QUIC_CONNECTION_CONNECTION_BASE
 #define QUIC_CONNECTION_CONNECTION_BASE
 
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <quicx/quic/type.h>
+#include <string>
 #include <vector>
 
-#include <quicx/common/if_event_loop.h>
+#include "common/network/if_event_loop.h"
 
-#include <quicx/quic/type.h>
 #include "quic/connection/connection_crypto.h"
 #include "quic/connection/connection_id_coordinator.h"
 #include "quic/connection/connection_id_manager.h"
 #include "quic/connection/connection_path_manager.h"
 #include "quic/connection/connection_state_machine.h"
-#include "quic/connection/controler/recv_control.h"
-#include "quic/connection/controler/recv_flow_controller.h"
-#include "quic/connection/controler/send_flow_controller.h"
-#include "quic/connection/controler/send_manager.h"
+#include "quic/connection/controller/recv_control.h"
+#include "quic/connection/controller/recv_flow_controller.h"
+#include "quic/connection/controller/send_flow_controller.h"
+#include "quic/connection/controller/send_manager.h"
 #include "quic/connection/datagram_emitter.h"
 #include "quic/connection/if_connection.h"
 #include "quic/connection/if_connection_event_sink.h"
@@ -59,8 +61,7 @@ public:
     virtual bool MakeStreamAsync(StreamDirection type, stream_creation_callback callback) override;
     // Override to also update FrameProcessor's callback
     virtual void SetStreamStateCallBack(stream_state_callback cb) override;
-    virtual uint64_t AddTimer(timer_callback callback, uint32_t timeout_ms,
-                               bool periodic = false) override;
+    virtual uint64_t AddTimer(timer_callback callback, uint32_t timeout_ms, bool periodic = false) override;
     virtual void RemoveTimer(uint64_t timer_id) override;
     virtual bool IsTerminating() const override;
 
@@ -108,32 +109,24 @@ public:
     // emitted in this call (<= budget).
     int TrySendBurst(int budget) override;
 
-    // Send ACK packet immediately
-    // Simplified interface for immediate ACK sending, used for cross-level ACKs
-    // or when immediate ACK is required.
-    // @param ns Packet number space
-    // @return true if successfully sent
-    bool SendImmediateAck(PacketNumberSpace ns);
-
-    // Send a single-frame probe packet (e.g. PATH_CHALLENGE for path
-    // validation) immediately in 1-RTT, bypassing the send queue and the
-    // end-of-round batch flush. Used when the packet must be the first one
-    // a new path sees, so it cannot wait behind queued frames.
-    // @param frame probe frame to send (PATH_CHALLENGE / PATH_RESPONSE)
-    // @return true if the packet was built and sent
-    bool SendImmediateProbe(const std::shared_ptr<IFrame>& frame);
-
     // handle packets
-    virtual void OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket>>& packets, uint32_t datagram_size) override;
+    virtual void OnPackets(
+        uint64_t now, std::vector<std::shared_ptr<IPacket>>& packets, uint32_t datagram_size) override;
     virtual void SetPendingEcn(uint8_t ecn) override { pending_ecn_ = ecn; }
     virtual EncryptionLevel GetCurEncryptionLevel() override;
 
     // observed peer address from network; store as candidate if different
     virtual void OnObservedPeerAddress(const common::Address& addr) override;
 
+    // datagram arrived on a different local listener (e.g. preferred_address)
+    virtual void OnLocalSocketAddressChanged() override;
+
+    // First packet on a local listener this connection has never received
+    // on before (server: preferred_address). See IConnection::OnRxSocket.
+    virtual bool OnRxSocket(int32_t sockfd) override;
+
     // Get all local CID hashes for this connection (for cleanup on close)
     virtual std::vector<uint64_t> GetAllLocalCIDHashes() override { return cid_coordinator_->GetAllLocalCIDHashes(); }
-
 
     std::shared_ptr<common::IEventLoop> GetEventLoop() { return event_loop_.lock(); }
 
@@ -214,8 +207,8 @@ protected:
     // OnInitialPacket: after an RFC 9368 compatible upgrade, which Initial keys
     // can read a packet depends on the version in its long header, not on the
     // connection's current version.
-    bool OnNormalPacket(
-        const std::shared_ptr<IPacket>& packet, const std::shared_ptr<ICryptographer>& cryptographer_override = nullptr);
+    bool OnNormalPacket(const std::shared_ptr<IPacket>& packet,
+        const std::shared_ptr<ICryptographer>& cryptographer_override = nullptr);
     virtual bool OnHandshakePacket(const std::shared_ptr<IPacket>& packet);
     virtual bool OnRetryPacket(const std::shared_ptr<IPacket>& packet) = 0;
 
@@ -284,6 +277,29 @@ private:
     // (more lost packets queued, or transient drop), false otherwise.
     // RFC 9000 §13.3 / RFC 9001 §6.5.
     bool TrySendRetransmit();
+
+    // Send ACK packet immediately. Simplified interface for immediate ACK
+    // sending, used for cross-level ACKs or when immediate ACK is required.
+    // No external callers — internal to the receive/PTO paths.
+    bool SendImmediateAck(PacketNumberSpace ns);
+
+    // Send a single-frame probe packet (e.g. PATH_CHALLENGE for path
+    // validation) immediately in 1-RTT, bypassing the send queue and the
+    // end-of-round batch flush. Used when the packet must be the first one
+    // a new path sees, so it cannot wait behind queued frames. Only caller
+    // is the path-probe wiring in the constructor.
+    bool SendImmediateProbe(const std::shared_ptr<IFrame>& frame);
+
+    // RFC 9000 §14.1: a *standalone* retransmitted Initial packet must still
+    // form a >=1200 B datagram. The original send may have been coalesced
+    // (Initial + Handshake in one datagram), so the Initial packet object
+    // itself can be far below the floor — and peers that enforce §14.1 on
+    // server Initial datagrams (picoquic) silently drop a short
+    // retransmission. This probe-encodes |lost_pkt| and, if it falls short,
+    // bakes tail PADDING (0x00 bytes) into the payload span so the next
+    // Encode() reaches the floor. Idempotent: a packet already at/above the
+    // floor measures as such and is left untouched.
+    void PadInitialToDatagramFloor(const std::shared_ptr<IPacket>& lost_pkt);
 
     // Normal-send branch: pick encryption level via the encryption scheduler,
     // gather pending frames + queued ACKs + stream data, build outbound packets
@@ -411,7 +427,41 @@ protected:
     void AddConnectionId(ConnectionID& id);
     void RetireConnectionId(ConnectionID& id);
 
-    virtual void WriteCryptoData(std::shared_ptr<IBufferRead> buffer, int32_t err, uint16_t encryption_level) = 0;
+    // CryptoStream read callback (TLS stack emitted handshake bytes for us to
+    // feed back, or an error). The role-independent half — handing each buffer
+    // segment to the TLS stack via ProcessCryptoData and advancing the read
+    // pointer so the bytes are consumed exactly once — lives here; only what
+    // happens when the TLS handshake completes differs per role, exposed as
+    // the OnTlsHandshakeComplete hook.
+    void WriteCryptoData(std::shared_ptr<IBufferRead> buffer, int32_t err, uint16_t encryption_level);
+
+    // Invoked from WriteCryptoData when TLSConnection::DoHandleShake() first
+    // reports the TLS handshake complete. Client: RFC 9000 §4.1.2 confirmation
+    // path (the HandleHandshakeDoneFrame side effects). Server: RFC 9000
+    // §19.20 HANDSHAKE_DONE emission plus one-shot completion bookkeeping.
+    // Each override owns its run-exactly-once guard.
+    virtual void OnTlsHandshakeComplete() = 0;
+
+    // Shared tail of handshake confirmation for both roles (client:
+    // HANDSHAKE_DONE / §4.1.2 fallback; server: client Finished processed):
+    // stop PTO probing, drop the Initial and Handshake packet number spaces
+    // (RFC 9000 §4.10) and log the matching key_discarded qlog events.
+    void FinalizeHandshakePacketNumberSpaces();
+
+    // Create the qlog trace |trace_id|, emit its connection_started event and
+    // fan the trace out to every subsystem that logs (crypto, send manager,
+    // stream manager, frame processor, CID coordinator) — the single place to
+    // update when a subsystem gains a trace field. Caller fills the
+    // role-specific address/CID fields of |data| first.
+    void InstallQlogTrace(
+        const std::string& trace_id, common::VantagePoint vp, const common::ConnectionStartedData& data);
+
+    // Trace id this connection's qlog was registered under; used to unregister
+    // it at destruction. The server's trace is keyed on its local SCID hash,
+    // the client's on the (possibly rotated) remote CID hash.
+    virtual std::string GetQlogTraceIdForCleanup() const {
+        return std::to_string(cid_coordinator_->GetLocalConnectionIDManager()->GetCurrentID().Hash());
+    }
 
     // record bytes received on candidate path to increase amp budget while probing
     virtual void OnCandidatePathDatagramReceived(const common::Address& addr, uint32_t bytes) override {
@@ -452,9 +502,16 @@ protected:
     void OnMigrationFinished(const MigrationInfo& info);
 
 public:
-    // The active socket fd is owned by the emitter. Public because Worker
+    // The active socket is owned by the emitter. Public because Worker
     // installs the socket after construction.
-    virtual void SetSocket(int32_t sockfd) override { emitter_->SetSocket(sockfd); }
+    virtual void SetSocket(common::SocketHandle sock) override { emitter_->SetSocket(sock); }
+
+    // Mirrors the emitter's notion of the active socket (probe fd wins while
+    // one exists) so the server worker can detect datagrams arriving on a
+    // different local listener. See IConnection::GetActiveSocket.
+    virtual common::SocketHandle GetActiveSocket() const override {
+        return emitter_ ? emitter_->GetActiveSocket() : common::SocketHandle(-1, 0);
+    }
 
     // Socket register/unregister are consumed by MigrationController (the sole
     // owner of socket lifecycle), so forward them on rather than only storing.
@@ -482,6 +539,10 @@ protected:
     std::unique_ptr<ConnectionIDCoordinator> cid_coordinator_;
     // path manager (refactored from direct path management)
     std::unique_ptr<PathManager> path_manager_;
+    // local rx sockets seen for this connection (main + preferred_address).
+    // Keyed on the RECEIVE socket so a send-fd swap after a NAT-rebind
+    // probe migration is never mistaken for a new local listener.
+    std::array<int32_t, 2> rx_sockets_{-1, -1};
     // stream manager (refactored from direct stream management)
     std::unique_ptr<StreamManager> stream_manager_;
     // connection closer (refactored from direct close logic)
@@ -512,6 +573,20 @@ protected:
 
     // Qlog trace for this connection
     std::shared_ptr<common::QlogTrace> qlog_trace_;
+
+    // Set when a 1-RTT packet arrives that we cannot decrypt.
+    //
+    // RFC 9000 §4.1.2: a peer may only start sending 1-RTT once it considers the
+    // handshake confirmed, which means it has already sent its Finished. So for
+    // a server whose TLS handshake has *not* completed (the peer's Finished
+    // never arrived), an undecryptable 1-RTT packet is a strong hint about the
+    // peer's state: it is past the handshake and is now sending application
+    // data we have no read key for.
+    //
+    // Concretely it also implies the peer received all of our handshake bytes,
+    // Initial included -- so retransmitting Initial that the peer has already
+    // consumed is wasted work. See TrySendRetransmit().
+    bool peer_sent_undecryptable_1rtt_{false};
 
     // qlog draft-03: per-connection monotonic datagram id counters. Each
     // ingress/egress UDP datagram is stamped so that coalesced QUIC packets
@@ -590,4 +665,4 @@ protected:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_CONNECTION_CONNECTION_BASE

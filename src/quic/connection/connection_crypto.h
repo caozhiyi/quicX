@@ -201,7 +201,7 @@ private:
     std::shared_ptr<common::QlogTrace> qlog_trace_;
 };
 
-}  // namespace quic
+}  // namespace quicx
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_CONNECTION_CONNECTION_CRYPTO

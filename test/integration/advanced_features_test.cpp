@@ -1,19 +1,19 @@
 // Advanced Features Integration Test
 // Tests path parameters, custom headers, query parameters, middleware, and body provider
 
-#include <gtest/gtest.h>
 #include <atomic>
 #include <chrono>
 #include <cstring>
 #include <mutex>
-#include <thread>
-#include <vector>
-
 #include <quicx/http3/if_async_handler.h>
 #include <quicx/http3/if_client.h>
 #include <quicx/http3/if_request.h>
 #include <quicx/http3/if_response.h>
 #include <quicx/http3/if_server.h>
+#include <thread>
+#include <vector>
+
+#include <gtest/gtest.h>
 
 #include "test_server_helper.h"
 

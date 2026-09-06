@@ -1,5 +1,6 @@
-#include <gtest/gtest.h>
 #include <cstring>
+
+#include <gtest/gtest.h>
 
 #include "common/allocator/pool_block.h"
 #include "common/buffer/single_block_buffer.h"

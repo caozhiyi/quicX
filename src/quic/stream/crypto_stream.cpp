@@ -188,6 +188,13 @@ int32_t CryptoStream::Send(uint8_t* data, uint32_t len, uint8_t encryption_level
         send_buffers_[encryption_level] = buffer;
     }
     int32_t size = buffer->Write(data, len);
+    if (size != (int32_t)len) {
+        // A partial write silently drops handshake bytes: the flight would
+        // have a gap the peer can never fill and the handshake stalls until
+        // the idle timeout. Loudly fatal-adjacent so it is never missed.
+        LOG_ERROR("CryptoStream::Send PARTIAL WRITE: handshake data dropped. level=%d want=%u wrote=%d",
+            encryption_level, len, size);
+    }
 
     ToSend();
     return size;
@@ -319,7 +326,7 @@ void CryptoStream::OnCryptoFrame(std::shared_ptr<IFrame> frame) {
 
     // RFC 9000 §7.5 cap. Enforced before allocating, so the attacker-controlled
     // frame cannot cause the allocation it is meant to prevent.
-    if (out_order.size() >= kMaxOutOrderFrames || out_order_bytes_[level] + frame_length > kMaxOutOrderBytes) {
+    if (out_order.size() >= kMaxCryptoOutOfOrderFrames || out_order_bytes_[level] + frame_length > kMaxCryptoOutOfOrderBytes) {
         LOG_ERROR("crypto out-of-order buffer exceeded. level:%d, frames:%zu, bytes:%llu, incoming:%llu", level,
             out_order.size(), out_order_bytes_[level], frame_length);
         if (connection_close_cb_) {

@@ -13,7 +13,9 @@ foreach(src ${FUZZ_SOURCES})
         ${CMAKE_SOURCE_DIR}/src
     )
 
-    target_link_libraries(${name} PRIVATE quicx)
+    # These fuzzers drive quicx::http3:: QPACK helpers defined in libhttp3.a;
+    # http3 PUBLIC-links quicx, so the transitive closure is complete.
+    target_link_libraries(${name} PRIVATE http3)
 
     # Always enable libFuzzer + ASan/UBSan for fuzz targets
     target_compile_options(${name} PRIVATE -fsanitize=fuzzer,address,undefined)

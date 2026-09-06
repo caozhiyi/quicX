@@ -19,12 +19,9 @@
 
 #pragma once
 
-#include <gtest/gtest.h>
-
 #include <atomic>
 #include <cstdint>
 #include <string>
-
 #if defined(_WIN32)
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -35,6 +32,8 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #endif
+
+#include <gtest/gtest.h>
 
 namespace quicx {
 namespace test {

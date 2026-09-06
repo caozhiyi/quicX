@@ -16,4 +16,4 @@ bool DecodePackets(std::shared_ptr<common::IBuffer> buffer, std::vector<std::sha
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_PACKET_PACKET_DECODE

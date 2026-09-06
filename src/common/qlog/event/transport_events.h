@@ -1,6 +1,3 @@
-// Use of this source code is governed by a BSD 3-Clause License
-// that can be found in the LICENSE file.
-
 #ifndef COMMON_QLOG_EVENT_TRANSPORT_EVENTS
 #define COMMON_QLOG_EVENT_TRANSPORT_EVENTS
 
@@ -11,6 +8,7 @@
 #include "common/qlog/event/qlog_event.h"
 #include "common/qlog/util/qlog_types.h"
 #include "common/qlog/util/quic_frames.h"
+
 #include "quic/frame/if_frame.h"
 
 namespace quicx {
@@ -391,4 +389,4 @@ public:
 }  // namespace common
 }  // namespace quicx
 
-#endif
+#endif  // COMMON_QLOG_EVENT_TRANSPORT_EVENTS

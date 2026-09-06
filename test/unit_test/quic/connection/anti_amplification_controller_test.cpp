@@ -1,6 +1,6 @@
-#include "quic/connection/controler/anti_amplification_controller.h"
-
 #include "gtest/gtest.h"
+
+#include "quic/connection/controller/anti_amplification_controller.h"
 
 namespace quicx {
 namespace quic {

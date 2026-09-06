@@ -1,5 +1,6 @@
-#include "quic/quicx/connection_rate_monitor.h"
 #include "common/log/log.h"
+
+#include "quic/quicx/connection_rate_monitor.h"
 
 namespace quicx {
 namespace quic {

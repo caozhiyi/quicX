@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+
 #include "common/allocator/pool_allocator.h"
 
 namespace quicx {

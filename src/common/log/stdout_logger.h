@@ -2,6 +2,7 @@
 #define COMMON_LOG_STDOUT_LOGGER
 
 #include <mutex>
+
 #include "common/log/if_logger.h"
 
 namespace quicx {
@@ -25,4 +26,4 @@ private:
 }  // namespace common
 }  // namespace quicx
 
-#endif
+#endif  // COMMON_LOG_STDOUT_LOGGER

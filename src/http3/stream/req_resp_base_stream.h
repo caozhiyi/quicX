@@ -1,13 +1,14 @@
 #ifndef HTTP3_STREAM_REQ_RESP_BASE_STREAM
 #define HTTP3_STREAM_REQ_RESP_BASE_STREAM
 
+
 #include <deque>
 #include <functional>
 #include <memory>
-#include <unordered_map>
-
 #include <quicx/http3/type.h>
 #include <quicx/quic/if_quic_bidirection_stream.h>
+#include <unordered_map>
+
 #include "http3/frame/frame_decoder.h"
 #include "http3/frame/if_frame.h"
 #include "http3/qpack/blocked_registry.h"
@@ -167,4 +168,4 @@ protected:
 }  // namespace http3
 }  // namespace quicx
 
-#endif
+#endif  // HTTP3_STREAM_REQ_RESP_BASE_STREAM

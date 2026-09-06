@@ -2,6 +2,7 @@
 #define QUIC_QUICX_CLIENT_WORKER
 
 #include <unordered_map>
+
 #include "quic/quicx/worker.h"
 
 namespace quicx {
@@ -43,4 +44,4 @@ private:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_QUICX_CLIENT_WORKER

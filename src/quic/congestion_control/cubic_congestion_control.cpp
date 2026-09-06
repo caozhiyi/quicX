@@ -2,9 +2,9 @@
 #include <cmath>
 
 #include "common/qlog/qlog.h"
+
 #include "quic/congestion_control/cubic_congestion_control.h"
 #include "quic/congestion_control/normal_pacer.h"
-
 // References for the CUBIC controller:
 //   [RFC9438]      "CUBIC for Fast and Long-Distance Networks" — the
 //                  authoritative spec; we cite specific sections at the

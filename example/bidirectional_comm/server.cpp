@@ -2,11 +2,11 @@
 #include <iostream>
 #include <memory>
 #include <mutex>
-#include <unordered_map>
-
+#include <random>
 #include <quicx/http3/if_request.h>
 #include <quicx/http3/if_response.h>
 #include <quicx/http3/if_server.h>
+#include <unordered_map>
 
 class BidirectionalServer {
 private:
@@ -80,7 +80,10 @@ public:
         // Connection endpoint
         server_->AddHandler(quicx::HttpMethod::kGet, "/connect",
             [this](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
-                std::string client_id = "client_" + std::to_string(std::rand());
+                // std::rand() mutates shared glibc state; thread_local keeps the
+                // engine per worker thread and avoids the cross-thread race.
+                static thread_local std::mt19937 gen{std::random_device{}()};
+                std::string client_id = "client_" + std::to_string(gen());
 
                 {
                     std::lock_guard<std::mutex> lock(clients_mutex_);

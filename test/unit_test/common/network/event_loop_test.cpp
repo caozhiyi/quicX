@@ -1,13 +1,14 @@
-// EventLoop unit tests
-#include <gtest/gtest.h>
 #include <atomic>
 #include <chrono>
 #include <thread>
 #include <vector>
 
-#include <quicx/common/if_event_loop.h>
+// EventLoop unit tests
+#include <gtest/gtest.h>
+
 #include "common/network/event_loop.h"
 #include "common/network/if_event_driver.h"
+#include "common/network/if_event_loop.h"
 #include "common/network/io_handle.h"
 
 namespace quicx {
@@ -105,8 +106,7 @@ TEST(EventLoopTest, RepeatTimerFiresPeriodicallyWithoutRearm) {
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
     }
 
-    EXPECT_GE(fired.load(), 5) << "AddRepeatTimer must re-fire on its own; only " << fired.load()
-                               << " fires in ~200ms";
+    EXPECT_GE(fired.load(), 5) << "AddRepeatTimer must re-fire on its own; only " << fired.load() << " fires in ~200ms";
 
     timer.Cancel();
     int after_cancel = fired.load();

@@ -1,11 +1,11 @@
+#include "common/buffer/buffer_chunk.h"
+#include "common/buffer/buffer_chunk_pool.h"
 #include "common/buffer/multi_block_buffer.h"
 #include "common/buffer/single_block_buffer.h"
-#include "common/buffer/buffer_chunk_pool.h"
-#include "common/buffer/buffer_chunk.h"
 #include "common/log/log.h"
-
+#include "common/metrics/metrics_std.h"
 #include "quicx/common/metrics.h"
-#include "quicx/common/metrics_std.h"
+
 #include "quic/quicx/global_resource.h"
 
 #include "http3/frame/push_promise_frame.h"
@@ -137,7 +137,7 @@ bool ResponseStream::SendResponse(std::shared_ptr<IResponse> response) {
 
         // Metrics: Track response bytes sent (server side)
         if (result) {
-            common::Metrics::CounterInc(common::MetricsStd::Http3ResponseBytesTx, body_size);
+            Metrics::CounterInc(common::MetricsStd::Http3ResponseBytesTx, body_size);
         }
 
         return result;
@@ -349,8 +349,8 @@ void ResponseStream::HandleData(const std::shared_ptr<common::IBuffer>& data, bo
 void ResponseStream::HandleHttp(
     std::function<void(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response)> handler) {
     // Metrics: HTTP/3 request received
-    common::Metrics::CounterInc(common::MetricsStd::Http3RequestsTotal);
-    common::Metrics::GaugeInc(common::MetricsStd::Http3RequestsActive);
+    Metrics::CounterInc(common::MetricsStd::Http3RequestsTotal);
+    Metrics::GaugeInc(common::MetricsStd::Http3RequestsActive);
 
     auto proc = http_processor_.lock();
     if (proc) {
@@ -362,7 +362,7 @@ void ResponseStream::HandleHttp(
     }
 
     // Metrics: Request completed
-    common::Metrics::GaugeDec(common::MetricsStd::Http3RequestsActive);
+    Metrics::GaugeDec(common::MetricsStd::Http3RequestsActive);
 }
 
 void ResponseStream::HandleResponse() {

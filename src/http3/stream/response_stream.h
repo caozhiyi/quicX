@@ -2,11 +2,11 @@
 #define HTTP3_STREAM_RESPONSE_STREAM
 
 #include <memory>
+#include <quicx/http3/type.h>
+#include <quicx/quic/if_quic_bidirection_stream.h>
 #include <string>
 #include <unordered_map>
 
-#include <quicx/http3/type.h>
-#include <quicx/quic/if_quic_bidirection_stream.h>
 #include "http3/http/request.h"
 #include "http3/http/response.h"
 #include "http3/qpack/qpack_encoder.h"
@@ -79,4 +79,4 @@ private:
 }  // namespace http3
 }  // namespace quicx
 
-#endif
+#endif  // HTTP3_STREAM_RESPONSE_STREAM

@@ -2,6 +2,7 @@
 #define QUIC_CRYPTO_AEAD_BASE_CRYPTOGRAPHER
 
 #include <vector>
+
 #include "quic/crypto/if_cryptographer.h"
 
 namespace quicx {
@@ -126,4 +127,4 @@ protected:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_CRYPTO_AEAD_BASE_CRYPTOGRAPHER

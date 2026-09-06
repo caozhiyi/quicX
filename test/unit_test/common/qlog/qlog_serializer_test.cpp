@@ -1,11 +1,9 @@
-// Use of this source code is governed by a BSD 3-Clause License
-// that can be found in the LICENSE file.
-
-#include <gtest/gtest.h>
 #include <algorithm>
 #include <memory>
 #include <sstream>
 #include <string>
+
+#include <gtest/gtest.h>
 
 #include "common/qlog/event/connectivity_events.h"
 #include "common/qlog/event/recovery_events.h"

@@ -4,10 +4,9 @@
 #include <atomic>
 #include <map>
 #include <memory>
+#include <quicx/common/metrics.h>
 #include <string>
 #include <vector>
-
-#include <quicx/common/metrics.h>
 
 namespace quicx {
 namespace common {
@@ -85,4 +84,4 @@ struct HistogramStorage {
 }  // namespace common
 }  // namespace quicx
 
-#endif  // COMMON_METRICS_METRICS_INTERNAL_H
+#endif  // COMMON_METRICS_METRICS_INTERNAL

@@ -7,8 +7,8 @@
 #include <vector>
 
 #include <quicx/common/metrics.h>
-#include <quicx/common/metrics_std.h>
 #include <quicx/common/type.h>
+#include "common/metrics/metrics_std.h"
 
 namespace quicx {
 namespace common {
@@ -21,7 +21,7 @@ static void EnsureMetricsInitialized() {
     static std::once_flag flag;
     std::call_once(flag, []() {
         MetricsConfig config;
-        config.enable = true;
+        config.enable_ = true;
         Metrics::Initialize(config);
     });
 }
@@ -179,7 +179,7 @@ static void BM_Metrics_ExportPrometheus(benchmark::State& state) {
 static void BM_Metrics_DisabledCounterInc(benchmark::State& state) {
     // Initialize with metrics disabled
     MetricsConfig config;
-    config.enable = false;
+    config.enable_ = false;
     Metrics::Initialize(config);
 
     for (auto _ : state) {
@@ -188,7 +188,7 @@ static void BM_Metrics_DisabledCounterInc(benchmark::State& state) {
     state.SetItemsProcessed(state.iterations());
 
     // Re-enable for other benchmarks
-    config.enable = true;
+    config.enable_ = true;
     Metrics::Initialize(config);
 }
 

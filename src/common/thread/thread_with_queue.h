@@ -2,6 +2,7 @@
 #define COMMON_THREAD_THREAD_WITH_QUEUE
 
 #include "common/structure/thread_safe_block_queue.h"
+
 #include "thread.h"
 
 namespace quicx {
@@ -33,4 +34,4 @@ protected:
 }  // namespace common
 }  // namespace quicx
 
-#endif
+#endif  // COMMON_THREAD_THREAD_WITH_QUEUE

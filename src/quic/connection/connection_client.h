@@ -6,6 +6,7 @@
 #include <memory>
 
 #include "common/network/address.h"
+
 #include "quic/connection/connection_base.h"
 #include "quic/crypto/tls/tls_connection_client.h"
 
@@ -16,7 +17,7 @@ class ClientConnection: public BaseConnection {
 public:
     ClientConnection(std::shared_ptr<TLSCtx> ctx, std::shared_ptr<common::IEventLoop> loop,
         const ConnectionCallbacks& callbacks = {}, bool ecn_enabled = false);
-    ~ClientConnection();
+    ~ClientConnection() = default;
 
     bool Dial(const common::Address& addr, const std::string& alpn, const QuicTransportParams& tp_config,
         const std::string& server_name = "");
@@ -31,7 +32,12 @@ public:
 protected:
     virtual bool OnHandshakePacket(const std::shared_ptr<IPacket>& packet) override;
     virtual bool OnRetryPacket(const std::shared_ptr<IPacket>& packet) override;
-    virtual void WriteCryptoData(std::shared_ptr<IBufferRead> buffer, int32_t err, uint16_t encryption_level) override;
+
+    // WriteCryptoData 的握手完成钩子（Base 负责公共的 TLS 数据回灌部分）
+    virtual void OnTlsHandshakeComplete() override;
+
+    // qlog trace 以（可能已轮换的）remote CID hash 注销，见 Base 声明
+    virtual std::string GetQlogTraceIdForCleanup() const override;
 
     // HANDSHAKE_DONE frame handler (set as callback to frame processor)
     bool HandleHandshakeDoneFrame(std::shared_ptr<IFrame> frame);
@@ -76,7 +82,7 @@ private:
     std::string saved_server_name_;
 };
 
-}  // namespace quic
+}  // namespace quicx
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_CONNECTION_CLIENT_CONNECTION

@@ -51,4 +51,4 @@ public:
 }  // namespace common
 }  // namespace quicx
 
-#endif
+#endif  // COMMON_BUFFER_BUFFER_CHUNK_POOL

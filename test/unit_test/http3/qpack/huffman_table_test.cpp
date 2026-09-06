@@ -1,6 +1,7 @@
-#include "http3/qpack/huffman_table.h"
 #include <gtest/gtest.h>
+
 #include "http3/qpack/huffman_encoder.h"
+#include "http3/qpack/huffman_table.h"
 
 namespace quicx {
 namespace http3 {

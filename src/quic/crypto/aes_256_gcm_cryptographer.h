@@ -19,4 +19,4 @@ public:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_CRYPTO_AES_256_GCM_CRYPTOGRAPHER

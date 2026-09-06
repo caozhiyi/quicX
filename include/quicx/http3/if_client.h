@@ -2,12 +2,11 @@
 #define HTTP3_INCLUDE_IF_CLIENT
 
 #include <memory>
-#include <string>
-
 #include <quicx/http3/if_async_handler.h>
 #include <quicx/http3/if_request.h>
 #include <quicx/http3/type.h>
 #include <quicx/quic/if_quic_client.h>
+#include <string>
 
 namespace quicx {
 
@@ -266,4 +265,4 @@ public:
 
 }  // namespace quicx
 
-#endif
+#endif  // HTTP3_INCLUDE_IF_CLIENT

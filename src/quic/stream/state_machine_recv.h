@@ -68,4 +68,4 @@ private:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_STREAM_STATE_MACHINE_RECV

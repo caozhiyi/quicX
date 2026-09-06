@@ -1,11 +1,13 @@
-#include <gtest/gtest.h>
 #include <memory>
+
+#include <gtest/gtest.h>
 
 #include "http3/qpack/blocked_registry.h"
 #include "http3/stream/qpack_decoder_receiver_stream.h"
 #include "http3/stream/qpack_decoder_sender_stream.h"
 #include "http3/stream/type.h"
 #include "http3/stream/unidentified_stream.h"
+
 #include "test/unit_test/http3/stream/mock_quic_stream.h"
 
 namespace quicx {

@@ -9,12 +9,15 @@
 
 #include <quicx/common/if_buffer_read.h>
 #include <quicx/common/if_buffer_write.h>
-#include <quicx/common/if_event_loop.h>
 #include <quicx/common/metrics.h>
-#include <quicx/common/metrics_std.h>
 #include <quicx/common/type.h>
 #include <quicx/common/version.h>
-
+#include <quicx/http3/if_async_handler.h>
+#include <quicx/http3/if_client.h>
+#include <quicx/http3/if_request.h>
+#include <quicx/http3/if_response.h>
+#include <quicx/http3/if_server.h>
+#include <quicx/http3/type.h>
 #include <quicx/quic/if_quic_bidirection_stream.h>
 #include <quicx/quic/if_quic_client.h>
 #include <quicx/quic/if_quic_connection.h>
@@ -23,14 +26,6 @@
 #include <quicx/quic/if_quic_server.h>
 #include <quicx/quic/if_quic_stream.h>
 #include <quicx/quic/type.h>
-
-#include <quicx/http3/if_async_handler.h>
-#include <quicx/http3/if_client.h>
-#include <quicx/http3/if_request.h>
-#include <quicx/http3/if_response.h>
-#include <quicx/http3/if_server.h>
-#include <quicx/http3/type.h>
-
 #include <quicx/upgrade/if_upgrade.h>
 #include <quicx/upgrade/type.h>
 
@@ -48,17 +43,17 @@ TEST(QuicxPublicIncludesTest, CommonSymbolsReachable) {
 }
 
 TEST(QuicxPublicIncludesTest, MetricsSymbolsReachable) {
-    // From <quicx/common/metrics.h> and <quicx/common/metrics_std.h>
-    constexpr auto kInvalid = quicx::common::kInvalidMetricID;
-    EXPECT_EQ(kInvalid, static_cast<quicx::common::MetricID>(-1));
-    // MetricsStd IDs are static members; we only check they are addressable.
-    (void)&quicx::common::MetricsStd::UdpPacketsRx;
+    // From <quicx/common/metrics.h>
+    constexpr auto kInvalid = quicx::kInvalidMetricID;
+    EXPECT_EQ(kInvalid, static_cast<quicx::MetricID>(-1));
 }
 
-TEST(QuicxPublicIncludesTest, EventLoopFactoryReachable) {
-    // From <quicx/common/if_event_loop.h>
-    auto loop = quicx::common::MakeEventLoop();
-    EXPECT_NE(loop, nullptr);
+TEST(QuicxPublicIncludesTest, UpgradeFactoryReachable) {
+    // From <quicx/upgrade/if_upgrade.h>. Address-taking only: we never start
+    // the server here (that would bind a port), we just prove the symbol is
+    // reachable through the public include path.
+    auto* factory = &quicx::IUpgrade::MakeUpgrade;
+    EXPECT_NE(factory, nullptr);
 }
 
 }  // namespace

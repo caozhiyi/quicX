@@ -49,7 +49,7 @@ flowchart LR
 四个事实：
 
 - **upgrade 与 quic 完全解耦**：两边只通过端口约定（默认 h3_port = 443）和**用户配置**对齐，没有任何代码级 hand-off。upgrade 不调 `IQuicServer`，quic 也不知道 upgrade 存在。
-- **共享一个 `IEventLoop`**：`IUpgrade::MakeUpgrade(event_loop)` 接的就是 quic 服务器同一个 `common::IEventLoop`，TCP 监听 fd 直接挂上去；这意味着同一个线程跑 epoll/kqueue 同时驱动 UDP 收发和 TCP accept（参考第 6 站 `process_model.md`）。
+- **各跑各的 `IEventLoop`**：`IUpgrade::MakeUpgrade()` 不再接收外部 loop，upgrade 服务器自建 `common::IEventLoop` 和驱动它的线程（首次 `AddListener()` 时启动）。这不是偷懒：两边**没有任何共享状态**（见上一条），而 `EventLoop` 有线程亲和性（`Init()` 记录 `thread_id_`，之后所有 `RegisterFd/AddTimer` 走 `AssertInLoopThread()`，不符直接 `abort()`），共用一个 loop 只会把 TCP 首跳和 QUIC 的 PTO/定时器精度绑死在同一条时间线上，还让 teardown 的析构顺序纠缠不清。代价仅是一个 epoll fd + 一个 wakeup fd + 一个线程栈。
 - **TCP 端永远不会变成 H3 服务器**：`HttpsSmartHandler` 在 ALPN 里只声明 `h2,http/1.1`，TLS 握完后要么进 H1 要么进 H2 协商响应路径，**两条路径的唯一目的都是发一行 Alt-Svc 然后 close**（H1 用 `Connection: close`，H2 用 `GOAWAY`）。
 - **客户端必须主动二次连接**：发完 Alt-Svc，TCP 这边的工作就结束了。浏览器随后会按 RFC 7838 §3 在自己的连接池里记录一项 alt-authority，下次访问同名 origin 时优先尝试 UDP/443 + QUIC + ALPN=`h3`。**整个跳跃过程完全发生在客户端**，服务端没有任何状态关联两次连接。
 
@@ -63,11 +63,14 @@ flowchart LR
 class IUpgrade {
 public:
     virtual bool AddListener(UpgradeSettings& settings) = 0;
-    static std::unique_ptr<IUpgrade> MakeUpgrade(std::shared_ptr<common::IEventLoop> event_loop);
+    virtual void Stop() = 0;
+    static std::unique_ptr<IUpgrade> MakeUpgrade();
 };
 ```
 
-**没有回调签名、没有 `Start()` / `Stop()`、没有连接计数、没有 fd 暴露**。这反映模块定位："广告牌不需要业务逻辑"——它要么挂在端口上发 Alt-Svc，要么没起来；调用者只关心后者。
+**没有回调签名、没有 `IEventLoop`/`IFdHandler`、没有连接计数、没有 fd 暴露**。这反映模块定位："广告牌不需要业务逻辑"——它要么挂在端口上发 Alt-Svc，要么没起来；调用者只关心后者。
+
+唯一的生命周期入口是 `Stop()`（析构函数也会调，幂等）。它做三件事，且**全部发生在模块自己的 loop 线程上**：摘掉 client fd（`ISmartHandler::CloseAllConnections()`）、摘掉并关闭 listen fd、停线程并 join。放在 loop 线程上是硬性要求——`EventLoop::RemoveFd/RegisterFd/AddTimer` 都要过 `AssertInLoopThread()`，从别的线程调就是 `abort()`；旧实现在析构函数里直接 `RemoveFd()`，而析构跑在**调用者**线程上，跨线程 teardown 是这个模块最容易踩的一颗雷。
 
 `UpgradeSettings`（`include/quicx/upgrade/type.h`）的字段分四组：
 
@@ -230,13 +233,14 @@ std::string response =
 ```mermaid
 sequenceDiagram
     participant App
-    participant Loop as IEventLoop
+    participant Loop as IEventLoop<br/>(服务器私有 + 私有线程)
     participant Srv as UpgradeServer
     participant CH as ConnectionHandler<br/>(per-listen-fd)
     participant SH as ISmartHandler<br/>(per-client-fd)
     participant Ctx as ConnectionContext
-    App->>Srv: MakeUpgrade(loop)
+    App->>Srv: MakeUpgrade()
     App->>Srv: AddListener(settings)
+    Note right of Srv: 首次调用时自建 Loop + 线程，<br/>bind/RegisterFd 投递到该线程执行，<br/>调用方阻塞等待结果
     Srv->>Srv: bind_one(80, kHttp)
     Srv->>Srv: bind_one(443, kHttps) [if cert]
     Srv->>Loop: RegisterFd(listen_fd, ET_READ, CH)

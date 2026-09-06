@@ -42,4 +42,4 @@ void Sleep(uint32_t interval);
 }  // namespace common
 }  // namespace quicx
 
-#endif
+#endif  // COMMON_UTIL_TIME

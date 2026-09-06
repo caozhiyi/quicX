@@ -1,6 +1,6 @@
-#include "common/log/log_stream.h"
 #include "common/log/if_logger.h"
 #include "common/log/log.h"
+#include "common/log/log_stream.h"
 
 namespace quicx {
 namespace common {

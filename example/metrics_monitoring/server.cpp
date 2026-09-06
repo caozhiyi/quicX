@@ -1,20 +1,19 @@
-#include <quicx/common/metrics.h>
-#include <quicx/common/metrics_std.h>
-#include <quicx/http3/if_request.h>
-#include <quicx/http3/if_response.h>
-#include <quicx/http3/if_server.h>
 #include <chrono>
 #include <iostream>
 #include <mutex>
+#include <quicx/common/metrics.h>
+#include <quicx/http3/if_request.h>
+#include <quicx/http3/if_response.h>
+#include <quicx/http3/if_server.h>
 #include <sstream>
 #include <thread>
-
 // Custom application metrics
+
 namespace {
-quicx::common::MetricID custom_requests_total;
-quicx::common::MetricID custom_request_duration_ms;
-quicx::common::MetricID custom_active_requests;
-quicx::common::MetricID custom_error_count;
+quicx::MetricID custom_requests_total;
+quicx::MetricID custom_request_duration_ms;
+quicx::MetricID custom_active_requests;
+quicx::MetricID custom_error_count;
 
 // Multiple HTTP/3 worker threads run request handlers concurrently, and a
 // dedicated metrics_thread periodically dumps the Prometheus text export.
@@ -29,16 +28,16 @@ std::mutex g_cout_mutex;
 class RequestTracker {
 public:
     RequestTracker() {
-        quicx::common::Metrics::GaugeInc(custom_active_requests);
+        quicx::Metrics::GaugeInc(custom_active_requests);
         start_time_ = std::chrono::steady_clock::now();
     }
 
     ~RequestTracker() {
-        quicx::common::Metrics::GaugeDec(custom_active_requests);
+        quicx::Metrics::GaugeDec(custom_active_requests);
         auto duration =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time_)
                 .count();
-        quicx::common::Metrics::HistogramObserve(custom_request_duration_ms, duration);
+        quicx::Metrics::HistogramObserve(custom_request_duration_ms, duration);
     }
 
 private:
@@ -57,7 +56,7 @@ void PrintMetricsSummary() {
 
     // Note: In production, you would query the metrics registry
     // For this demo, we'll show the Prometheus export
-    std::string prometheus_output = quicx::common::Metrics::ExportPrometheus();
+    std::string prometheus_output = quicx::Metrics::ExportPrometheus();
 
     // Parse and display key metrics
     // Parse and display key metrics
@@ -98,26 +97,21 @@ int main() {
     // Step 1: Initialize Metrics System
     std::cout << " Step 1: Initializing metrics system..." << std::endl;
     quicx::MetricsConfig metrics_config;
-    metrics_config.enable = true;
-    metrics_config.prefix = "quicx";
-    quicx::common::Metrics::Initialize(metrics_config);
-    std::cout << "   Metrics system initialized. UdpPacketsRx ID: " << quicx::common::MetricsStd::UdpPacketsRx
-              << std::endl;
-
-    // Step 2: Register Custom Metrics
-    std::cout << " Step 2: Registering custom application metrics..." << std::endl;
-
+    metrics_config.enable_ = true;
+    metrics_config.prefix_ = "quicx";
+    quicx::Metrics::Initialize(metrics_config);
     custom_requests_total =
-        quicx::common::Metrics::RegisterCounter("custom_requests_total", "Total number of HTTP requests processed");
+        quicx::Metrics::RegisterCounter("custom_requests_total", "Total number of HTTP requests processed");
+    std::cout << "   Metrics system initialized. custom_requests_total ID: " << custom_requests_total << std::endl;
 
     custom_active_requests =
-        quicx::common::Metrics::RegisterGauge("custom_active_requests", "Number of currently active requests");
+        quicx::Metrics::RegisterGauge("custom_active_requests", "Number of currently active requests");
 
-    custom_request_duration_ms = quicx::common::Metrics::RegisterHistogram("custom_request_duration_ms",
+    custom_request_duration_ms = quicx::Metrics::RegisterHistogram("custom_request_duration_ms",
         "Request processing duration in milliseconds", {10, 25, 50, 100, 250, 500, 1000, 2500, 5000}  // Buckets
     );
 
-    custom_error_count = quicx::common::Metrics::RegisterCounter("custom_error_count", "Total number of errors");
+    custom_error_count = quicx::Metrics::RegisterCounter("custom_error_count", "Total number of errors");
 
     std::cout << "   Registered 4 custom metrics\n" << std::endl;
 
@@ -164,7 +158,7 @@ int main() {
     server->AddHandler(quicx::HttpMethod::kGet, "/hello",
         [](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
             RequestTracker tracker;  // RAII tracking
-            quicx::common::Metrics::CounterInc(custom_requests_total);
+            quicx::Metrics::CounterInc(custom_requests_total);
 
             {
                 std::lock_guard<std::mutex> lock(g_cout_mutex);
@@ -179,7 +173,7 @@ int main() {
     server->AddHandler(quicx::HttpMethod::kGet, "/slow",
         [](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
             RequestTracker tracker;
-            quicx::common::Metrics::CounterInc(custom_requests_total);
+            quicx::Metrics::CounterInc(custom_requests_total);
 
             {
                 std::lock_guard<std::mutex> lock(g_cout_mutex);
@@ -197,8 +191,8 @@ int main() {
     server->AddHandler(quicx::HttpMethod::kGet, "/error",
         [](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
             RequestTracker tracker;
-            quicx::common::Metrics::CounterInc(custom_requests_total);
-            quicx::common::Metrics::CounterInc(custom_error_count);
+            quicx::Metrics::CounterInc(custom_requests_total);
+            quicx::Metrics::CounterInc(custom_error_count);
 
             {
                 std::lock_guard<std::mutex> lock(g_cout_mutex);
@@ -217,7 +211,7 @@ int main() {
                 std::cout << " Request: GET /metrics (exporting Prometheus format)" << std::endl;
             }
 
-            std::string metrics_output = quicx::common::Metrics::ExportPrometheus();
+            std::string metrics_output = quicx::Metrics::ExportPrometheus();
 
             std::unordered_map<std::string, std::string> headers;
             headers["Content-Type"] = "text/plain; version=0.0.4";
@@ -234,7 +228,7 @@ int main() {
                 std::cout << " Request: GET /dashboard (human-readable metrics)" << std::endl;
             }
 
-            std::string metrics_output = quicx::common::Metrics::ExportPrometheus();
+            std::string metrics_output = quicx::Metrics::ExportPrometheus();
 
             // Create a simple HTML dashboard
             std::ostringstream html;

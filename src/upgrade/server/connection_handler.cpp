@@ -1,7 +1,8 @@
-#include "upgrade/server/connection_handler.h"
 #include "common/log/log.h"
 #include "common/network/if_event_driver.h"
 #include "common/network/io_handle.h"
+
+#include "upgrade/server/connection_handler.h"
 
 namespace quicx {
 namespace upgrade {
@@ -67,6 +68,12 @@ void ConnectionHandler::OnClose(uint32_t fd) {
     common::Close(fd);
     if (auto loop = event_loop_.lock()) {
         loop->RemoveFd(fd);
+    }
+}
+
+void ConnectionHandler::CloseAllConnections() {
+    if (handler_) {
+        handler_->CloseAllConnections();
     }
 }
 

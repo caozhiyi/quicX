@@ -1,25 +1,27 @@
-#include <gtest/gtest.h>
 #include <memory>
 #include <tuple>
 #include <vector>
 
-#include <quicx/common/if_event_loop.h>
+#include <gtest/gtest.h>
 
-#include "test/unit_test/common/timer/test_timer_scheduler.h"
+#include "common/network/if_event_loop.h"
 #include "common/timer/if_timer.h"
 #include "common/timer/timer_task.h"
-#include "quic/connection/controler/send_control.h"
+
+#include "quic/connection/controller/send_control.h"
 #include "quic/frame/ack_frame.h"
+#include "quic/frame/handshake_done_frame.h"
+#include "quic/frame/ping_frame.h"
 #include "quic/frame/type.h"
 #include "quic/packet/packet_number.h"
 #include "quic/packet/rtt_1_packet.h"
 #include "quic/quicx/global_resource.h"
 
+#include "test/unit_test/common/timer/test_timer_scheduler.h"
+
 namespace quicx {
 namespace quic {
 namespace {
-
-
 
 std::shared_ptr<Rtt1Packet> MakePacket(uint64_t packet_number, FrameTypeBit frame_bits) {
     auto packet = std::make_shared<Rtt1Packet>();
@@ -324,7 +326,207 @@ TEST(SendControlG2Test, S4_SpuriousAckForErasedLostPnIsNoOp) {
     EXPECT_EQ(sc.GetCcBytesInFlightForTest(), 0u) << "Final in_flight must be 0.";
 }
 
+// G2-S6 [SUSPECTED BUG]: retransmission reuses the SAME IPacket object.
+//
+// BaseConnection::TrySendRetransmit does:
+//     entry = lost_packets_.front(); lost_packets_.pop_front();
+//     RemoveStaleUnackedEntry(ns, orig_pn, lost_pkt);   // BEFORE renumbering
+//     lost_pkt->SetPacketNumber(new_pn);      // <-- mutates the object in place
+//     send_control.OnPacketSend(now, lost_pkt, size, entry.stream_data);
+//
+// Without the RemoveStaleUnackedEntry() call the entry keyed by the OLD pn
+// survives. It is then unreachable forever: the per-packet timer looks up
+// find(packet->GetPacketNumber()) and OnPacketAck walks pn downward from
+// largest_ack, so neither can ever address a key that no longer matches the
+// object's packet number -- the stale key is no longer derivable from the
+// object itself, which is why the removal has to happen before renumbering.
+// Three consequences:
+//
+//   P1: OnPTOTimer() probes unacked_packets_[ns].begin() only. The stale entry
+//       is always the smallest key (hence first) and is permanently is_lost, so
+//       after the very first PTO the timer lands on it forever and silently
+//       stops finding anything to retransmit.
+//   P2: OnPacketAck's `pkt_num--` range walk can descend into the stale key and
+//       fire OnPacketAcked + stream_data_ack_cb_ a second time for bytes that
+//       were already accounted as lost.
+//   P3: the table grows by one dead entry per retransmission until the space is
+//       discarded.
+//
+// This test pins P1/P3: after a retransmission exactly one entry may remain.
+TEST(SendControlG2Test, S6_RetransmitReusingPacketObjectDropsStaleUnackedEntry) {
+    auto timer = std::make_shared<common::TestTimerScheduler>();
+    SendControl sc(timer);
+    const PacketNumberSpace ns = PacketNumberSpace::kApplicationNumberSpace;
+
+    // SendControl::Bind() installs the owner guard that TimerCore checks before
+    // running a callback. Without it every timer we arm is skipped as
+    // "owner expired" and PTO never fires -- which is why no earlier test in
+    // this file exercised a real timer expiry.
+    auto owner = std::make_shared<int>(0);
+    sc.Bind(owner);
+
+    auto pkt = MakePacket(0, FrameTypeBit::kStreamBit);
+    sc.OnPacketSend(100, pkt, kMss);
+    ASSERT_EQ(sc.GetUnackedPacketCountForTest(ns), 1u);
+
+    // Let PTO expire: the packet is declared lost and queued for retransmission.
+    timer->Advance(5000);
+    ASSERT_EQ(sc.GetLostPacket().size(), 1u);
+    ASSERT_EQ(sc.GetLostPacket().front().packet, pkt)
+        << "The queued retransmission must be the very object we registered.";
+
+    // Connection layer retransmits: same object, brand-new packet number.
+    auto entry = sc.GetLostPacket().front();
+    sc.GetLostPacket().pop_front();
+    // Order matters: drop the old entry BEFORE renumbering, while the stale key
+    // is still the object's current packet number (O(1) lookup).
+    const uint64_t orig_pn = entry.packet->GetPacketNumber();
+    sc.RemoveStaleUnackedEntry(ns, orig_pn, entry.packet);
+    entry.packet->SetPacketNumber(1);
+    sc.OnPacketSend(200, entry.packet, kMss, entry.stream_data);
+
+    EXPECT_EQ(sc.GetUnackedPacketCountForTest(ns), 1u)
+        << "Unacked table must not retain the entry keyed by the pre-retransmit PN. "
+           "OnPTOTimer() probes begin() only, so a surviving stale entry (always the "
+           "smallest key, and permanently is_lost) would blind PTO after its first "
+           "expiry -- see SendControl::RemoveStaleUnackedEntry().";
+
+    // A second round: the table must stay flat, not accumulate one dead entry
+    // per retransmission.
+    timer->Advance(20000);
+    ASSERT_EQ(sc.GetLostPacket().size(), 1u);
+    auto entry2 = sc.GetLostPacket().front();
+    sc.GetLostPacket().pop_front();
+    sc.RemoveStaleUnackedEntry(ns, entry2.packet->GetPacketNumber(), entry2.packet);
+    entry2.packet->SetPacketNumber(2);
+    sc.OnPacketSend(300, entry2.packet, kMss, entry2.stream_data);
+
+    EXPECT_EQ(sc.GetUnackedPacketCountForTest(ns), 1u) << "Repeated retransmissions must not grow the unacked table.";
+}
+
 }  // namespace g2
+
+// ---------------------------------------------------------------------------
+// Frame-level delivery tracking (aioquic QuicDeliveryState model)
+// ---------------------------------------------------------------------------
+namespace frame_delivery {
+
+std::shared_ptr<HandshakeDoneFrame> MakeTrackedFrame(std::vector<FrameDeliveryState>* fired) {
+    auto frame = std::make_shared<HandshakeDoneFrame>();
+    frame->SetDeliveryHandler([fired](FrameDeliveryState state) { fired->push_back(state); });
+    return frame;
+}
+
+// A packet with an actual frame object attached (the production path packs
+// frames into IPacket::GetFrames(); the bitmask alone is not enough for the
+// delivery walker).
+std::shared_ptr<Rtt1Packet> MakeTrackedPacket(uint64_t pn, std::shared_ptr<IFrame> frame) {
+    auto packet = std::make_shared<Rtt1Packet>();
+    packet->SetPacketNumber(pn);
+    packet->GetHeader()->SetPacketNumberLength(PacketNumber::GetPacketNumberLength(pn));
+    packet->AddFrameTypeBit(static_cast<FrameTypeBit>(1u << frame->GetType()));
+    packet->GetFrames().push_back(std::move(frame));
+    return packet;
+}
+
+TEST(FrameDeliveryTest, AckedPacketFiresAckedOnTrackedFrames) {
+    auto timer = std::make_shared<common::TestTimerScheduler>();
+    SendControl sc(timer);
+
+    std::vector<FrameDeliveryState> fired;
+    auto pkt = MakeTrackedPacket(1, MakeTrackedFrame(&fired));
+    sc.OnPacketSend(100, pkt, 1200);
+
+    auto ack = std::make_shared<AckFrame>();
+    ack->SetLargestAck(1);
+    ack->SetAckDelay(0);
+    ack->SetFirstAckRange(0);
+    sc.OnPacketAck(110, PacketNumberSpace::kApplicationNumberSpace, ack);
+
+    ASSERT_EQ(fired.size(), 1u);
+    EXPECT_EQ(fired[0], FrameDeliveryState::kAcked);
+}
+
+TEST(FrameDeliveryTest, ThresholdLossFiresLostAndRetransmitStaysTracked) {
+    auto timer = std::make_shared<common::TestTimerScheduler>();
+    SendControl sc(timer);
+
+    std::vector<FrameDeliveryState> fired;
+    // Packet 1 carries the tracked frame; packets 2..4 carry none (plain
+    // stream frames) so that ACKing 4 declares 1 lost by packet threshold.
+    sc.OnPacketSend(100, MakeTrackedPacket(1, MakeTrackedFrame(&fired)), 1200);
+    sc.OnPacketSend(101, MakePacket(2, FrameTypeBit::kStreamBit), 1200);
+    sc.OnPacketSend(102, MakePacket(3, FrameTypeBit::kStreamBit), 1200);
+    sc.OnPacketSend(103, MakePacket(4, FrameTypeBit::kStreamBit), 1200);
+
+    auto ack = std::make_shared<AckFrame>();
+    ack->SetLargestAck(4);
+    ack->SetAckDelay(0);
+    ack->SetFirstAckRange(2);  // acks 4, 3, 2 -> 1 is below threshold window
+    sc.OnPacketAck(110, PacketNumberSpace::kApplicationNumberSpace, ack);
+
+    ASSERT_EQ(fired.size(), 1u);
+    EXPECT_EQ(fired[0], FrameDeliveryState::kLost);
+
+    // The production retransmit path reuses the IPacket and renumbers it in
+    // place. The frame keeps its handler, so the retransmitted copy is still
+    // tracked: its ACK fires kAcked on the same handler.
+    ASSERT_EQ(sc.GetLostPacket().size(), 1u);
+    auto entry = sc.GetLostPacket().front();
+    sc.GetLostPacket().pop_front();
+    sc.RemoveStaleUnackedEntry(
+        PacketNumberSpace::kApplicationNumberSpace, entry.packet->GetPacketNumber(), entry.packet);
+    entry.packet->SetPacketNumber(5);
+    sc.OnPacketSend(200, entry.packet, 1200, entry.stream_data);
+
+    auto ack2 = std::make_shared<AckFrame>();
+    ack2->SetLargestAck(5);
+    ack2->SetAckDelay(0);
+    ack2->SetFirstAckRange(0);
+    sc.OnPacketAck(210, PacketNumberSpace::kApplicationNumberSpace, ack2);
+
+    ASSERT_EQ(fired.size(), 2u);
+    EXPECT_EQ(fired[1], FrameDeliveryState::kAcked);
+}
+
+TEST(FrameDeliveryTest, UntrackedFramesAreIgnoredAndHandlersMayRefire) {
+    auto timer = std::make_shared<common::TestTimerScheduler>();
+    SendControl sc(timer);
+
+    // Mixed packet: one tracked HANDSHAKE_DONE + one plain PING frame with no
+    // handler. The walker must skip the handler-less frame silently.
+    int lost_count = 0;
+    auto frame = std::make_shared<HandshakeDoneFrame>();
+    frame->SetDeliveryHandler([&lost_count](FrameDeliveryState state) {
+        if (state == FrameDeliveryState::kLost) {
+            lost_count++;
+        }
+    });
+
+    auto pkt = std::make_shared<Rtt1Packet>();
+    pkt->SetPacketNumber(1);
+    pkt->GetHeader()->SetPacketNumberLength(PacketNumber::GetPacketNumberLength(1));
+    pkt->AddFrameTypeBit(static_cast<FrameTypeBit>(FrameTypeBit::kHandshakeDoneBit | FrameTypeBit::kPingBit));
+    pkt->GetFrames().push_back(frame);
+    pkt->GetFrames().push_back(std::make_shared<PingFrame>());
+    sc.OnPacketSend(100, pkt, 1200);
+
+    // Drive two loss declarations for the same packet object: threshold loss,
+    // then PTO re-queue (OnPTOTimer re-queues an already-lost entry). Handlers
+    // are reset-style and must tolerate repeat fires.
+    auto ack = std::make_shared<AckFrame>();
+    ack->SetLargestAck(4);
+    ack->SetAckDelay(0);
+    ack->SetFirstAckRange(2);
+    sc.OnPacketSend(101, MakePacket(2, FrameTypeBit::kStreamBit), 1200);
+    sc.OnPacketSend(102, MakePacket(3, FrameTypeBit::kStreamBit), 1200);
+    sc.OnPacketSend(103, MakePacket(4, FrameTypeBit::kStreamBit), 1200);
+    sc.OnPacketAck(110, PacketNumberSpace::kApplicationNumberSpace, ack);
+
+    EXPECT_EQ(lost_count, 1u);
+}
+
+}  // namespace frame_delivery
 
 }  // namespace
 }  // namespace quic

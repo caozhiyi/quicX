@@ -13,7 +13,16 @@ bool HttpSmartHandler::InitializeConnection(std::shared_ptr<ITcpSocket> /*socket
 }
 
 int HttpSmartHandler::ReadData(std::shared_ptr<ITcpSocket> socket, std::vector<uint8_t>& data) {
-    return socket->Recv(data, 4096);  // Read up to 4KB
+    int bytes = socket->Recv(data, 4096);  // Read up to 4KB
+    if (bytes == 0) {
+        // Unlike the TLS path there is no in-band handshake here, so a 0-byte
+        // recv() is a real EOF (peer sent FIN). BaseSmartHandler would
+        // otherwise read it as "no application bytes yet" and leave the fd
+        // registered on a still-readable socket -- with a level-triggered
+        // epoll that spins the loop at 100% CPU until the peer goes away.
+        return -1;
+    }
+    return bytes;
 }
 
 int HttpSmartHandler::WriteData(std::shared_ptr<ITcpSocket> socket, std::vector<uint8_t>& data) {

@@ -17,4 +17,4 @@ enum class StreamType {
 }
 }  // namespace quicx
 
-#endif
+#endif  // HTTP3_STREAM_TYPE

@@ -1,13 +1,11 @@
-// Use of this source code is governed by a BSD 3-Clause License
-// that can be found in the LICENSE file.
-
-#include <gtest/gtest.h>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <string>
 #include <thread>
+
+#include <gtest/gtest.h>
 
 #include "common/qlog/qlog_config.h"
 #include "common/qlog/writer/async_writer.h"
@@ -21,11 +19,11 @@ namespace fs = std::filesystem;
 // Helper: create test config with unique temp directory
 QlogConfig CreateWriterTestConfig(const std::string& test_name) {
     QlogConfig config;
-    config.enabled = true;
-    config.output_dir = "./test_qlog_writer_" + test_name;
-    config.format = QlogFileFormat::kSequential;
-    config.flush_interval_ms = 10;  // fast flush for testing
-    config.batch_write = true;
+    config.enabled_ = true;
+    config.output_dir_ = "./test_qlog_writer_" + test_name;
+    config.format_ = QlogFileFormat::kSequential;
+    config.flush_interval_ms_ = 10;  // fast flush for testing
+    config.batch_write_ = true;
     return config;
 }
 
@@ -105,20 +103,20 @@ private:
 // Test: AsyncWriter creates output directory on Start()
 TEST_F(AsyncWriterTest, CreatesOutputDirectory) {
     auto config = CreateWriterTestConfig("creates_dir");
-    RegisterCleanup(config.output_dir);
+    RegisterCleanup(config.output_dir_);
 
     // Ensure directory doesn't exist
-    if (fs::exists(config.output_dir)) {
-        fs::remove_all(config.output_dir);
+    if (fs::exists(config.output_dir_)) {
+        fs::remove_all(config.output_dir_);
     }
-    ASSERT_FALSE(fs::exists(config.output_dir));
+    ASSERT_FALSE(fs::exists(config.output_dir_));
 
     AsyncWriter writer(config);
     writer.Start();
 
     // Directory should be created
-    EXPECT_TRUE(fs::exists(config.output_dir));
-    EXPECT_TRUE(fs::is_directory(config.output_dir));
+    EXPECT_TRUE(fs::exists(config.output_dir_));
+    EXPECT_TRUE(fs::is_directory(config.output_dir_));
 
     writer.Stop();
 }
@@ -126,7 +124,7 @@ TEST_F(AsyncWriterTest, CreatesOutputDirectory) {
 // Test: AsyncWriter creates .qlog file when writing header
 TEST_F(AsyncWriterTest, CreatesQlogFileOnWrite) {
     auto config = CreateWriterTestConfig("creates_file");
-    RegisterCleanup(config.output_dir);
+    RegisterCleanup(config.output_dir_);
 
     AsyncWriter writer(config);
     writer.Start();
@@ -144,10 +142,10 @@ TEST_F(AsyncWriterTest, CreatesQlogFileOnWrite) {
     writer.Stop();
 
     // Verify file was created
-    EXPECT_GE(CountQlogFiles(config.output_dir), 1u);
+    EXPECT_GE(CountQlogFiles(config.output_dir_), 1u);
 
     // Verify file contains the data
-    std::string content = ReadQlogFile(config.output_dir);
+    std::string content = ReadQlogFile(config.output_dir_);
     EXPECT_FALSE(content.empty());
     EXPECT_TRUE(content.find("qlog_format") != std::string::npos);
     EXPECT_TRUE(content.find("packet_sent") != std::string::npos);
@@ -156,7 +154,7 @@ TEST_F(AsyncWriterTest, CreatesQlogFileOnWrite) {
 // Test: Multiple connections create separate files
 TEST_F(AsyncWriterTest, MultipleConnectionsSeparateFiles) {
     auto config = CreateWriterTestConfig("multi_conn");
-    RegisterCleanup(config.output_dir);
+    RegisterCleanup(config.output_dir_);
 
     AsyncWriter writer(config);
     writer.Start();
@@ -175,13 +173,13 @@ TEST_F(AsyncWriterTest, MultipleConnectionsSeparateFiles) {
     writer.Stop();
 
     // Should have 3 separate .qlog files
-    EXPECT_EQ(3u, CountQlogFiles(config.output_dir));
+    EXPECT_EQ(3u, CountQlogFiles(config.output_dir_));
 }
 
 // Test: File naming convention includes connection ID prefix
 TEST_F(AsyncWriterTest, FileNamingConvention) {
     auto config = CreateWriterTestConfig("file_naming");
-    RegisterCleanup(config.output_dir);
+    RegisterCleanup(config.output_dir_);
 
     AsyncWriter writer(config);
     writer.Start();
@@ -194,7 +192,7 @@ TEST_F(AsyncWriterTest, FileNamingConvention) {
     writer.Stop();
 
     // File should contain connection ID prefix and .qlog extension
-    auto files = GetQlogFiles(config.output_dir);
+    auto files = GetQlogFiles(config.output_dir_);
     ASSERT_EQ(1u, files.size());
 
     std::string filename = fs::path(files[0]).filename().string();
@@ -206,7 +204,7 @@ TEST_F(AsyncWriterTest, FileNamingConvention) {
 // Test: Long connection ID is truncated to 8 characters in filename
 TEST_F(AsyncWriterTest, LongConnectionIdTruncated) {
     auto config = CreateWriterTestConfig("long_cid");
-    RegisterCleanup(config.output_dir);
+    RegisterCleanup(config.output_dir_);
 
     AsyncWriter writer(config);
     writer.Start();
@@ -218,7 +216,7 @@ TEST_F(AsyncWriterTest, LongConnectionIdTruncated) {
     WaitForFlush(writer, 1);
     writer.Stop();
 
-    auto files = GetQlogFiles(config.output_dir);
+    auto files = GetQlogFiles(config.output_dir_);
     ASSERT_EQ(1u, files.size());
 
     std::string filename = fs::path(files[0]).filename().string();
@@ -233,7 +231,7 @@ TEST_F(AsyncWriterTest, LongConnectionIdTruncated) {
 // Test: Start/Stop lifecycle
 TEST_F(AsyncWriterTest, StartStopLifecycle) {
     auto config = CreateWriterTestConfig("lifecycle");
-    RegisterCleanup(config.output_dir);
+    RegisterCleanup(config.output_dir_);
 
     AsyncWriter writer(config);
 
@@ -267,7 +265,7 @@ TEST_F(AsyncWriterTest, StartStopLifecycle) {
 // Test: Double start is no-op
 TEST_F(AsyncWriterTest, DoubleStartNoOp) {
     auto config = CreateWriterTestConfig("double_start");
-    RegisterCleanup(config.output_dir);
+    RegisterCleanup(config.output_dir_);
 
     AsyncWriter writer(config);
     writer.Start();
@@ -283,7 +281,7 @@ TEST_F(AsyncWriterTest, DoubleStartNoOp) {
 // Test: Double stop is no-op
 TEST_F(AsyncWriterTest, DoubleStopNoOp) {
     auto config = CreateWriterTestConfig("double_stop");
-    RegisterCleanup(config.output_dir);
+    RegisterCleanup(config.output_dir_);
 
     AsyncWriter writer(config);
     writer.Start();
@@ -298,7 +296,7 @@ TEST_F(AsyncWriterTest, DoubleStopNoOp) {
 // Test: Flush forces data to disk
 TEST_F(AsyncWriterTest, FlushForcesDataToDisk) {
     auto config = CreateWriterTestConfig("flush_test");
-    RegisterCleanup(config.output_dir);
+    RegisterCleanup(config.output_dir_);
 
     AsyncWriter writer(config);
     writer.Start();
@@ -313,7 +311,7 @@ TEST_F(AsyncWriterTest, FlushForcesDataToDisk) {
     writer.Flush();
 
     // Read file immediately after flush
-    std::string content = ReadQlogFile(config.output_dir);
+    std::string content = ReadQlogFile(config.output_dir_);
     EXPECT_TRUE(content.find("header") != std::string::npos);
     EXPECT_TRUE(content.find("event") != std::string::npos);
 
@@ -323,7 +321,7 @@ TEST_F(AsyncWriterTest, FlushForcesDataToDisk) {
 // Test: Batch write with many events
 TEST_F(AsyncWriterTest, BatchWriteMultipleEvents) {
     auto config = CreateWriterTestConfig("batch_write");
-    RegisterCleanup(config.output_dir);
+    RegisterCleanup(config.output_dir_);
 
     AsyncWriter writer(config);
     writer.Start();
@@ -344,7 +342,7 @@ TEST_F(AsyncWriterTest, BatchWriteMultipleEvents) {
     EXPECT_EQ(static_cast<uint64_t>(num_events), writer.GetTotalEventsWritten());
 
     // Verify file content
-    std::string content = ReadQlogFile(config.output_dir);
+    std::string content = ReadQlogFile(config.output_dir_);
     EXPECT_FALSE(content.empty());
 
     // Count lines (header + events)
@@ -362,7 +360,7 @@ TEST_F(AsyncWriterTest, BatchWriteMultipleEvents) {
 // Test: Data integrity - content matches what was written
 TEST_F(AsyncWriterTest, DataIntegrity) {
     auto config = CreateWriterTestConfig("data_integrity");
-    RegisterCleanup(config.output_dir);
+    RegisterCleanup(config.output_dir_);
 
     AsyncWriter writer(config);
     writer.Start();
@@ -381,7 +379,7 @@ TEST_F(AsyncWriterTest, DataIntegrity) {
     writer.Stop();
 
     // Read and verify
-    std::string content = ReadQlogFile(config.output_dir);
+    std::string content = ReadQlogFile(config.output_dir_);
     EXPECT_TRUE(content.find("qlog_format") != std::string::npos);
     EXPECT_TRUE(content.find("packet_sent") != std::string::npos);
     EXPECT_TRUE(content.find("packet_received") != std::string::npos);
@@ -394,7 +392,7 @@ TEST_F(AsyncWriterTest, DataIntegrity) {
 // Test: Events and bytes statistics
 TEST_F(AsyncWriterTest, StatisticsAccuracy) {
     auto config = CreateWriterTestConfig("statistics");
-    RegisterCleanup(config.output_dir);
+    RegisterCleanup(config.output_dir_);
 
     AsyncWriter writer(config);
     writer.Start();
@@ -421,7 +419,7 @@ TEST_F(AsyncWriterTest, StatisticsAccuracy) {
 // Test: SetOutputDirectory changes where files are written
 TEST_F(AsyncWriterTest, SetOutputDirectoryChangesPath) {
     auto config = CreateWriterTestConfig("change_dir");
-    RegisterCleanup(config.output_dir);
+    RegisterCleanup(config.output_dir_);
 
     std::string new_dir = "./test_qlog_writer_new_dir";
     RegisterCleanup(new_dir);
@@ -445,7 +443,7 @@ TEST_F(AsyncWriterTest, SetOutputDirectoryChangesPath) {
     writer.Stop();
 
     // Original directory should have old connection file
-    EXPECT_GE(CountQlogFiles(config.output_dir), 1u);
+    EXPECT_GE(CountQlogFiles(config.output_dir_), 1u);
     // New directory should have new connection file
     EXPECT_GE(CountQlogFiles(new_dir), 1u);
 }
@@ -453,7 +451,7 @@ TEST_F(AsyncWriterTest, SetOutputDirectoryChangesPath) {
 // Test: Writing with no Start() is silently ignored
 TEST_F(AsyncWriterTest, WriteBeforeStartIgnored) {
     auto config = CreateWriterTestConfig("no_start");
-    RegisterCleanup(config.output_dir);
+    RegisterCleanup(config.output_dir_);
 
     AsyncWriter writer(config);
     // Don't call Start()
@@ -469,8 +467,8 @@ TEST_F(AsyncWriterTest, WriteBeforeStartIgnored) {
 // Test: Stop flushes remaining queue items
 TEST_F(AsyncWriterTest, StopDrainsQueue) {
     auto config = CreateWriterTestConfig("stop_drains");
-    config.flush_interval_ms = 5000;  // Very long flush interval
-    RegisterCleanup(config.output_dir);
+    config.flush_interval_ms_ = 5000;  // Very long flush interval
+    RegisterCleanup(config.output_dir_);
 
     AsyncWriter writer(config);
     writer.Start();

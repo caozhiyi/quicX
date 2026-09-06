@@ -1,5 +1,6 @@
-#include "common/util/bitmap.h"
 #include <gtest/gtest.h>
+
+#include "common/util/bitmap.h"
 
 namespace quicx {
 namespace common {

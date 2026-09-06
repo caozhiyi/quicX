@@ -1,16 +1,16 @@
 // Stress Test
 // Long-running and high-concurrency tests
 
-#include <gtest/gtest.h>
 #include <atomic>
 #include <chrono>
-#include <thread>
-#include <vector>
-
 #include <quicx/http3/if_client.h>
 #include <quicx/http3/if_request.h>
 #include <quicx/http3/if_response.h>
 #include <quicx/http3/if_server.h>
+#include <thread>
+#include <vector>
+
+#include <gtest/gtest.h>
 
 #include "test_server_helper.h"
 
@@ -120,7 +120,6 @@ TEST_F(StressTest, HighConcurrency) {
     std::vector<std::thread> threads;
 
     auto start = std::chrono::steady_clock::now();
-
 
     for (int i = 0; i < num_clients; ++i) {
         threads.emplace_back([&, i]() {

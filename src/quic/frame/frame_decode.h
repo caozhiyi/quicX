@@ -3,7 +3,9 @@
 
 #include <memory>
 #include <vector>
+
 #include "common/buffer/if_buffer.h"
+
 #include "quic/frame/if_frame.h"
 
 namespace quicx {
@@ -14,4 +16,4 @@ bool DecodeFrames(std::shared_ptr<common::IBuffer> buffer, std::vector<std::shar
 }
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_FRAME_FRAME_DECODE

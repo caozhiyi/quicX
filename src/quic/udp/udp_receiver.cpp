@@ -1,5 +1,6 @@
 #include <cstring>
 #include <memory>
+#include <quicx/common/metrics.h>
 #ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -10,12 +11,14 @@
 #include <netinet/ip6.h>
 #include <sys/socket.h>
 #endif
-#include <quicx/common/metrics.h>
-#include <quicx/common/metrics_std.h>
+
+#include "common/config.h"
 #include "common/log/log.h"
+#include "common/metrics/metrics_std.h"
 #include "common/network/if_event_driver.h"
 #include "common/network/io_handle.h"
 #include "common/util/time.h"
+
 #include "quic/common/constants.h"
 #include "quic/config.h"
 #include "quic/quicx/global_resource.h"
@@ -30,7 +33,7 @@ UdpReceiver::UdpReceiver(std::shared_ptr<common::IEventLoop> event_loop):
 
 UdpReceiver::~UdpReceiver() {
     // Close only those UDP sockets that we created ourselves (via
-    // AddReceiver(ip, port, ...)). Sockets registered via AddReceiver(fd, ...)
+    // AddReceiver(ip, port, ...)). Sockets registered via AddReceiver(sock, ...)
     // are owned by the caller and must not be closed here (double-close would
     // corrupt fd tables and mis-close a future unrelated fd).
     //
@@ -47,46 +50,54 @@ UdpReceiver::~UdpReceiver() {
     receiver_map_.clear();
 }
 
-bool UdpReceiver::AddReceiver(int32_t socket_fd, std::shared_ptr<IPacketReceiver> receiver) {
+bool UdpReceiver::AddReceiver(common::SocketHandle sock, std::shared_ptr<IPacketReceiver> receiver) {
     auto loop = event_loop_.lock();
     if (!loop) return false;
-    LOG_DEBUG("UdpReceiver::AddReceiver called: fd=%d, IsInLoopThread=%d", socket_fd, loop->IsInLoopThread());
+    LOG_DEBUG("UdpReceiver::AddReceiver called: fd=%d, IsInLoopThread=%d", sock.fd, loop->IsInLoopThread());
 
     if (!loop->IsInLoopThread()) {
-        LOG_DEBUG("UdpReceiver::AddReceiver: posting to EventLoop thread, fd=%d", socket_fd);
+        LOG_DEBUG("UdpReceiver::AddReceiver: posting to EventLoop thread, fd=%d", sock.fd);
         auto weak_self = weak_from_this();
-        loop->RunInLoop([weak_self, socket_fd, receiver]() {
+        loop->RunInLoop([weak_self, sock, receiver]() {
             auto self = weak_self.lock();
             if (!self) return;
-            static_cast<UdpReceiver*>(self.get())->AddReceiver(socket_fd, receiver);
+            static_cast<UdpReceiver*>(self.get())->AddReceiver(sock, receiver);
         });
         return true;
     }
 
-    LOG_DEBUG("UdpReceiver::AddReceiver: registering fd=%d in EventLoop", socket_fd);
-    receiver_map_[socket_fd] = receiver;
+    LOG_DEBUG("UdpReceiver::AddReceiver: registering fd=%d in EventLoop", sock.fd);
+    // The family travels with the handle from the fd's creation site (see
+    // common/network/socket_handle.h). Only a handle that could not capture it
+    // (family 0) pays one ResolveSocketFamily syscall here — once per
+    // listener, never per packet.
+    if (sock.family != AF_INET && sock.family != AF_INET6) {
+        sock.family = common::ResolveSocketFamily(sock.fd);
+    }
+    receiver_map_[sock.fd] = {receiver, sock};
     if (ecn_enabled_) {
         // Outgoing marking (ECT(0), RFC 9000 §A.4) + receiving TOS/TCLASS
         // ancillary data for ACK_ECN counting. This fd-path is where CLIENT
         // sockets (already connected) and server-provided fds register, so it
         // needs both sides of the ECN plumbing.
-        auto recv_r = common::EnableUdpEcn(socket_fd);
+        auto recv_r = common::EnableUdpEcn(sock.fd);
         if (recv_r.error_code_ != 0) {
-            LOG_WARN("UdpReceiver::AddReceiver: EnableUdpEcn failed on fd=%d err=%d — ACK_ECN counters will stay "
-                     "zero for this socket",
-                socket_fd, recv_r.error_code_);
+            LOG_WARN(
+                "UdpReceiver::AddReceiver: EnableUdpEcn failed on fd=%d err=%d — ACK_ECN counters will stay "
+                "zero for this socket",
+                sock.fd, recv_r.error_code_);
         }
-        auto mark = common::EnableUdpEcnMarking(socket_fd, 2 /* ECT(0) */);
+        auto mark = common::EnableUdpEcnMarking(sock.fd, 2 /* ECT(0) */);
         if (mark.error_code_ != 0) {
-            LOG_ERROR("UdpReceiver::AddReceiver: failed to enable ECT(0) marking on fd=%d err=%d", socket_fd,
+            LOG_ERROR("UdpReceiver::AddReceiver: failed to enable ECT(0) marking on fd=%d err=%d", sock.fd,
                 mark.error_code_);
         } else {
-            LOG_DEBUG("UdpReceiver::AddReceiver: ECT(0) marking enabled on fd=%d", socket_fd);
+            LOG_DEBUG("UdpReceiver::AddReceiver: ECT(0) marking enabled on fd=%d", sock.fd);
         }
     }
     bool result =
-        loop->RegisterFd(socket_fd, common::EventType::ET_READ | common::EventType::ET_ERROR, shared_from_this());
-    LOG_DEBUG("UdpReceiver::AddReceiver: registration result=%d for fd=%d", result, socket_fd);
+        loop->RegisterFd(sock.fd, common::EventType::ET_READ | common::EventType::ET_ERROR, shared_from_this());
+    LOG_DEBUG("UdpReceiver::AddReceiver: registration result=%d for fd=%d", result, sock.fd);
     return result;
 }
 
@@ -109,6 +120,7 @@ bool UdpReceiver::AddReceiver(const std::string& ip, uint16_t port, std::shared_
     }
 
     int32_t socket_fd = ret.return_value_;
+    const int32_t socket_family = ret.family_;
 
     // set noblocking
     auto opt_ret = common::SocketNoblocking(socket_fd);
@@ -124,8 +136,9 @@ bool UdpReceiver::AddReceiver(const std::string& ip, uint16_t port, std::shared_
         // enable receiving TOS/TCLASS for ECN via io_handle abstraction
         auto recv_r = common::EnableUdpEcn(socket_fd);
         if (recv_r.error_code_ != 0) {
-            LOG_WARN("UdpReceiver::AddReceiver: EnableUdpEcn failed on fd=%d err=%d — ACK_ECN counters will stay "
-                     "zero for this socket",
+            LOG_WARN(
+                "UdpReceiver::AddReceiver: EnableUdpEcn failed on fd=%d err=%d — ACK_ECN counters will stay "
+                "zero for this socket",
                 socket_fd, recv_r.error_code_);
         }
         // RFC 9000 §A.4: mark outgoing packets on this socket ECT(0)
@@ -138,7 +151,9 @@ bool UdpReceiver::AddReceiver(const std::string& ip, uint16_t port, std::shared_
         }
     }
 
-    opt_ret = Bind(socket_fd, addr);
+    // We created this socket, so its family is known — pass it explicitly
+    // instead of letting Bind() probe the kernel.
+    opt_ret = Bind(socket_fd, socket_family, addr);
     if (opt_ret.error_code_ != 0) {
         LOG_ERROR("bind address failed. err:%d", opt_ret.error_code_);
         common::Close(socket_fd);
@@ -150,8 +165,8 @@ bool UdpReceiver::AddReceiver(const std::string& ip, uint16_t port, std::shared_
         return false;
     }
 
-    receiver_map_[socket_fd] = receiver;
     owned_fds_.insert(socket_fd);  // we created this fd; we are responsible for closing it
+    receiver_map_[socket_fd] = {receiver, common::SocketHandle(socket_fd, socket_family)};
     return true;
 }
 
@@ -191,7 +206,7 @@ bool UdpReceiver::RemoveReceiver(int32_t socket_fd) {
 }
 
 void UdpReceiver::OnRead(uint32_t fd) {
-    common::Metrics::CounterInc(common::MetricsStd::DiagUdpOnRead);
+    Metrics::CounterInc(common::MetricsStd::DiagUdpOnRead);
 
     // Keep draining until the socket runs dry (or we hit the round ceiling).
     //
@@ -357,11 +372,16 @@ int32_t UdpReceiver::DrainBatch(uint32_t fd) {
         // them in metrics; we cannot deliver them anywhere.
         LOG_ERROR("receiver not found. fd:%d", fd);
         for (int i = 0; i < rc.return_value_; ++i) {
-            common::Metrics::CounterInc(common::MetricsStd::UdpDroppedPackets);
+            Metrics::CounterInc(common::MetricsStd::UdpDroppedPackets);
         }
         return -1;
     }
-    auto receiver_strong = recv_iter->second.lock();
+    auto receiver_strong = recv_iter->second.receiver_.lock();
+
+    // Stamp each datagram with the listener's registered handle (fd + family
+    // captured at the fd's creation site) so the egress path that later
+    // adopts this socket never has to re-derive the family from the kernel.
+    const common::SocketHandle rx_sock = recv_iter->second.sock_;
 
     for (int i = 0; i < rc.return_value_; ++i) {
         auto& pkt = pkts[i];
@@ -370,17 +390,17 @@ int32_t UdpReceiver::DrainBatch(uint32_t fd) {
         auto buffer = pkt->GetData();
         buffer->MoveWritePt(bytes);
         pkt->SetAddress(std::move(entries[i].peer_addr_));
-        pkt->SetSocket(fd);
+        pkt->SetSocket(rx_sock);
         pkt->SetTime(common::UTCTimeMsec());
         pkt->SetEcn(ecn_enabled_ ? entries[i].ecn_ : 0);
 
-        common::Metrics::CounterInc(common::MetricsStd::UdpPacketsRx);
-        common::Metrics::CounterInc(common::MetricsStd::UdpBytesRx, bytes);
+        Metrics::CounterInc(common::MetricsStd::UdpPacketsRx);
+        Metrics::CounterInc(common::MetricsStd::UdpBytesRx, bytes);
 
         if (receiver_strong) {
             receiver_strong->OnPacket(pkt);
         } else {
-            common::Metrics::CounterInc(common::MetricsStd::UdpDroppedPackets);
+            Metrics::CounterInc(common::MetricsStd::UdpDroppedPackets);
         }
     }
 

@@ -1,16 +1,17 @@
-#include <gtest/gtest.h>
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <quicx/common/metrics.h>
+#include <quicx/common/type.h>
 #include <regex>
 #include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
 
-#include <quicx/common/metrics.h>
-#include <quicx/common/metrics_std.h>
-#include <quicx/common/type.h>
+#include <gtest/gtest.h>
+
+#include "common/metrics/metrics_std.h"
 
 namespace quicx {
 namespace common {
@@ -23,7 +24,7 @@ class MetricsComprehensiveTest: public testing::Test {
 protected:
     void SetUp() override {
         MetricsConfig config;
-        config.enable = true;
+        config.enable_ = true;
         Metrics::Initialize(config);
     }
 };

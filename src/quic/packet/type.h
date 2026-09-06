@@ -57,4 +57,4 @@ PacketType MapWireToPacketType(uint8_t wire_bits, uint32_t version);
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_PACKET_TYPE

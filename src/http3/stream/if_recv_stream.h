@@ -3,6 +3,7 @@
 
 #include <quicx/common/if_buffer_read.h>
 #include <quicx/quic/if_quic_recv_stream.h>
+
 #include "http3/stream/if_stream.h"
 
 namespace quicx {
@@ -36,4 +37,4 @@ protected:
 }  // namespace http3
 }  // namespace quicx
 
-#endif
+#endif  // HTTP3_STREAM_IF_RECV_STREAM

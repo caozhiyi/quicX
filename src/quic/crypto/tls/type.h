@@ -2,8 +2,10 @@
 #define QUIC_CRYPTO_TLS_TYPE
 
 #include <cstdint>
-#include "common/util/c_smart_ptr.h"
+
 #include "openssl/ssl.h"
+
+#include "common/util/c_smart_ptr.h"
 
 namespace quicx {
 namespace quic {
@@ -36,4 +38,4 @@ using SSLPtr = common::CSmartPtr<SSL, SSL_free>;
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_CRYPTO_TLS_TYPE

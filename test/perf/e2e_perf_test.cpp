@@ -64,7 +64,7 @@
 // rtt_calculator here because benchmarks are explicitly a "test-side opt-in"
 // consumer of the default-override hook described in
 // docs/internal/perf_e2e_analysis.md §6 P3.
-#include "quic/connection/controler/rtt_calculator.h"
+#include "quic/connection/controller/rtt_calculator.h"
 
 namespace quicx {
 namespace perf {

@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "quic/config.h"
 #include "quic/frame/if_frame.h"
 
 namespace quicx {
@@ -129,7 +130,6 @@ private:
     // Peer-initiated streams created before stream_state_cb_ was installed.
     // Replayed by SetStreamStateCallback(). weak_ptr so a stream closed in the
     // meantime is simply skipped instead of being kept alive artificially.
-    static constexpr size_t kMaxUnnotifiedRemoteStreams = 64;
     std::vector<std::weak_ptr<IStream>> unnotified_remote_streams_;
 
     // Qlog trace for connection ID events

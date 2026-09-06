@@ -1,7 +1,10 @@
-#include "upgrade/handlers/base_smart_handler.h"
+#include <vector>
+
 #include "common/log/log.h"
 #include "common/network/if_event_driver.h"
+
 #include "upgrade/core/protocol_detector.h"
+#include "upgrade/handlers/base_smart_handler.h"
 #include "upgrade/network/tcp_socket.h"
 
 namespace quicx {
@@ -146,10 +149,35 @@ void BaseSmartHandler::OnClose(uint32_t fd) {
 
     LOG_INFO("%s connection closed, socket: %d", GetType().c_str(), context.socket->GetFd());
 
+    // Deregister BEFORE closing. Closing the fd does drop it from
+    // epoll/kqueue implicitly, but EventLoop::fd_to_handler_ would keep the
+    // entry forever (the handler weak_ptr is still alive as long as the
+    // listener owns this object), i.e. one stale map entry per connection
+    // for the lifetime of the server.
+    if (auto event_loop = event_loop_.lock()) {
+        event_loop->RemoveFd(fd);
+    }
+
     // Clean up connection-specific resources
     CleanupConnection(context.socket);
+    context.socket->Close();
 
     connections_.erase(it);
+}
+
+void BaseSmartHandler::CloseAllConnections() {
+    if (connections_.empty()) {
+        return;
+    }
+    // Snapshot the fds: OnClose() erases from connections_ as it goes.
+    std::vector<uint32_t> fds;
+    fds.reserve(connections_.size());
+    for (const auto& entry : connections_) {
+        fds.push_back(entry.first);
+    }
+    for (uint32_t fd : fds) {
+        OnClose(fd);
+    }
 }
 
 void BaseSmartHandler::HandleProtocolDetection(uint32_t fd, const std::vector<uint8_t>& data) {
@@ -339,12 +367,9 @@ void BaseSmartHandler::HandleNegotiationTimeout(uint32_t fd) {
         context.state == ConnectionState::NEGOTIATING) {
         LOG_WARN("Negotiation timeout for %s connection, socket: %d", GetType().c_str(), context.socket->GetFd());
 
-        // Close the connection due to timeout
-        context.socket->Close();
-
-        // Clean up connection context
-        CleanupConnection(context.socket);
-        connections_.erase(it);
+        // Close the connection due to timeout. OnClose() cancels the timer,
+        // deregisters the fd from the loop and closes the socket.
+        OnClose(fd);
 
     } else {
         // Negotiation completed or failed, timer is no longer needed

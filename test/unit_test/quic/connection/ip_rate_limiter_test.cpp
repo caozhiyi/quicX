@@ -1,7 +1,9 @@
-#include <gtest/gtest.h>
 #include <thread>
 
+#include <gtest/gtest.h>
+
 #include "common/network/address.h"
+
 #include "quic/quicx/ip_rate_limiter.h"
 
 using namespace quicx::quic;

@@ -38,14 +38,15 @@
 // first. That distinction is also the reason fuzzing missed this, on top of the
 // harness bug noted in init_packet_fuzz.cpp.
 
-#include <gtest/gtest.h>
-
 #include <memory>
 #include <vector>
+
+#include <gtest/gtest.h>
 
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
 #include "common/decode/decode.h"
+
 #include "quic/packet/handshake_packet.h"
 #include "quic/packet/init_packet.h"
 #include "quic/packet/rtt_0_packet.h"
@@ -61,7 +62,8 @@ namespace {
 // unvalidated wire lengths was handed to crypto.
 class SpyCryptographer: public ICryptographer {
 public:
-    explicit SpyCryptographer(std::shared_ptr<ICryptographer> inner): inner_(std::move(inner)) {}
+    explicit SpyCryptographer(std::shared_ptr<ICryptographer> inner):
+        inner_(std::move(inner)) {}
 
     bool header_decrypt_attempted = false;
 
@@ -83,21 +85,21 @@ public:
     Result InstallInitSecretWithVersion(const uint8_t* s, size_t n, uint32_t v, bool srv) override {
         return inner_->InstallInitSecretWithVersion(s, n, v, srv);
     }
-    Result DecryptPacket(uint64_t pn, common::BufferSpan& ad, common::BufferSpan& ct,
-        std::shared_ptr<common::IBuffer> out) override {
+    Result DecryptPacket(
+        uint64_t pn, common::BufferSpan& ad, common::BufferSpan& ct, std::shared_ptr<common::IBuffer> out) override {
         return inner_->DecryptPacket(pn, ad, ct, out);
     }
-    Result DecryptPacketWithPrevKey(uint64_t pn, common::BufferSpan& ad, common::BufferSpan& ct,
-        std::shared_ptr<common::IBuffer> out) override {
+    Result DecryptPacketWithPrevKey(
+        uint64_t pn, common::BufferSpan& ad, common::BufferSpan& ct, std::shared_ptr<common::IBuffer> out) override {
         return inner_->DecryptPacketWithPrevKey(pn, ad, ct, out);
     }
-    Result EncryptPacket(uint64_t pn, common::BufferSpan& ad, common::BufferSpan& pt,
-        std::shared_ptr<common::IBuffer> out) override {
+    Result EncryptPacket(
+        uint64_t pn, common::BufferSpan& ad, common::BufferSpan& pt, std::shared_ptr<common::IBuffer> out) override {
         return inner_->EncryptPacket(pn, ad, pt, out);
     }
     bool HasPrevReadKey() const override { return inner_->HasPrevReadKey(); }
-    Result EncryptHeader(common::BufferSpan& pt, common::BufferSpan& sample, uint8_t pn_offset, size_t pn_len,
-        bool is_short) override {
+    Result EncryptHeader(
+        common::BufferSpan& pt, common::BufferSpan& sample, uint8_t pn_offset, size_t pn_len, bool is_short) override {
         return inner_->EncryptHeader(pt, sample, pn_offset, pn_len, is_short);
     }
     size_t GetTagLength() override { return inner_->GetTagLength(); }
@@ -123,11 +125,10 @@ std::shared_ptr<common::SingleBlockBuffer> MakeBuffer(const uint8_t* data, size_
 // Long header with an empty token, a caller-chosen `length` field, and
 // |payload_bytes| bytes actually present. |length| is written verbatim so a test
 // can make it disagree with reality -- that disagreement is the point.
-std::vector<uint8_t> BuildLongHeaderPacket(
-    uint8_t first_byte, uint64_t length, size_t payload_bytes, bool with_token) {
+std::vector<uint8_t> BuildLongHeaderPacket(uint8_t first_byte, uint64_t length, size_t payload_bytes, bool with_token) {
     std::vector<uint8_t> raw;
     raw.push_back(first_byte);
-    raw.insert(raw.end(), {0x00, 0x00, 0x00, 0x01});// version 1
+    raw.insert(raw.end(), {0x00, 0x00, 0x00, 0x01});        // version 1
     raw.insert(raw.end(), {0x04, 0x01, 0x02, 0x03, 0x04});  // DCID len + DCID
     raw.insert(raw.end(), {0x04, 0x05, 0x06, 0x07, 0x08});  // SCID len + SCID
     if (with_token) {
@@ -163,9 +164,8 @@ TEST(LongHeaderBoundsTest, InitPacketRejectsShortPayloadBeforeTouchingCrypto) {
     pkt.SetCryptographer(spy);
 
     EXPECT_FALSE(pkt.DecodeWithCrypto(buffer));
-    EXPECT_FALSE(spy->header_decrypt_attempted)
-        << "an out-of-bounds sample pointer was handed to DecryptHeader; "
-           "EVP_EncryptUpdate reads all 16 bytes of it";
+    EXPECT_FALSE(spy->header_decrypt_attempted) << "an out-of-bounds sample pointer was handed to DecryptHeader; "
+                                                   "EVP_EncryptUpdate reads all 16 bytes of it";
 }
 
 TEST(LongHeaderBoundsTest, HandshakePacketRejectsShortPayloadBeforeTouchingCrypto) {

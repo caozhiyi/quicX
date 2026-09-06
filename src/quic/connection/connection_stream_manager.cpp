@@ -1,12 +1,13 @@
 #include <quicx/common/metrics.h>
-#include <quicx/common/metrics_std.h>
+
 #include "common/log/log.h"
+#include "common/log/log_context.h"
+#include "common/metrics/metrics_std.h"
 #include "common/qlog/qlog.h"
 
-#include "common/log/log_context.h"
 #include "quic/connection/connection_stream_manager.h"
-#include "quic/connection/controler/send_flow_controller.h"
-#include "quic/connection/controler/send_manager.h"
+#include "quic/connection/controller/send_flow_controller.h"
+#include "quic/connection/controller/send_manager.h"
 #include "quic/connection/if_connection_event_sink.h"
 #include "quic/connection/transport_param.h"
 #include "quic/crypto/tls/type.h"
@@ -73,8 +74,8 @@ StreamManager::~StreamManager() {
     size_t leaked = streams_map_.size();
     if (leaked > 0) {
         for (size_t i = 0; i < leaked; ++i) {
-            common::Metrics::GaugeDec(common::MetricsStd::QuicStreamsActive);
-            common::Metrics::CounterInc(common::MetricsStd::QuicStreamsClosed);
+            Metrics::GaugeDec(common::MetricsStd::QuicStreamsActive);
+            Metrics::CounterInc(common::MetricsStd::QuicStreamsClosed);
         }
         LOG_DEBUG("StreamManager dtor: compensated %zu streams that were never closed via InnerStreamClose", leaked);
     }
@@ -132,8 +133,8 @@ std::shared_ptr<IStream> StreamManager::MakeStreamWithFlowControl(StreamDirectio
     auto new_stream = MakeStream(send_size, stream_id, type, recv_size);
 
     // Metrics: Stream created
-    common::Metrics::GaugeInc(common::MetricsStd::QuicStreamsActive);
-    common::Metrics::CounterInc(common::MetricsStd::QuicStreamsCreated);
+    Metrics::GaugeInc(common::MetricsStd::QuicStreamsActive);
+    Metrics::CounterInc(common::MetricsStd::QuicStreamsCreated);
 
     return new_stream;
 }
@@ -288,8 +289,8 @@ std::shared_ptr<IStream> StreamManager::CreateRemoteStream(
         // QuicStreamsActive gauge underflows because InnerStreamClose's Dec
         // counts every stream regardless of who initiated it. Keep symmetric
         // with MakeStreamWithFlowControl above.
-        common::Metrics::GaugeInc(common::MetricsStd::QuicStreamsActive);
-        common::Metrics::CounterInc(common::MetricsStd::QuicStreamsCreated);
+        Metrics::GaugeInc(common::MetricsStd::QuicStreamsActive);
+        Metrics::CounterInc(common::MetricsStd::QuicStreamsCreated);
     }
 
     return stream;
@@ -362,11 +363,9 @@ void StreamManager::MarkStreamActive(std::shared_ptr<IStream> stream) {
 
     uint64_t stream_id = stream->GetStreamID();
     common::LogTagGuard guard("|strm:" + std::to_string(stream_id));
-    LOG_DEBUG("StreamManager: marking stream %llu as active, ptr=%p, is_crypto=%d, is_bidi=%d, direction=%d",
-        stream_id, stream.get(),
-        std::dynamic_pointer_cast<CryptoStream>(stream) ? 1 : 0,
-        std::dynamic_pointer_cast<BidirectionStream>(stream) ? 1 : 0,
-        static_cast<int>(stream->GetDirection()));
+    LOG_DEBUG("StreamManager: marking stream %llu as active, ptr=%p, is_crypto=%d, is_bidi=%d, direction=%d", stream_id,
+        stream.get(), std::dynamic_pointer_cast<CryptoStream>(stream) ? 1 : 0,
+        std::dynamic_pointer_cast<BidirectionStream>(stream) ? 1 : 0, static_cast<int>(stream->GetDirection()));
 
     // Add to write buffer (safe during BuildStreamFrames processing)
     active_streams_.Add(stream);

@@ -1,8 +1,8 @@
-#include "quic/quicx/master_with_thread.h"
-
 #include <future>
 
 #include "common/log/log.h"
+
+#include "quic/quicx/master_with_thread.h"
 
 namespace quicx {
 namespace quic {
@@ -89,9 +89,9 @@ void MasterWithThread::PostTask(std::function<void()> task) {
     }
 }
 
-bool MasterWithThread::AddListener(int32_t listener_sock) {
+bool MasterWithThread::AddListener(common::SocketHandle listener_sock) {
     auto loop = event_loop_.lock();
-    LOG_DEBUG("MasterWithThread::AddListener called: fd=%d, event_loop=%p", listener_sock, loop.get());
+    LOG_DEBUG("MasterWithThread::AddListener called: fd=%d, event_loop=%p", listener_sock.fd, loop.get());
 
     // If EventLoop is initialized, synchronously register the listener on the
     // master-loop thread before returning. This guarantees that by the time
@@ -116,7 +116,7 @@ bool MasterWithThread::AddListener(int32_t listener_sock) {
     // If EventLoop is not initialized yet, add directly to pending_listeners_
     // This will be processed in Master::Init() when Run() starts
     LOG_DEBUG(
-        "MasterWithThread::AddListener: EventLoop not initialized, adding to pending list for fd=%d", listener_sock);
+        "MasterWithThread::AddListener: EventLoop not initialized, adding to pending list for fd=%d", listener_sock.fd);
     ListenerInfo info;
     info.sock = listener_sock;
     pending_listeners_.push_back(info);
@@ -139,7 +139,7 @@ bool MasterWithThread::RemoveListener(int32_t listener_sock) {
 
     // Loop not up yet: drop it from the pending list if it is queued there.
     for (auto it = pending_listeners_.begin(); it != pending_listeners_.end(); ++it) {
-        if (it->sock == listener_sock) {
+        if (it->sock.fd == listener_sock) {
             pending_listeners_.erase(it);
             return true;
         }
@@ -149,7 +149,7 @@ bool MasterWithThread::RemoveListener(int32_t listener_sock) {
 
 bool MasterWithThread::AddListener(const std::string& ip, uint16_t port) {
     // If EventLoop is initialized, synchronously register the listener on the
-    // master-loop thread (see AddListener(int32_t) above for rationale).
+    // master-loop thread (see AddListener(SocketHandle) above for rationale).
     auto loop = event_loop_.lock();
     if (loop) {
         if (loop->IsInLoopThread()) {

@@ -5,10 +5,11 @@
 #include <functional>
 #include <list>
 #include <memory>
+#include <quicx/quic/if_quic_stream.h>
 #include <string>
 
-#include <quicx/common/if_event_loop.h>
-#include <quicx/quic/if_quic_stream.h>
+#include "common/network/if_event_loop.h"
+
 #include "quic/crypto/tls/type.h"
 #include "quic/frame/if_frame.h"
 #include "quic/stream/if_frame_visitor.h"
@@ -68,4 +69,4 @@ protected:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_STREAM_IF_STREAM

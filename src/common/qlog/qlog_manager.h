@@ -1,6 +1,3 @@
-// Use of this source code is governed by a BSD 3-Clause License
-// that can be found in the LICENSE file.
-
 #ifndef COMMON_QLOG_QLOG_MANAGER
 #define COMMON_QLOG_QLOG_MANAGER
 
@@ -43,7 +40,7 @@ public:
      *
      * Uses a dedicated atomic so the (hot, per-event) check does not take the
      * config mutex and cannot race with Enable()/SetConfig() updating
-     * config_.enabled on another thread (TSan data race).
+     * config_.enabled_ on another thread (TSan data race).
      */
     bool IsEnabled() const { return enabled_.load(std::memory_order_acquire); }
 
@@ -125,11 +122,11 @@ private:
     // Whether initialized
     bool initialized_;
 
-    // Mirror of config_.enabled for lock-free, race-free reads in IsEnabled().
+    // Mirror of config_.enabled_ for lock-free, race-free reads in IsEnabled().
     std::atomic<bool> enabled_{false};
 };
 
 }  // namespace common
 }  // namespace quicx
 
-#endif
+#endif  // COMMON_QLOG_QLOG_MANAGER

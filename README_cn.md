@@ -3,7 +3,8 @@
 <p align="left">
   <a href="https://opensource.org/licenses/BSD-3-Clause"><img src="https://img.shields.io/badge/license-BSD--3--Clause-orange.svg" alt="License"></a>
   <img src="https://img.shields.io/badge/version-1.0.0-blue.svg" alt="Version">
-  <img src="https://img.shields.io/badge/status-learning--reference-brightgreen.svg" alt="Status">
+  <img src="https://img.shields.io/badge/status-stable--v1.0.0-brightgreen.svg" alt="Status">
+  <img src="https://img.shields.io/badge/interop-24%20scenarios%20%C3%97%2017%20peers%20%7C%2091.22%25-brightgreen.svg" alt="Interop">
   <img src="https://img.shields.io/badge/C%2B%2B-17-blue.svg" alt="C++17">
   <img src="https://img.shields.io/badge/RFC-9000%20%2F%209369%20%2F%209114-informational.svg" alt="RFC">
 </p>
@@ -13,7 +14,7 @@
 
 **QuicX** 是一套自包含的 C++17 QUIC / HTTP/3 协议栈：从 UDP socket、TLS 1.3（BoringSSL）、QUIC 流，一路到 HTTP/3 路由、QPACK 与服务端推送，全部在同一个仓库里实现，不依赖任何外部 HTTP 框架。
 
-它的目标是**读得懂、跑得通**——一份清晰的代码带你看清一个数据包从网卡到 HTTP/3 handler 的完整生命周期，背后有 1196+ 单元测试、干净的 ASan / UBSan / TSan 结果，以及与主流实现 91.7% 的互通通过率。它**唯一还没做的**，是承载大规模生产流量；请把它当作一份可信的参考实现来用、来学、来扩展。
+它为**生产服务**而生：1527 项单元与集成测试、干净的 ASan / UBSan / TSan 结果、与 17 个主流实现 24 场景互通矩阵 91.22% 的通过率——从网卡到 HTTP/3 handler 的完整生命周期都经得起检验。
 
 ---
 
@@ -78,32 +79,39 @@ QuicX 是**单进程架构**：Application、HTTP/3、HTTP Upgrade、QUIC、Comm
 
 ## 互通测试
 
-QuicX 持续使用 [`quic-interop-runner`](https://github.com/quic-interop/quic-interop-runner) 与主流 QUIC 实现互通——**14 场景 × 12 对端 × 2 方向 = 每轮 322 个测试组合**。最近一次跑测：
+QuicX 持续使用 [`quic-interop-runner`](https://github.com/quic-interop/quic-interop-runner) 与主流 QUIC 实现互通——**24 场景 × 17 对端（双向）= 每轮 744 个测试组合**（22 个协议合规场景 + goodput / crosstraffic 性能测算）。最近一次跑测（2026-09-04）：
 
 | 指标 | 值 |
 |---|---|
-| 通过 | **222** |
-| 失败 | **20** |
-| 不支持 | 94 |
-| **通过率**（剔除不支持） | **91.7%** |
+| 通过 | **592** |
+| 失败 | **57** |
+| 不支持 | 95 |
+| **通过率**（剔除不支持） | **91.22%** |
+| Goodput / Crosstraffic | 30/30 / 28/30 |
 
-按对端实现统计（`通过 / 有效执行`，少于 14 表示某些场景被任一端标为不支持）：
+按对端实现统计，按综合有效通过率排序（`N/A` = 对端未提供该角色；`chrome` 仅支持 HTTP/3 客户端）：
 
 | 对端 | QuicX 作 Server | QuicX 作 Client | 通过率 |
 |---|:--:|:--:|:--:|
-| **picoquic** | 13/14 | 12/13 | 96.2% |
-| **ngtcp2**   | 12/12 | 11/11 | 100% |
-| **quic-go**  | 10/10 |  9/9  | 100% |
-| **neqo**     | 10/10 |  9/10 | 95.0% |
-| **lsquic**   | 10/10 |  9/10 | 95.0% |
-| **aioquic**  | 10/10 |  9/10 | 95.0% |
-| **quiche**   |  7/7  |  8/8  | 100% |
-| **msquic**   |  8/10 | 10/10 | 90.0% |
-| **quinn**    | 14/14 |  9/9  | 100% |
-| **mvfst**    |  4/6  |  1/6  | 41.7% |
-| **s2n-quic** |  0/6  |  9/10 | 56.3% |
+| **lsquic**   | 23/23 | 23/24 | 97.9% |
+| **aioquic**  | 22/23 | 21/22 | 95.6% |
+| **neqo**     | 21/24 | 24/24 | 93.8% |
+| **picoquic** | 22/24 | 23/24 | 93.8% |
+| **kwik**     | 22/23 | 20/22 | 93.3% |
+| **xquic**    | 20/22 | 20/21 | 93.0% |
+| **s2n-quic** | 19/20 | 20/22 | 92.9% |
+| **ngtcp2**   | 23/24 | 21/24 | 91.7% |
+| **quinn**    | 20/24 | 22/22 | 91.3% |
+| **haproxy**  |  N/A  | 20/22 | 90.9% |
+| **msquic**   | 18/22 | 21/21 | 90.7% |
+| **nginx**    |  N/A  | 19/21 | 90.5% |
+| **go-x-net** | 14/15 | 12/14 | 89.7% |
+| **quic-go**  | 19/22 | 19/21 | 88.4% |
+| **quiche**   | 17/20 | 19/21 | 87.8% |
+| **mvfst**    | 12/18 | 15/19 | 73.0% |
+| **chrome**   |  1/1  |  N/A  | 100%  |
 
-覆盖场景：`handshake`、`transfer`、`retry`、`resumption`、`zerortt`、`http3`、`multiconnect`、`versionnegotiation`、`chacha20`、`keyupdate`、`v2`、`rebind-port`、`rebind-addr`、`connectionmigration`。
+覆盖场景：`handshake`、`transfer`、`longrtt`、`chacha20`、`multiplexing`、`retry`、`resumption`、`zerortt`、`http3`、`blackhole`、`keyupdate`、`ecn`、`amplificationlimit`、`handshakeloss`、`transferloss`、`handshakecorruption`、`transfercorruption`、`ipv6`、`v2`、`rebind-port`、`rebind-addr`、`connectionmigration`、`goodput`、`crosstraffic`。
 
 完整报告与失败根因分析：[`interop status`](./docs/zh/reports/interop_status.md)
 本地复现：[`interop runbook`](./docs/zh/guide/interop_runbook.md)。

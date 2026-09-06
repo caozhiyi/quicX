@@ -1,6 +1,7 @@
-#include <gtest/gtest.h>
 #include <cinttypes>
 #include <cstdint>
+
+#include <gtest/gtest.h>
 
 #include "quic/congestion_control/if_congestion_control.h"
 #include "quic/congestion_control/reno_congestion_control.h"

@@ -1,6 +1,3 @@
-// Use of this source code is governed by a BSD 3-Clause License
-// that can be found in the LICENSE file.
-
 #include <functional>
 
 #include "common/log/log.h"
@@ -12,12 +9,12 @@ namespace common {
 QlogManager::QlogManager():
     initialized_(false) {
     // defaule config
-    config_.enabled = false;
-    config_.output_dir = "./qlogs";
-    config_.format = QlogFileFormat::kSequential;
-    config_.async_queue_size = 10000;
-    config_.flush_interval_ms = 100;
-    config_.sampling_rate = 1.0f;
+    config_.enabled_ = false;
+    config_.output_dir_ = "./qlogs";
+    config_.format_ = QlogFileFormat::kSequential;
+    config_.async_queue_size_ = 10000;
+    config_.flush_interval_ms_ = 100;
+    config_.sampling_rate_ = 1.0f;
 }
 
 QlogManager::~QlogManager() {
@@ -33,7 +30,7 @@ QlogManager::~QlogManager() {
 
 void QlogManager::Enable(bool enabled) {
     std::lock_guard<std::mutex> lock(config_mutex_);
-    config_.enabled = enabled;
+    config_.enabled_ = enabled;
     enabled_.store(enabled, std::memory_order_release);
 
     if (enabled && !initialized_) {
@@ -42,7 +39,7 @@ void QlogManager::Enable(bool enabled) {
         writer_->Start();
         initialized_ = true;
 
-        LOG_INFO("qlog enabled, output_dir=%s", config_.output_dir.c_str());
+        LOG_INFO("qlog enabled, output_dir=%s", config_.output_dir_.c_str());
     } else if (!enabled && initialized_) {
         // stop writer
         writer_->Stop();
@@ -55,15 +52,15 @@ void QlogManager::Enable(bool enabled) {
 
 void QlogManager::SetConfig(const QlogConfig& config) {
     std::unique_lock<std::mutex> lock(config_mutex_);
-    bool was_enabled = config_.enabled;
+    bool was_enabled = config_.enabled_;
     config_ = config;
-    enabled_.store(config_.enabled, std::memory_order_release);
+    enabled_.store(config_.enabled_, std::memory_order_release);
 
     // if state changes, reinitialize
-    if (was_enabled != config_.enabled) {
+    if (was_enabled != config_.enabled_) {
         lock.unlock();  // unlock before calling Enable
-        Enable(config_.enabled);
-    } else if (config_.enabled && writer_) {
+        Enable(config_.enabled_);
+    } else if (config_.enabled_ && writer_) {
         // update writer config
         writer_->UpdateConfig(config_);
     }
@@ -71,7 +68,7 @@ void QlogManager::SetConfig(const QlogConfig& config) {
 
 void QlogManager::SetOutputDirectory(const std::string& dir) {
     std::lock_guard<std::mutex> lock(config_mutex_);
-    config_.output_dir = dir;
+    config_.output_dir_ = dir;
     if (writer_) {
         writer_->SetOutputDirectory(dir);
     }
@@ -79,20 +76,20 @@ void QlogManager::SetOutputDirectory(const std::string& dir) {
 
 void QlogManager::SetEventWhitelist(const std::vector<std::string>& events) {
     std::lock_guard<std::mutex> lock(config_mutex_);
-    config_.event_whitelist = events;
+    config_.event_whitelist_ = events;
 }
 
 void QlogManager::SetSamplingRate(float rate) {
     std::lock_guard<std::mutex> lock(config_mutex_);
     if (rate >= 0.0f && rate <= 1.0f) {
-        config_.sampling_rate = rate;
+        config_.sampling_rate_ = rate;
     }
 }
 
 std::shared_ptr<QlogTrace> QlogManager::CreateTrace(const std::string& connection_id, VantagePoint vantage_point) {
     {
         std::lock_guard<std::mutex> lock(config_mutex_);
-        if (!config_.enabled) {
+        if (!config_.enabled_) {
             return nullptr;
         }
 
@@ -150,11 +147,11 @@ void QlogManager::Flush() {
 }
 
 bool QlogManager::ShouldSampleConnection(const std::string& connection_id) {
-    if (config_.sampling_rate >= 1.0f) {
+    if (config_.sampling_rate_ >= 1.0f) {
         return true;
     }
 
-    if (config_.sampling_rate <= 0.0f) {
+    if (config_.sampling_rate_ <= 0.0f) {
         return false;
     }
 
@@ -163,7 +160,7 @@ bool QlogManager::ShouldSampleConnection(const std::string& connection_id) {
     size_t hash_value = hasher(connection_id);
     double normalized = (hash_value % 10000) / 10000.0;
 
-    return normalized < config_.sampling_rate;
+    return normalized < config_.sampling_rate_;
 }
 
 }  // namespace common

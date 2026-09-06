@@ -1,6 +1,7 @@
-#include "quic/packet/packet_number.h"
 #include <cstdint>
 #include <cstring>
+
+#include "quic/packet/packet_number.h"
 
 namespace quicx {
 namespace quic {
@@ -48,8 +49,7 @@ uint8_t* PacketNumber::Encode(uint8_t* pos, uint32_t packet_number_len, uint64_t
 }
 
 uint8_t* PacketNumber::Decode(uint8_t* pos, uint8_t* end, uint32_t packet_number_len, uint64_t& packet_number) {
-    if (pos == nullptr || end == nullptr || pos > end ||
-        static_cast<uint32_t>(end - pos) < packet_number_len) {
+    if (pos == nullptr || end == nullptr || pos > end || static_cast<uint32_t>(end - pos) < packet_number_len) {
         return nullptr;
     }
     for (uint32_t i = 0; i < packet_number_len; i++) {

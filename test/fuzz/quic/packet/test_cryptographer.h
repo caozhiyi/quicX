@@ -2,6 +2,7 @@
 #define FUZZ_QUIC_PACKET_TEST_CRYPTOGRAPHER
 
 #include "common/util/singleton.h"
+
 #include "quic/connection/connection_id_generator.h"
 #include "quic/connection/type.h"
 #include "quic/crypto/if_cryptographer.h"
@@ -40,4 +41,4 @@ private:
     std::shared_ptr<quicx::quic::ICryptographer> ser_cryptographer_;
 };
 
-#endif
+#endif  // FUZZ_QUIC_PACKET_TEST_CRYPTOGRAPHER

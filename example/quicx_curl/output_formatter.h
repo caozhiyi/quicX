@@ -3,6 +3,7 @@
 
 #include <ostream>
 #include <string>
+
 #include "http_client.h"
 
 enum class OutputMode {
@@ -30,4 +31,4 @@ private:
     void WriteStats(const HttpResponse& response, std::ostream& os);
 };
 
-#endif
+#endif  // TOOL_QUICX_CURL_OUTPUT_FORMATTER

@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
+
 #include "common/decode/decode.h"
+
 namespace quicx {
 namespace common {
 namespace {

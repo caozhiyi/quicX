@@ -3,29 +3,23 @@
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
-#include <winsock2.h>
-#include <ws2tcpip.h>
 #include <mswsock.h>
 #include <windows.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
 
 #include <atomic>
 #include <string>
 #include "common/log/log.h"
 #include "common/network/io_handle.h"
-#include "common/network/socket_family_cache.h"
 
 namespace quicx {
 namespace common {
 
-namespace {}  // namespace
-
-// Resolve the address family of `sockfd`. Cache hit covers all UDP fds
-// we created; falls back to getsockname() (the only portable Windows
-// path — there is no SO_DOMAIN on winsock).
+// Resolve the address family of `sockfd` by probing the kernel. Only used
+// for fds we did not create ourselves; getsockname() is the only portable
+// Windows path — there is no SO_DOMAIN on winsock.
 int32_t ResolveSocketFamily(int32_t sockfd) {
-    int32_t fam = GetSocketFamily(sockfd);
-    if (fam != 0) return fam;
-
     sockaddr_storage ss;
     int ss_len = sizeof(ss);
     if (getsockname(sockfd, reinterpret_cast<sockaddr*>(&ss), &ss_len) == 0) {
@@ -63,7 +57,6 @@ UdpSocketResult UdpSocket() {
     // to AF_INET6 + IPV6_V6ONLY=0.
     int32_t sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (sock != INVALID_SOCKET) {
-        RememberSocketFamily(sock, AF_INET);
         SetUdpSocketBuffer(sock, kDefaultUdpBufferSize);
         return {sock, 0, AF_INET};
     }
@@ -74,7 +67,6 @@ UdpSocketResult UdpSocket4() {
     // Create an IPv4-only UDP socket (AF_INET).
     int32_t sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (sock != INVALID_SOCKET) {
-        RememberSocketFamily(sock, AF_INET);
         SetUdpSocketBuffer(sock, kDefaultUdpBufferSize);
         return {sock, 0, AF_INET};
     }
@@ -82,7 +74,6 @@ UdpSocketResult UdpSocket4() {
 }
 
 SysCallInt32Result Close(int32_t sockfd) {
-    ForgetSocketFamily(sockfd);
     const int32_t rc = closesocket(sockfd);
     return {rc, rc != SOCKET_ERROR ? 0 : WSAGetLastError()};
 }
@@ -169,13 +160,13 @@ SysCallInt32Result Writev(int32_t sockfd, Iovec* vec, uint32_t vec_len) {
     return {rc, rc != SOCKET_ERROR ? 0 : WSAGetLastError()};
 }
 
-SysCallInt32Result SendTo(int32_t sockfd, const char* msg, uint32_t len, uint16_t flag, const Address& addr) {
+SysCallInt32Result SendTo(const SocketHandle& sock, const char* msg, uint32_t len, uint16_t flag, const Address& addr) {
     // PERF (P1): cached sockaddr fast path. Windows path historically only
     // creates AF_INET UDP sockets (see UdpSocket()), so we always cache
     // under AF_INET here.
     socklen_t cached_len = 0;
     if (const struct sockaddr* cached = addr.GetCachedSockaddr(AF_INET, cached_len)) {
-        const int32_t rc = sendto(sockfd, msg, len, flag, cached, cached_len);
+        const int32_t rc = sendto(sock.fd, msg, len, flag, cached, cached_len);
         return {rc, rc != SOCKET_ERROR ? 0 : WSAGetLastError()};
     }
 
@@ -186,7 +177,7 @@ SysCallInt32Result SendTo(int32_t sockfd, const char* msg, uint32_t len, uint16_
     inet_pton(AF_INET, addr.GetIp().c_str(), &addr_cli.sin_addr);
     addr.StoreCachedSockaddr(AF_INET, (struct sockaddr*)&addr_cli, sizeof(addr_cli));
 
-    const int32_t rc = sendto(sockfd, msg, len, flag, (sockaddr*)&addr_cli, sizeof(addr_cli));
+    const int32_t rc = sendto(sock.fd, msg, len, flag, (sockaddr*)&addr_cli, sizeof(addr_cli));
     return {rc, rc != SOCKET_ERROR ? 0 : WSAGetLastError()};
 }
 
@@ -213,7 +204,7 @@ SysCallInt32Result SendmMsg(int32_t sockfd, MMsghdr* msgvec, uint32_t vlen, uint
 // + WSAUDP_SEND_MSG_SIZE). For now we don't wire it up — return EIO so
 // the caller (UdpSender::SendBatch) permanently disables GSO and falls
 // back to the sendmmsg-emulation path above.
-SysCallInt32Result SendMsgGso(int32_t /*sockfd*/, const char* /*payload*/, uint32_t /*total_len*/,
+SysCallInt32Result SendMsgGso(const SocketHandle& /*sock*/, const char* /*payload*/, uint32_t /*total_len*/,
     uint16_t /*segment_size*/, const Address& /*addr*/) {
     return {-1, EIO};
 }

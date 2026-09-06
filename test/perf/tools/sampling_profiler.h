@@ -39,7 +39,6 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
-
 #if !defined(_WIN32)
 #include <execinfo.h>
 #include <sys/time.h>

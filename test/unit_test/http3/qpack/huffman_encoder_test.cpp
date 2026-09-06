@@ -1,6 +1,7 @@
+#include <gtest/gtest.h>
+
 // huffman_encoder_test.cpp
 #include "http3/qpack/huffman_encoder.h"
-#include <gtest/gtest.h>
 
 namespace quicx {
 namespace http3 {

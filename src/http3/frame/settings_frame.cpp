@@ -2,6 +2,7 @@
 #include "common/buffer/buffer_encode_wrapper.h"
 #include "common/decode/decode.h"
 
+#include "http3/config.h"
 #include "http3/frame/settings_frame.h"
 
 namespace quicx {
@@ -67,10 +68,6 @@ DecodeResult SettingsFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool
     }
 
     int32_t len = (int32_t)length_;
-    // RFC 9114 §7.2.4: a SETTINGS frame carries only a small, fixed set of
-    // parameters. Bound the number of entries so a malicious peer cannot pin CPU
-    // here by sending an arbitrarily long SETTINGS frame (DoS hardening).
-    static const int32_t kMaxSettingsEntries = 32;
     int32_t entry_count = 0;
     while (len > 0) {
         if (++entry_count > kMaxSettingsEntries) {

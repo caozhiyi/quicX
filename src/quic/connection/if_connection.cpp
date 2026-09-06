@@ -1,6 +1,6 @@
+#include "common/network/io_handle.h"
 
 #include "quic/connection/if_connection.h"
-#include "common/network/io_handle.h"
 
 namespace quicx {
 namespace quic {

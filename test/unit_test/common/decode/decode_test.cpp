@@ -1,5 +1,6 @@
-#include "common/decode/decode.h"
 #include <gtest/gtest.h>
+
+#include "common/decode/decode.h"
 
 namespace quicx {
 namespace common {

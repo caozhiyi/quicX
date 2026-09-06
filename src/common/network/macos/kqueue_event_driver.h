@@ -55,4 +55,4 @@ private:
 }  // namespace quicx
 
 #endif  // COMMON_NETWORK_MACOS_KQUEUE_EVENT_DRIVER
-#endif  // __APPLE__
+#endif  // COMMON_NETWORK_MACOS_KQUEUE_EVENT_DRIVER

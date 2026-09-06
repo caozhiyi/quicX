@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+
 #include "common/log/file_logger.h"
 #include "common/log/log.h"
 #include "common/log/stdout_logger.h"

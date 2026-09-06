@@ -2,7 +2,9 @@
 #define QUIC_FRAME_CRYPTO_FRAME
 
 #include <cstdint>
+
 #include "common/buffer/shared_buffer_span.h"
+
 #include "quic/frame/if_frame.h"
 
 namespace quicx {
@@ -39,7 +41,7 @@ private:
     uint8_t encryption_level_;
 };
 
-}  // namespace quic
+}  // namespace quicx
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_FRAME_CRYPTO_FRAME

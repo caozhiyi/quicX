@@ -2,8 +2,8 @@
 #define UPGRADE_HANDLERS_HTTPS_SMART_HANDLER_H
 
 #include "upgrade/handlers/base_smart_handler.h"
-
 // Forward declarations for BoringSSL
+
 struct ssl_st;
 struct ssl_ctx_st;
 // Typedefs to match BoringSSL/OpenSSL common aliases without including ssl.h in header

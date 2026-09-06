@@ -39,4 +39,4 @@ uint8_t* DecodeBytesNoCopy(uint8_t* start, uint8_t* end, uint8_t*& out, uint32_t
 }  // namespace common
 }  // namespace quicx
 
-#endif
+#endif  // COMMON_DECODE_DECODE

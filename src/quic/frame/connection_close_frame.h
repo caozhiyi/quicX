@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <string>
+
 #include "quic/frame/if_frame.h"
 
 namespace quicx {
@@ -41,4 +42,4 @@ private:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_FRAME_CONNECTION_CLOSE_FRAME

@@ -18,16 +18,18 @@
 //   interval (100 ms) is large enough that 20–30 ms slack is invisible
 //   in practice.
 
-#include <gtest/gtest.h>
-
 #include <atomic>
 #include <chrono>
 #include <memory>
 #include <thread>
 
-#include "test/unit_test/common/timer/test_timer_scheduler.h"
+#include <gtest/gtest.h>
+
 #include "common/util/time.h"
-#include "quic/connection/controler/send_manager.h"
+
+#include "quic/connection/controller/send_manager.h"
+
+#include "test/unit_test/common/timer/test_timer_scheduler.h"
 
 namespace quicx {
 namespace quic {

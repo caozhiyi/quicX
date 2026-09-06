@@ -1,13 +1,14 @@
-#include <gtest/gtest.h>
 #include <atomic>
 #include <memory>
+#include <quicx/upgrade/type.h>
 #include <string>
 #include <vector>
 
-#include <quicx/common/if_event_loop.h>
+#include <gtest/gtest.h>
+
+#include "common/network/if_event_loop.h"
 #include "common/timer/timer_task.h"
 
-#include <quicx/upgrade/type.h>
 #include "upgrade/handlers/base_smart_handler.h"
 #include "upgrade/handlers/connection_context.h"
 #include "upgrade/network/tcp_socket.h"
@@ -138,8 +139,8 @@ private:
 class BaseSmartHandlerTest: public ::testing::Test {
 protected:
     void SetUp() override {
-        settings_.http_port = 8080;
-        settings_.https_port = 0;
+        settings_.http_port_ = 8080;
+        settings_.https_port_ = 0;
 
         event_loop_ = std::make_shared<MockEventLoop>();
         handler_ = std::make_unique<TestSmartHandler>(settings_, event_loop_);

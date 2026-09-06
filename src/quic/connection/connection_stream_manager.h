@@ -6,9 +6,9 @@
 #include <memory>
 #include <mutex>
 #include <queue>
+#include <quicx/quic/type.h>
 #include <unordered_map>
 
-#include <quicx/quic/type.h>
 #include "common/structure/double_buffer.h"
 
 namespace quicx {

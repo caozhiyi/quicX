@@ -19,7 +19,7 @@ protected:
     virtual ~Singleton() {}
 };
 
-}  // namespace common
+}  // namespace quicx
 }  // namespace quicx
 
-#endif
+#endif  // COMMON_UTIL_SINGLETON

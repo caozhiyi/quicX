@@ -4,17 +4,24 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <quicx/http3/type.h>
+#include <quicx/quic/if_quic_connection.h>
+#include <quicx/quic/if_quic_stream.h>
 #include <unordered_map>
 #include <vector>
 
-#include <quicx/http3/type.h>
-#include <quicx/quic/if_quic_connection.h>
+#include "quic/connection/if_connection.h"
+
 #include "http3/qpack/blocked_registry.h"
 #include "http3/qpack/qpack_encoder.h"
+#include "http3/stream/control_client_sender_stream.h"
+#include "http3/stream/if_recv_stream.h"
 #include "http3/stream/if_stream.h"
 
 namespace quicx {
 namespace http3 {
+
+class ReqRespBaseStream;
 
 /**
  * @brief IConnection is the base class for all HTTP/3 connections
@@ -26,11 +33,16 @@ public:
     /**
      * @brief Constructor
      * @param unique_id The unique id of the connection
+     * @param settings HTTP/3 settings to advertise in our SETTINGS frame
      * @param quic_connection The QUIC connection
      * @param error_handler The error handler
+     * @param max_concurrent_streams Local cap on request/push streams
+     * @param enable_push Whether server push is enabled
      */
-    IConnection(const std::string& unique_id, const std::shared_ptr<IQuicConnection>& quic_connection,
-        const std::function<void(const std::string& unique_id, uint32_t error_code)>& error_handler);
+    IConnection(const std::string& unique_id, const Http3Settings& settings,
+        const std::shared_ptr<IQuicConnection>& quic_connection,
+        const std::function<void(const std::string& unique_id, uint32_t error_code)>& error_handler,
+        uint64_t max_concurrent_streams, bool enable_push);
     virtual ~IConnection();
 
     /**
@@ -57,6 +69,20 @@ public:
      * the per-connection memory footprint that P4 is trying to reclaim.
      */
     std::shared_ptr<IQuicConnection> GetQuicConnection() const { return quic_connection_.lock(); }
+
+    /**
+     * @brief Get the qlog trace owned by the underlying QUIC connection.
+     *
+     * The qlog trace is an internal type (common::QlogTrace) that is
+     * deliberately not exposed on the public IQuicConnection interface;
+     * it is reachable only via the internal quic::IConnection interface.
+     * Returns nullptr if the QUIC connection is gone, is not a production
+     * quic::IConnection (e.g. a test mock), or qlog is disabled.
+     */
+    std::shared_ptr<common::QlogTrace> GetQuicQlogTrace() const {
+        auto quic_conn = std::dynamic_pointer_cast<quic::IConnection>(quic_connection_.lock());
+        return quic_conn ? quic_conn->GetQlogTrace() : nullptr;
+    }
 
     /**
      * @brief Close the connection
@@ -135,18 +161,82 @@ protected:
     virtual void HandleSettings(const std::unordered_map<uint16_t, uint64_t>& settings);
 
     /**
+     * @brief Common HandleStream() prefix shared by client and server.
+     *
+     * Handles the two paths that are identical on both roles:
+     *   1. error != 0  -> drop the stream from streams_ (transport reports
+     *      the stream is gone; nothing role-specific to do);
+     *   2. bidirectional stream while at max_concurrent_streams_ ->
+     *      Close(H3_STREAM_CREATION_ERROR). Unidirectional control/QPACK
+     *      streams are deliberately exempt (RFC 9114 §6.2 mandates them and
+     *      their count is bounded by QUIC uni flow control, not by the
+     *      request-stream cap).
+     *
+     * @return true when the stream was fully handled by common logic and
+     *         the subclass HandleStream() must return immediately.
+     */
+    bool HandleStreamCommon(const std::shared_ptr<IQuicStream>& stream, uint32_t error_code);
+
+    /**
+     * @brief Wrap a newly accepted unidirectional stream in an
+     *        UnidentifiedStream and register it until its type byte arrives
+     *        (RFC 9114 §6.2). The type callback dispatches back into
+     *        OnStreamTypeIdentified() through a weak_ptr, so subclasses get
+     *        correct virtual dispatch without owning this wiring.
+     */
+    void AttachUnidentifiedStream(const std::shared_ptr<IQuicStream>& stream);
+
+    /**
+     * @brief Non-virtual skeleton for RFC 9114 §6.2 stream typing: drop the
+     *        temporary UnidentifiedStream, ask CreateTypedStream() for the
+     *        role-specific stream, register it and replay any data that was
+     *        buffered while the type byte was pending.
+     */
+    void OnStreamTypeIdentified(
+        uint64_t stream_type, std::shared_ptr<IQuicRecvStream> stream, std::shared_ptr<IBufferRead> remaining_data);
+
+    /**
+     * @brief Role-specific stream factory. The base class handles the two
+     *        QPACK receiver streams (identical on both roles) and the
+     *        "unknown stream type -> ignore" rule (RFC 9114 §6.2).
+     *        Subclasses override to add kControl / kPush and fall through
+     *        to the base for everything else.
+     *
+     * @return the typed stream, or nullptr to drop it (unknown type or
+     *         role-specific protocol violation).
+     */
+    virtual std::shared_ptr<IRecvStream> CreateTypedStream(
+        uint64_t stream_type, const std::shared_ptr<IQuicRecvStream>& stream);
+
+    /**
+     * @brief Non-virtual GOAWAY ingestion shared by both roles: enforce the
+     *        RFC 9114 §5.2 "id MUST NOT increase" rule (violation closes
+     *        with H3_ID_ERROR) and record goaway_received_id_. Afterwards,
+     *        calls OnGoawayReceived() so roles can react (the server starts
+     *        its symmetric drain).
+     */
+    void HandleGoaway(uint64_t id);
+
+    /**
+     * @brief Role hook invoked after a valid peer GOAWAY has been recorded.
+     *        Default: no further action (client behaviour — in-flight
+     *        responses may still land).
+     */
+    virtual void OnGoawayReceived() {}
+
+    /**
      * @brief Subclass hook: emit a GOAWAY frame on the local control stream.
      *
-     * Server connections write the largest stream ID they will process
-     * (RFC 9114 §5.2). Client connections write the largest push ID they
-     * will accept. Returning false tells Shutdown() that the GOAWAY could
-     * not be sent (e.g., control sender stream gone) and the drain still
-     * proceeds — peer-side state will catch up via QUIC CONNECTION_CLOSE.
+     * Both roles send GOAWAY over the same ControlClientSenderStream, so the
+     * implementation lives here; only ComputeGoawayId() is role-specific.
+     * Returning false tells Shutdown() that the GOAWAY could not be sent
+     * (e.g. control sender stream gone) and the drain still proceeds —
+     * peer-side state will catch up via QUIC CONNECTION_CLOSE.
      *
      * Implementations MUST be idempotent for repeated calls with the same
      * id; the base class enforces "id must not increase".
      */
-    virtual bool SendGoawayFrame(uint64_t goaway_id) = 0;
+    bool SendGoawayFrame(uint64_t goaway_id);
 
     /**
      * @brief Subclass hook: compute the GOAWAY id at the moment Shutdown()
@@ -207,9 +297,31 @@ protected:
     // through a weak_ptr<IConnection>.
     std::function<void(const std::unordered_map<uint16_t, uint64_t>&)> MakeSettingsHandler();
 
+    // Build a GOAWAY handler that forwards to IConnection::HandleGoaway
+    // through a weak_ptr<IConnection>.
+    std::function<void(uint64_t)> MakeGoawayHandler();
+
+    /**
+     * @brief Finish wiring a freshly created request/response stream:
+     *        enforce the SETTINGS_MAX_FIELD_SECTION_SIZE we advertised
+     *        (RFC 9114 §4.2.2) and propagate the qlog trace from the QUIC
+     *        connection. Identical on both roles.
+     */
+    void WireReqRespStream(const std::shared_ptr<ReqRespBaseStream>& stream);
+
 protected:
     // Schedule stream removal - moves stream to holding area to delay destruction
     void ScheduleStreamRemoval(uint64_t stream_id);
+
+    // SetupControlAndQpackStreams(): the role-agnostic half of Init().
+    // Creates our outbound control stream and sends SETTINGS (RFC 9114
+    // §6.2.1), configures the QPACK dynamic tables from pending_settings_,
+    // and creates + wires the QPACK encoder/decoder sender streams (RFC 9204
+    // §6.2: the streams themselves are mandatory even when the dynamic
+    // table capacity is 0). Called from Init(); subclasses do their
+    // role-specific extras (e.g. the client's initial MAX_PUSH_ID) after
+    // calling the base Init().
+    void SetupControlAndQpackStreams();
 
 private:
     // Start periodic cleanup timer for destroyed streams
@@ -224,6 +336,15 @@ protected:
     std::function<void(const std::string& unique_id, uint32_t error_code)> error_handler_;
     std::unordered_map<uint16_t, uint64_t> settings_;
     std::unordered_map<uint64_t, std::shared_ptr<IStream>> streams_;
+
+    // Our outbound HTTP/3 control stream. Same type on both roles (the
+    // server also uses ControlClientSenderStream — it sends SETTINGS and
+    // GOAWAY the same way), hence owned here rather than per-subclass.
+    std::shared_ptr<ControlClientSenderStream> control_sender_stream_;
+
+    // Settings captured at construction, applied during Init() (see the
+    // two-phase-init note on Init()).
+    Http3Settings pending_settings_;
 
     // RFC 9204: Two independent QPACK contexts are required per connection.
     // qpack_encoder_ holds the local encoder dynamic table: used when encoding
@@ -280,4 +401,4 @@ protected:
 }  // namespace http3
 }  // namespace quicx
 
-#endif
+#endif  // HTTP3_CONNECTION_IF_CONNECTION

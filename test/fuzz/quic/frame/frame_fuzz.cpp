@@ -5,6 +5,7 @@
 
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
+
 #include "quic/frame/ack_frame.h"
 #include "quic/frame/connection_close_frame.h"
 #include "quic/frame/crypto_frame.h"
@@ -26,10 +27,10 @@
 #include "quic/frame/stream_data_blocked_frame.h"
 #include "quic/frame/stream_frame.h"
 #include "quic/frame/streams_blocked_frame.h"
-
 // clang-format off
 // Hand-aligned frame-type -> factory map. Columns are kept aligned so adding a
 // new frame type is a trivial copy-paste of an aligned row; do not reformat.
+
 static const std::unordered_map<uint16_t, std::function<std::shared_ptr<quicx::quic::IFrame>(uint16_t)>> kFrameCreatorMap = {
     {quicx::quic::FrameType::kPadding,                     [](uint16_t type) -> std::shared_ptr<quicx::quic::IFrame> { return std::make_shared<quicx::quic::PaddingFrame>(); }},
     {quicx::quic::FrameType::kPing,                        [](uint16_t type) -> std::shared_ptr<quicx::quic::IFrame> { return std::make_shared<quicx::quic::PingFrame>(); }},

@@ -29,4 +29,4 @@ public:
 }  // namespace http3
 }  // namespace quicx
 
-#endif
+#endif  // HTTP3_STREAM_CONTROL_CLIENT_SENDER_STREAM

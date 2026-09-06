@@ -18,22 +18,21 @@
 //   4. Optionally walks per-packet ancillary data to extract the ECN
 //      codepoint from IP_TOS / IPV6_TCLASS cmsg.
 //
-// Stack budget: we cap the in-flight batch at kMaxBatch=256. With one
+// Stack budget: we cap the in-flight batch at kRecvBatchHardCap=256. With one
 // 128-byte cmsg buffer per datagram plus iovec/mmsghdr/sockaddr arrays
 // the worst-case stack frame is around 64 KiB — comfortable on every
 // thread we run, including the EventLoop thread.
 
 #include <cstdint>
 #include <cstring>
-
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
-#include <winsock2.h>
-#include <ws2tcpip.h>
 #include <mswsock.h>
 #include <windows.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
 #else
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -43,22 +42,13 @@
 #include <sys/uio.h>
 #endif
 
+#include "common/config.h"
 #include "common/network/io_handle.h"
 
 namespace quicx {
 namespace common {
 
 namespace {
-
-// Hard cap on per-call batch size. Beyond this point the syscall benefit
-// plateaus and the stack frame grows uncomfortably; pick the same value
-// as the historical udp_receiver Linux fast path.
-constexpr uint32_t kMaxBatch = 256;
-
-// Bytes of cmsg scratch reserved per datagram. IP_TOS / IPV6_TCLASS each
-// occupy 16-24 bytes including alignment; 128 bytes is generous and
-// keeps us safe if we add IP_PKTINFO / IPV6_PKTINFO later.
-constexpr size_t kCmsgPerDgram = 128;
 
 // Translate a sockaddr_storage filled in by recvmmsg/recvmsg into our
 // internal Address representation. Mirrors the v4-mapped-in-v6 handling
@@ -143,11 +133,11 @@ SysCallInt32Result RecvFromBatch(int32_t sockfd, RecvBatchEntry* entries, uint32
     if (entries == nullptr || entries_count == 0) {
         return {0, 0};
     }
-    if (entries_count > kMaxBatch) {
-        entries_count = kMaxBatch;
+    if (entries_count > kRecvBatchHardCap) {
+        entries_count = kRecvBatchHardCap;
     }
 
-    // Stack-allocated scratch arrays. Using fixed-size kMaxBatch (rather
+    // Stack-allocated scratch arrays. Using fixed-size kRecvBatchHardCap (rather
     // than `entries_count`) means a single layout for all call sites and
     // lets the compiler reason about the frame size.
     //
@@ -156,10 +146,10 @@ SysCallInt32Result RecvFromBatch(int32_t sockfd, RecvBatchEntry* entries, uint32
     // wiring loop below, and slots beyond `entries_count` are never read.
     // mmsgs[] is memset-zeroed for the kernel's strict expectation that
     // unused msghdr fields (msg_flags, padding) start at 0.
-    MMsghdr mmsgs[kMaxBatch];
-    Iovec iovs[kMaxBatch];
-    sockaddr_storage addrs[kMaxBatch];
-    char cmsg_pool[kMaxBatch * kCmsgPerDgram];
+    MMsghdr mmsgs[kRecvBatchHardCap];
+    Iovec iovs[kRecvBatchHardCap];
+    sockaddr_storage addrs[kRecvBatchHardCap];
+    char cmsg_pool[kRecvBatchHardCap * kCmsgPerDgram];
 
     std::memset(mmsgs, 0, sizeof(MMsghdr) * entries_count);
     std::memset(addrs, 0, sizeof(sockaddr_storage) * entries_count);

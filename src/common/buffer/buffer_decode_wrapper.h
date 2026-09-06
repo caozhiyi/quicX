@@ -147,4 +147,4 @@ bool BufferDecodeWrapper::DecodeVarint(T& value, int32_t& len) {
 }  // namespace common
 }  // namespace quicx
 
-#endif
+#endif  // COMMON_BUFFER_BUFFER_DECODE_WRAPPER

@@ -1,23 +1,22 @@
 #include <chrono>
+#include <quicx/common/metrics.h>
 #include <sstream>
 
-#include <quicx/common/metrics.h>
-#include <quicx/common/metrics_std.h>
 #include "common/metrics/metrics_internal.h"
 #include "common/metrics/metrics_registry.h"
+#include "common/metrics/metrics_std.h"
 
 namespace quicx {
-namespace common {
 
 // Global enable flag for fast check
 static bool g_metrics_enabled = false;
 
 bool Metrics::Initialize(const MetricsConfig& config) {
-    g_metrics_enabled = config.enable;
+    g_metrics_enabled = config.enable_;
 
     if (g_metrics_enabled) {
         // Initialize all standard metrics
-        InitializeStandardMetrics();
+        common::InitializeStandardMetrics();
     }
 
     return true;
@@ -26,45 +25,45 @@ bool Metrics::Initialize(const MetricsConfig& config) {
 MetricID Metrics::RegisterCounter(
     const std::string& name, const std::string& help, const std::map<std::string, std::string>& labels) {
     if (!g_metrics_enabled) return kInvalidMetricID;
-    return GlobalRegistry::Instance().Register(name, help, labels, MetricType::kCounter);
+    return common::GlobalRegistry::Instance().Register(name, help, labels, common::MetricType::kCounter);
 }
 
 MetricID Metrics::RegisterGauge(
     const std::string& name, const std::string& help, const std::map<std::string, std::string>& labels) {
     if (!g_metrics_enabled) return kInvalidMetricID;
-    return GlobalRegistry::Instance().Register(name, help, labels, MetricType::kGauge);
+    return common::GlobalRegistry::Instance().Register(name, help, labels, common::MetricType::kGauge);
 }
 
 MetricID Metrics::RegisterHistogram(const std::string& name, const std::string& help,
     const std::vector<uint64_t>& buckets, const std::map<std::string, std::string>& labels) {
     if (!g_metrics_enabled) return kInvalidMetricID;
-    return GlobalRegistry::Instance().Register(name, help, labels, MetricType::kHistogram, buckets);
+    return common::GlobalRegistry::Instance().Register(name, help, labels, common::MetricType::kHistogram, buckets);
 }
 
 void Metrics::CounterInc(MetricID id, uint64_t val) {
     if (!g_metrics_enabled || id == kInvalidMetricID) return;
-    auto& storage = GetThreadStorage();
+    auto& storage = common::GetThreadStorage();
     if (!storage.IsValid()) return;  // Thread is shutting down
     storage.GetCounter(id).fetch_add(val, std::memory_order_relaxed);
 }
 
 void Metrics::GaugeInc(MetricID id, int64_t val) {
     if (!g_metrics_enabled || id == kInvalidMetricID) return;
-    auto& storage = GetThreadStorage();
+    auto& storage = common::GetThreadStorage();
     if (!storage.IsValid()) return;  // Thread is shutting down
     storage.GetGauge(id).fetch_add(val, std::memory_order_relaxed);
 }
 
 void Metrics::GaugeDec(MetricID id, int64_t val) {
     if (!g_metrics_enabled || id == kInvalidMetricID) return;
-    auto& storage = GetThreadStorage();
+    auto& storage = common::GetThreadStorage();
     if (!storage.IsValid()) return;  // Thread is shutting down
     storage.GetGauge(id).fetch_sub(val, std::memory_order_relaxed);
 }
 
 void Metrics::GaugeSet(MetricID id, int64_t val) {
     if (!g_metrics_enabled || id == kInvalidMetricID) return;
-    auto& storage = GetThreadStorage();
+    auto& storage = common::GetThreadStorage();
     if (!storage.IsValid()) return;  // Thread is shutting down
     storage.GetGauge(id).store(val, std::memory_order_relaxed);
 }
@@ -72,10 +71,10 @@ void Metrics::GaugeSet(MetricID id, int64_t val) {
 void Metrics::HistogramObserve(MetricID id, uint64_t val) {
     if (!g_metrics_enabled || id == kInvalidMetricID) return;
 
-    auto* meta = GlobalRegistry::Instance().GetMeta(id);
-    if (!meta || meta->type != MetricType::kHistogram) return;
+    auto* meta = common::GlobalRegistry::Instance().GetMeta(id);
+    if (!meta || meta->type != common::MetricType::kHistogram) return;
 
-    auto& storage_ref = GetThreadStorage();
+    auto& storage_ref = common::GetThreadStorage();
     if (!storage_ref.IsValid()) return;  // Thread is shutting down
     auto& storage = storage_ref.GetHistogram(id, meta->buckets);
 
@@ -96,12 +95,12 @@ std::string Metrics::ExportPrometheus() {
 
     std::vector<uint64_t> counters;
     std::vector<int64_t> gauges;
-    std::vector<std::unique_ptr<HistogramStorage>> histograms;
+    std::vector<std::unique_ptr<common::HistogramStorage>> histograms;
 
-    GlobalRegistry::Instance().Collect(counters, gauges, histograms);
+    common::GlobalRegistry::Instance().Collect(counters, gauges, histograms);
 
     std::stringstream ss;
-    auto& registry = GlobalRegistry::Instance();
+    auto& registry = common::GlobalRegistry::Instance();
 
     auto format_labels = [](const std::map<std::string, std::string>& labels) -> std::string {
         if (labels.empty()) return "";
@@ -141,19 +140,19 @@ std::string Metrics::ExportPrometheus() {
         auto* meta = registry.GetMeta(id);
         if (!meta) continue;
 
-        if (meta->type == MetricType::kCounter) {
+        if (meta->type == common::MetricType::kCounter) {
             if (id < counters.size()) {
                 ss << "# HELP " << meta->name << " " << meta->help << "\n";
                 ss << "# TYPE " << meta->name << " counter\n";
                 ss << meta->name << format_labels(meta->labels) << " " << counters[id] << "\n";
             }
-        } else if (meta->type == MetricType::kGauge) {
+        } else if (meta->type == common::MetricType::kGauge) {
             if (id < gauges.size()) {
                 ss << "# HELP " << meta->name << " " << meta->help << "\n";
                 ss << "# TYPE " << meta->name << " gauge\n";
                 ss << meta->name << format_labels(meta->labels) << " " << gauges[id] << "\n";
             }
-        } else if (meta->type == MetricType::kHistogram) {
+        } else if (meta->type == common::MetricType::kHistogram) {
             if (id < histograms.size() && histograms[id]) {
                 ss << "# HELP " << meta->name << " " << meta->help << "\n";
                 ss << "# TYPE " << meta->name << " histogram\n";
@@ -190,5 +189,4 @@ uint64_t Metrics::NowUs() {
             .count());
 }
 
-}  // namespace common
 }  // namespace quicx

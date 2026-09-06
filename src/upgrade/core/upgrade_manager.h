@@ -2,6 +2,7 @@
 #define UPGRADE_CORE_UPGRADE_MANAGER
 
 #include <quicx/upgrade/type.h>
+
 #include "upgrade/core/version_negotiator.h"
 #include "upgrade/handlers/connection_context.h"
 
@@ -37,4 +38,4 @@ private:
 }  // namespace upgrade
 }  // namespace quicx
 
-#endif  // UPGRADE_CORE_UPGRADE_MANAGER_H
+#endif  // UPGRADE_CORE_UPGRADE_MANAGER

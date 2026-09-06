@@ -1,6 +1,3 @@
-// Use of this source code is governed by a BSD 3-Clause License
-// that can be found in the LICENSE file.
-
 /**
  * @file qlog.h
  * @brief Unified public interface for qlog system
@@ -41,10 +38,10 @@
 #include "common/qlog/qlog_trace.h"
 #include "common/qlog/util/qlog_constants.h"
 #include "common/util/time.h"
-
 // The namespace must be opened outside the QLOG_ENABLED guard: the closing braces
 // at the bottom of this header are unconditional, so opening it only in the enabled
 // branch makes the QUICX_ENABLE_QLOG=OFF build fail to parse.
+
 namespace quicx {
 namespace common {
 

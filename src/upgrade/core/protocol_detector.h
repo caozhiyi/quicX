@@ -2,6 +2,7 @@
 #define UPGRADE_CORE_PROTOCOL_DETECTOR
 
 #include <vector>
+
 #include "upgrade/handlers/connection_context.h"
 
 namespace quicx {
@@ -24,4 +25,4 @@ private:
 }  // namespace upgrade
 }  // namespace quicx
 
-#endif  // UPGRADE_CORE_PROTOCOL_DETECTOR_H
+#endif  // UPGRADE_CORE_PROTOCOL_DETECTOR

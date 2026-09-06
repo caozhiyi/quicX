@@ -1,11 +1,12 @@
+#include <cstdlib>
+#include <cstring>
+
 #include <openssl/hmac.h>
 #include <openssl/mem.h>
 #include <openssl/rand.h>
 
-#include <cstdlib>
-#include <cstring>
-
 #include "common/log/log.h"
+
 #include "quic/connection/stateless_reset_token_generator.h"
 
 namespace quicx {
@@ -61,8 +62,8 @@ StatelessResetTokenGenerator::StatelessResetTokenGenerator() {
         if (!HexDecode(env_key, decoded)) {
             LOG_ERROR("%s is not valid hex; ignoring it", kKeyEnvVar);
         } else if (decoded.size() < kMinKeyLength) {
-            LOG_ERROR("%s is too short (%zu bytes, need >= %zu); ignoring it", kKeyEnvVar, decoded.size(),
-                kMinKeyLength);
+            LOG_ERROR(
+                "%s is too short (%zu bytes, need >= %zu); ignoring it", kKeyEnvVar, decoded.size(), kMinKeyLength);
         } else {
             key_ = std::move(decoded);
             key_is_persistent_ = true;
@@ -80,8 +81,9 @@ StatelessResetTokenGenerator::StatelessResetTokenGenerator() {
         key_.clear();
         return;
     }
-    LOG_WARN("%s not set; using a per-process stateless reset key. Connections from a previous process "
-             "will not be reset after a restart.",
+    LOG_WARN(
+        "%s not set; using a per-process stateless reset key. Connections from a previous process "
+        "will not be reset after a restart.",
         kKeyEnvVar);
 }
 

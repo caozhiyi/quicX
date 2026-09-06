@@ -3,13 +3,12 @@
 #include <condition_variable>
 #include <iostream>
 #include <mutex>
-#include <sstream>
-#include <thread>
-#include <vector>
-
 #include <quicx/http3/if_client.h>
 #include <quicx/http3/if_request.h>
 #include <quicx/http3/if_response.h>
+#include <sstream>
+#include <thread>
+#include <vector>
 
 std::atomic<int> total_requests{0};
 std::atomic<int> successful_requests{0};

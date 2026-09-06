@@ -8,22 +8,21 @@
 #include <iostream>
 #include <memory>
 #include <mutex>
-#include <sstream>
-#include <string>
-#include <thread>
-
 #include <quicx/common/metrics.h>
 #include <quicx/http3/if_async_handler.h>
 #include <quicx/http3/if_client.h>
 #include <quicx/http3/if_request.h>
 #include <quicx/http3/if_response.h>
+#include <sstream>
+#include <string>
+#include <thread>
 
 // PERF VALIDATION (loopback): override the cold-start initial RTT estimate
 // from the RFC-friendly 250 ms default down to 100 ms so the first PTO does
 // not clip the slow-start ramp on a sub-millisecond loopback path. This
 // mirrors what test/perf/e2e_perf_test.cpp does. See
 // docs/internal/perf_e2e_analysis.md §6 P3.
-#include "quic/connection/controler/rtt_calculator.h"
+#include "quic/connection/controller/rtt_calculator.h"
 
 namespace fs = std::filesystem;
 
@@ -329,8 +328,8 @@ public:
         // explicitly when QUICX_METRICS_DUMP=1 is set.
         if (const char* dump = std::getenv("QUICX_METRICS_DUMP"); dump && dump[0] == '1') {
             quicx::MetricsConfig mcfg;
-            mcfg.enable = true;
-            quicx::common::Metrics::Initialize(mcfg);
+            mcfg.enable_ = true;
+            quicx::Metrics::Initialize(mcfg);
         }
 
         quicx::Http3ClientConfig config;
@@ -577,7 +576,7 @@ int main(int argc, char* argv[]) {
     // line stderr blob every time the client exits).
     if (const char* dump = std::getenv("QUICX_METRICS_DUMP"); dump && dump[0] == '1') {
         std::cerr << "===== METRICS DUMP (client) =====\n"
-                  << quicx::common::Metrics::ExportPrometheus() << "===== END METRICS DUMP =====\n";
+                  << quicx::Metrics::ExportPrometheus() << "===== END METRICS DUMP =====\n";
     }
 
     return 0;

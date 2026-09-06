@@ -2,11 +2,11 @@
 #define HTTP3_STREAM_PUSH_RECEIVER_STREAM
 
 #include <memory>
+#include <quicx/http3/type.h>
+#include <quicx/quic/if_quic_recv_stream.h>
 #include <string>
 #include <unordered_map>
 
-#include <quicx/http3/type.h>
-#include <quicx/quic/if_quic_recv_stream.h>
 #include "http3/frame/frame_decoder.h"
 #include "http3/frame/if_frame.h"
 #include "http3/qpack/qpack_encoder.h"
@@ -59,4 +59,4 @@ private:
 }  // namespace http3
 }  // namespace quicx
 
-#endif
+#endif  // HTTP3_STREAM_PUSH_RECEIVER_STREAM

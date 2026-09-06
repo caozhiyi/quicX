@@ -3,6 +3,8 @@
 
 #include <memory>
 
+#include "common/network/socket_handle.h"
+
 #include "quic/connection/connection_id.h"
 #include "quic/quicx/if_worker.h"
 
@@ -17,8 +19,8 @@ public:
 
     virtual void AddWorker(std::shared_ptr<IWorker> worker) = 0;
 
-    // add listener
-    virtual bool AddListener(int32_t listener_sock) = 0;
+    // add listener (external socket; the handle carries its creation-time family)
+    virtual bool AddListener(common::SocketHandle listener_sock) = 0;
     virtual bool AddListener(const std::string& ip, uint16_t port) = 0;
 
     // Remove a socket from the poll set. Needed to retire the pre-migration
@@ -36,4 +38,4 @@ public:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_QUICX_IF_MASTER

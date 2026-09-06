@@ -4,15 +4,14 @@
 #include <iostream>
 #include <memory>
 #include <mutex>
+#include <quicx/http3/if_client.h>
+#include <quicx/http3/if_request.h>
+#include <quicx/http3/if_response.h>
+// Simple connection pool for demonstration
 #include <thread>
 #include <unordered_map>
 #include <vector>
 
-#include <quicx/http3/if_client.h>
-#include <quicx/http3/if_request.h>
-#include <quicx/http3/if_response.h>
-
-// Simple connection pool for demonstration
 class ConnectionPool {
 private:
     struct ConnectionInfo {

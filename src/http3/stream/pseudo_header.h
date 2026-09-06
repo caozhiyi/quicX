@@ -1,12 +1,13 @@
 #ifndef HTTP3_STREAM_PSEUDO_HEADER
 #define HTTP3_STREAM_PSEUDO_HEADER
 
+#include <memory>
 #include <quicx/http3/if_request.h>
 #include <quicx/http3/if_response.h>
-#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
+
 #include "common/util/singleton.h"
 
 namespace quicx {
@@ -50,4 +51,4 @@ private:
 }  // namespace http3
 }  // namespace quicx
 
-#endif
+#endif  // HTTP3_STREAM_PSEUDO_HEADER

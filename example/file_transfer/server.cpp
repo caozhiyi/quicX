@@ -4,18 +4,17 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <quicx/http3/if_request.h>
+#include <quicx/http3/if_response.h>
+#include <quicx/http3/if_server.h>
 #include <string>
 #include <string_view>
 #include <thread>
 
-#include <quicx/http3/if_request.h>
-#include <quicx/http3/if_response.h>
-#include <quicx/http3/if_server.h>
-
 // PERF VALIDATION (loopback): see comment in client.cpp. The override has to
 // be installed on *both* peers because each peer runs an independent
 // RttCalculator and seeds its own pre-handshake PTO from the override.
-#include "quic/connection/controler/rtt_calculator.h"
+#include "quic/connection/controller/rtt_calculator.h"
 
 namespace fs = std::filesystem;
 
@@ -187,9 +186,9 @@ public:
         config.quic_config_.config_.log_level_ = quicx::LogLevel::kError;
 
         // Enable Metrics HTTP endpoint for diagnostics
-        config.metrics_.enable = true;
-        config.metrics_.http_enable = true;
-        config.metrics_.http_path = "/metrics";
+        config.metrics_.enable_ = true;
+        config.metrics_.http_enable_ = true;
+        config.metrics_.http_path_ = "/metrics";
 
         // Load certificates
         config.quic_config_.cert_pem_ = cert_pem;

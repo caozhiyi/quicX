@@ -1,9 +1,10 @@
+#include <quicx/common/metrics.h>
+
 #include "common/buffer/buffer_chunk.h"
 #include "common/buffer/single_block_buffer.h"
 #include "common/log/log.h"
+#include "common/metrics/metrics_std.h"
 
-#include <quicx/common/metrics.h>
-#include <quicx/common/metrics_std.h>
 #include "quic/connection/util.h"
 #include "quic/crypto/tls/type.h"
 #include "quic/frame/crypto_frame.h"
@@ -108,7 +109,7 @@ bool FixBufferFrameVisitor::HandleFrame(std::shared_ptr<IFrame> frame) {
     handled_frames_.push_back(frame);
 
     // Metrics: Frame transmitted
-    common::Metrics::CounterInc(common::MetricsStd::FramesTxTotal);
+    Metrics::CounterInc(common::MetricsStd::FramesTxTotal);
 
     return true;
 }

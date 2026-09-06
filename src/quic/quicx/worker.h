@@ -3,12 +3,13 @@
 
 #include <functional>
 #include <memory>
+#include <quicx/quic/type.h>
 #include <unordered_set>
 
-#include <quicx/common/if_event_loop.h>
+#include "common/network/if_event_loop.h"
+#include "common/network/socket_handle.h"
 #include "common/structure/double_buffer.h"
 
-#include <quicx/quic/type.h>
 #include "quic/connection/if_connection.h"
 #include "quic/crypto/tls/tls_ctx.h"
 #include "quic/quicx/if_worker.h"
@@ -34,10 +35,12 @@ public:
 
     // Send packet immediately (bypasses normal flow)
     // Used for immediate ACK sending when encryption level differs from current level
-    bool SendImmediate(std::shared_ptr<common::IBuffer> buffer, const common::Address& addr, int32_t socket = -1);
+    bool SendImmediate(std::shared_ptr<common::IBuffer> buffer, const common::Address& addr,
+        common::SocketHandle socket = common::SocketHandle(-1, 0));
 
-    // Set callback for registering new sockets with the receiver (for connection migration)
-    using RegisterSocketCallback = std::function<bool(int32_t sockfd)>;
+    // Set callback for registering new sockets with the receiver (for
+    // connection migration). The handle carries the creation-time family.
+    using RegisterSocketCallback = std::function<bool(common::SocketHandle sock)>;
     void SetRegisterSocketCallback(RegisterSocketCallback cb) { register_socket_cb_ = cb; }
 
     // Set callback for removing a retired socket from the receiver's poll set.
@@ -90,12 +93,12 @@ protected:
     std::unordered_map<uint64_t, std::shared_ptr<IConnection>> conn_map_;  // all connections
 
     connection_state_callback connection_handler_;
-    std::weak_ptr<common::IEventLoop> event_loop_;  // Observer reference (owner is QuicClient/QuicServer)
-    RegisterSocketCallback register_socket_cb_;     // Register socket with receiver for migration
+    std::weak_ptr<common::IEventLoop> event_loop_;   // Observer reference (owner is QuicClient/QuicServer)
+    RegisterSocketCallback register_socket_cb_;      // Register socket with receiver for migration
     UnregisterSocketCallback unregister_socket_cb_;  // Remove a retired socket from the poll set
 };
 
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_QUICX_WORKER

@@ -61,8 +61,8 @@ private:
     // Owner thread: fold deferred cross-thread frees back into free_mem_vec_.
     void DrainHandback();
 
-    uint32_t number_large_add_nodes_;       // every time add nodes num
-    uint32_t large_size_;                   // bulk memory size
+    uint32_t number_large_add_nodes_;  // every time add nodes num
+    uint32_t large_size_;              // bulk memory size
     // Protects free_mem_vec_. The original single-owner design is broken by
     // pools that travel across threads: interop_client creates streams (and
     // their MultiBlockBuffers, which capture this pool) on the main thread,
@@ -73,7 +73,7 @@ private:
     // now run under this lock; the lock-free handback stack is kept so that
     // cross-thread frees stay off the lock entirely.
     mutable std::mutex free_vec_mtx_;
-    std::vector<void*> free_mem_vec_;       // free bulk memory list
+    std::vector<void*> free_mem_vec_;  // free bulk memory list
     // Thread allowed to touch free_mem_vec_ without going through the
     // handback stack (it still takes free_vec_mtx_). MUST be atomic: foreign
     // threads read it in PoolLargeFree() concurrently with the owner writing
@@ -83,7 +83,7 @@ private:
     // corrupting the heap (glibc "corrupted double-linked list" seen under
     // multiplexing workloads when the main thread tears down 1999 streams).
     static_assert(std::is_trivially_copyable_v<std::thread::id>,
-                  "std::atomic<std::thread::id> requires a trivially copyable id type");
+        "std::atomic<std::thread::id> requires a trivially copyable id type");
     std::atomic<std::thread::id> owner_tid_{};   // thread allowed to touch free_mem_vec_
     std::atomic<void*> handback_head_{nullptr};  // cross-thread free stack (intrusive)
 };
@@ -93,4 +93,4 @@ std::shared_ptr<common::BlockMemoryPool> MakeBlockMemoryPoolPtr(uint32_t large_s
 }  // namespace common
 }  // namespace quicx
 
-#endif
+#endif  // COMMON_ALLOCATOR_POOL_BLOCK

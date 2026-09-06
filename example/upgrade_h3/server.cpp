@@ -2,16 +2,14 @@
 // in isolation (no QUIC/H3 server next to it).
 //
 // What this binary does:
-//   * Creates one event loop and runs Init() / AddListener() / Wait()
-//     ALL on the main thread. This is REQUIRED -- EventLoop records
-//     `thread_id_` in Init() and AssertInLoopThread()-aborts on any
-//     RegisterFd / ModifyFd / AddTimer call from a different thread,
-//     including the RegisterFd that ConnectionHandler::OnRead does for
-//     each accepted client_fd. Splitting Init into the main thread and
-//     Wait into a worker (the previous version of this file) caused the
-//     classic "curl says Connected but never gets a byte back" symptom
-//     because the very first accept tripped the assert (and silently
-//     aborted, depending on logger configuration).
+//   * Hands the port configuration to IUpgrade and lets the module run.
+//     The upgrade server owns a private EventLoop and the thread that
+//     drives it, so this file no longer has to care about EventLoop's
+//     thread-affinity contract (Init / RegisterFd / AddTimer / Wait must
+//     all happen on one thread -- violating it aborts the process, which
+//     is exactly what an earlier version of this example did by running
+//     Init() on main and Wait() on a worker: curl reported "Connected"
+//     and then hung forever waiting for a ServerHello).
 //
 //   * Installs a StdoutLogger BEFORE creating the loop / upgrade server,
 //     so AddListener's diagnostic LOG_ERROR lines (e.g. "Failed to bind
@@ -30,21 +28,21 @@
 //   curl -kv https://127.0.0.1:8443/       # TLS path (needs cert/key)
 
 #include <atomic>
+#include <chrono>
 #include <csignal>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <memory>
-#include <string>
-
-#include <quicx/common/if_event_loop.h>
 #include <quicx/upgrade/if_upgrade.h>
+#include <string>
+#include <thread>
 
 #include "common/log/log.h"
 #include "common/log/stdout_logger.h"
 
-using quicx::upgrade::IUpgrade;
-using quicx::upgrade::UpgradeSettings;
+using quicx::IUpgrade;
+using quicx::UpgradeSettings;
 
 namespace {
 
@@ -136,32 +134,23 @@ int main(int argc, char** argv) {
     // -----------------------------------------------------------------------
     // Step 2: build the upgrade settings.
     UpgradeSettings settings;
-    settings.listen_addr = opt.host;
-    settings.http_port = opt.http_port;
-    settings.https_port = opt.https_port;
-    settings.h3_port = opt.h3_port;
-    settings.enable_http1 = (opt.http_port != 0);
-    settings.enable_http2 = (opt.https_port != 0);
-    settings.enable_http3 = true;  // Alt-Svc advertises h3 only
-    if (!opt.cert_file.empty()) settings.cert_file = opt.cert_file;
-    if (!opt.key_file.empty()) settings.key_file = opt.key_file;
+    settings.listen_addr_ = opt.host;
+    settings.http_port_ = opt.http_port;
+    settings.https_port_ = opt.https_port;
+    settings.h3_port_ = opt.h3_port;
+    settings.enable_http1_ = (opt.http_port != 0);
+    settings.enable_http2_ = (opt.https_port != 0);
+    settings.enable_http3_ = true;  // Alt-Svc advertises h3 only
+    if (!opt.cert_file.empty()) settings.cert_file_ = opt.cert_file;
+    if (!opt.key_file.empty()) settings.key_file_ = opt.key_file;
 
     // -----------------------------------------------------------------------
-    // Step 3: create the event loop on THIS thread.
+    // Step 3: start the upgrade server.
     //
-    // EventLoop::Init() records std::this_thread::get_id() into thread_id_,
-    // and every RegisterFd / ModifyFd / RemoveFd / AddTimer asserts that
-    // the calling thread matches. ConnectionHandler::OnRead ALSO calls
-    // RegisterFd (for each freshly accept()-ed client fd), so Wait() MUST
-    // run on the same thread that called Init(). We do everything on
-    // main() to satisfy that.
-    auto event_loop = quicx::common::MakeEventLoop();
-    if (!event_loop || !event_loop->Init()) {
-        std::cerr << "Failed to init event loop" << std::endl;
-        return EXIT_FAILURE;
-    }
-
-    auto server = IUpgrade::MakeUpgrade(event_loop);
+    // The server creates its own EventLoop and the thread that drives it on
+    // the first AddListener(); AddListener() itself blocks until the sockets
+    // are bound and registered, so a successful return means it is serving.
+    auto server = IUpgrade::MakeUpgrade();
     if (!server) {
         std::cerr << "Failed to create upgrade server" << std::endl;
         return EXIT_FAILURE;
@@ -177,20 +166,19 @@ int main(int argc, char** argv) {
     std::signal(SIGINT, HandleSignal);
     std::signal(SIGTERM, HandleSignal);
 
-    std::cout << "upgrade_h3_server running on " << settings.listen_addr << " (http=" << settings.http_port
-              << ", https=" << settings.https_port << "), advertising h3 on :" << settings.h3_port << std::endl
+    std::cout << "upgrade_h3_server running on " << settings.listen_addr_ << " (http=" << settings.http_port_
+              << ", https=" << settings.https_port_ << "), advertising h3 on :" << settings.h3_port_ << std::endl
               << "Press Ctrl+C to stop." << std::endl;
 
     // -----------------------------------------------------------------------
-    // Step 4: drive the loop on the main thread until SIGINT.
-    //
-    // EventLoop::Wait() blocks at most until the next timer; we re-check
-    // g_stop on each iteration so Ctrl+C terminates within ~1s even when
-    // nothing else is happening.
+    // Step 4: idle until SIGINT. The upgrade server runs on its own thread,
+    // so main() only has to stay alive.
     while (!g_stop.load(std::memory_order_acquire)) {
-        event_loop->Wait();
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
     std::cout << "shutting down..." << std::endl;
+    // Stops the loop thread and closes every listener / client socket.
+    server->Stop();
     return EXIT_SUCCESS;
 }

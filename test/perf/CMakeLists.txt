@@ -1,9 +1,14 @@
 cmake_minimum_required(VERSION 3.16)
 # MSVC / clang-cl reject GCC-style -Wno-* flags (D8021); route to /wd#### instead.
-add_compile_options(
-    "$<$<OR:$<CXX_COMPILER_ID:MSVC>,$<STREQUAL:$<CXX_COMPILER_FRONTEND_VARIANT>,MSVC>>:/wd4101;/wd4189;/wd4505>"
-    "$<$<AND:$<NOT:$<CXX_COMPILER_ID:MSVC>>,$<NOT:$<STREQUAL:$<CXX_COMPILER_FRONTEND_VARIANT>,MSVC>>>:-Wno-unused-variable;-Wno-unused-but-set-variable;-Wno-unused-function>"
-)
+# Uses the if() variable form: the $<CXX_COMPILER_FRONTEND_VARIANT> generator
+# expression only exists in CMake >= 3.30 and hard-fails configure on older
+# versions, while the CMAKE_CXX_COMPILER_FRONTEND_VARIANT variable has been
+# set by CMake since 3.0.
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" OR CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+    add_compile_options(/wd4101 /wd4189 /wd4505)
+else()
+    add_compile_options(-Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function)
+endif()
 
 # ===========================================================================
 # Performance test targets for quicX
@@ -17,6 +22,8 @@ include(FetchContent)
 FetchContent_Declare(
   googlebenchmark
   URL https://github.com/google/benchmark/archive/refs/tags/v1.8.3.tar.gz
+  # v1.8.3 is a pinned release tag; keep archive timestamps (silences CMP0135).
+  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
 set(BENCHMARK_ENABLE_GTEST_TESTS OFF CACHE BOOL "" FORCE)

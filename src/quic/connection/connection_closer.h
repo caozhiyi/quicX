@@ -6,9 +6,8 @@
 #include <memory>
 #include <string>
 
-#include <quicx/common/if_event_loop.h>
-
-#include <quicx/common/if_timer_scheduler.h>  // Timer handle is held by value below
+#include "common/network/if_event_loop.h"
+#include "common/timer/if_timer_scheduler.h"  // Timer handle is held by value below
 
 namespace quicx {
 namespace quic {

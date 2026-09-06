@@ -1,10 +1,10 @@
 #include <algorithm>
 
 #include "common/qlog/qlog.h"
+
 #include "quic/congestion_control/bbr_v2_congestion_control.h"
 #include "quic/congestion_control/normal_pacer.h"
 #include "quic/congestion_control/util.h"
-
 // References for BBRv2 (teaching subset):
 //   [BBRv2-Slides] Cardwell et al., "BBR v2: A Model-based Congestion
 //                  Control", IETF 104 / 105 ICCRG slides — introduces the

@@ -1,9 +1,10 @@
+#include <sstream>
+
 #include "common/log/log.h"
 #include "common/log/log_context.h"
 #include "common/qlog/qlog.h"
 
-#include <sstream>
-
+#include "quic/config.h"
 #include "quic/connection/connection_closer.h"
 #include "quic/connection/connection_crypto.h"
 #include "quic/connection/connection_frame_processor.h"
@@ -11,14 +12,13 @@
 #include "quic/connection/connection_path_manager.h"
 #include "quic/connection/connection_state_machine.h"
 #include "quic/connection/connection_stream_manager.h"
-#include "quic/connection/controler/recv_flow_controller.h"
-#include "quic/connection/controler/send_flow_controller.h"
-#include "quic/connection/controler/send_manager.h"
+#include "quic/connection/controller/recv_flow_controller.h"
+#include "quic/connection/controller/send_flow_controller.h"
+#include "quic/connection/controller/send_manager.h"
 #include "quic/connection/error.h"
 #include "quic/connection/if_connection_event_sink.h"
 #include "quic/connection/transport_param.h"
 #include "quic/connection/util.h"
-#include "quic/config.h"
 #include "quic/frame/connection_close_frame.h"
 #include "quic/frame/crypto_frame.h"
 #include "quic/frame/max_data_frame.h"
@@ -34,21 +34,6 @@
 
 namespace quicx {
 namespace quic {
-
-namespace {
-// Helper to convert ConnectionID to hex string for qlog
-std::string CIDToHexString(const ConnectionID& cid) {
-    std::ostringstream oss;
-    const uint8_t* id = cid.GetID();
-    uint8_t len = cid.GetLength();
-    for (uint8_t i = 0; i < len; ++i) {
-        char buf[3];
-        snprintf(buf, sizeof(buf), "%02x", id[i]);
-        oss << buf;
-    }
-    return oss.str();
-}
-}  // anonymous namespace
 
 FrameProcessor::FrameProcessor(IConnectionEventSink& event_sink, ConnectionStateMachine& state_machine,
     ConnectionCrypto& connection_crypto, SendManager& send_manager, StreamManager& stream_manager,
@@ -292,8 +277,8 @@ bool FrameProcessor::OnStreamFrame(std::shared_ptr<IFrame> frame) {
         // nobody would ever attach a read callback and the data would rot in
         // the recv buffer. Bounded to avoid unbounded growth.
         unnotified_remote_streams_.emplace_back(new_stream);
-        LOG_DEBUG("FrameProcessor::OnStreamFrame: no stream state callback yet, deferring notify. stream id:%llu",
-            stream_id);
+        LOG_DEBUG(
+            "FrameProcessor::OnStreamFrame: no stream state callback yet, deferring notify. stream id:%llu", stream_id);
     }
 
     // new stream process frame
@@ -459,7 +444,7 @@ bool FrameProcessor::OnNewConnectionIDFrame(std::shared_ptr<IFrame> frame) {
     if (qlog_trace_) {
         common::ConnectionIdUpdatedData cid_data;
         cid_data.owner = "remote";
-        cid_data.new_id = CIDToHexString(id);
+        cid_data.new_id = id.ToHexString();
         cid_data.trigger = "new_connection_id";
         QLOG_CONNECTION_ID_UPDATED(qlog_trace_, cid_data);
     }

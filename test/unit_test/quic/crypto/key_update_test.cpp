@@ -1,8 +1,10 @@
-#include <gtest/gtest.h>
 #include <memory>
+
+#include <gtest/gtest.h>
 
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
+
 #include "quic/crypto/aes_128_gcm_cryptographer.h"
 #include "quic/crypto/chacha20_poly1305_cryptographer.h"
 

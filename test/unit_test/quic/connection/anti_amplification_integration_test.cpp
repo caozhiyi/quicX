@@ -1,11 +1,9 @@
-#include <gtest/gtest.h>
-
 #include <cstdint>
 #include <memory>
 #include <vector>
 
-#include "connection_test_util.h"
-#include "mock_sender.h"
+#include <gtest/gtest.h>
+
 #include "quic/connection/connection_client.h"
 #include "quic/connection/connection_server.h"
 #include "quic/crypto/tls/tls_ctx_client.h"
@@ -25,6 +23,8 @@
 // isolation cannot catch that: the object under test was correct, it was simply
 // not plugged in. Everything here therefore drives a *real* ServerConnection and
 // measures bytes that actually left through the sender.
+#include "connection_test_util.h"
+#include "mock_sender.h"
 
 namespace quicx {
 namespace quic {

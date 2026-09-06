@@ -50,4 +50,4 @@ struct VersionContext {
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_CONNECTION_VERSION_CONTEXT

@@ -1,9 +1,11 @@
-#include <gtest/gtest.h>
 #include <memory>
 #include <string>
 #include <vector>
 
+#include <gtest/gtest.h>
+
 #include "common/network/event_loop.h"
+
 #include "quic/connection/connection_client.h"
 #include "quic/connection/connection_closer.h"
 #include "quic/connection/error.h"

@@ -1,10 +1,8 @@
-// Use of this source code is governed by a BSD 3-Clause License
-// that can be found in the LICENSE file.
-
-#include <gtest/gtest.h>
 #include <set>
 #include <string>
 #include <vector>
+
+#include <gtest/gtest.h>
 
 #include "common/qlog/qlog_config.h"
 #include "common/qlog/qlog_manager.h"
@@ -23,11 +21,11 @@ protected:
 
     QlogConfig CreateConfig(float sampling_rate) {
         QlogConfig config;
-        config.enabled = true;
-        config.output_dir = "./test_qlog_sampling";
-        config.format = QlogFileFormat::kSequential;
-        config.flush_interval_ms = 10;
-        config.sampling_rate = sampling_rate;
+        config.enabled_ = true;
+        config.output_dir_ = "./test_qlog_sampling";
+        config.format_ = QlogFileFormat::kSequential;
+        config.flush_interval_ms_ = 10;
+        config.sampling_rate_ = sampling_rate;
         return config;
     }
 };
@@ -185,8 +183,8 @@ TEST_F(QlogSamplingTest, SamplingAffectsTraceCreationNotEvents) {
 // Test: Disabled qlog returns nullptr regardless of sampling rate
 TEST_F(QlogSamplingTest, DisabledQlogAlwaysReturnsNull) {
     QlogConfig config;
-    config.enabled = false;  // Disabled
-    config.sampling_rate = 1.0f;
+    config.enabled_ = false;  // Disabled
+    config.sampling_rate_ = 1.0f;
     QlogManager::Instance().SetConfig(config);
 
     auto trace = QlogManager::Instance().CreateTrace("conn-disabled", VantagePoint::kClient);

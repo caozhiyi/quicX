@@ -79,4 +79,4 @@ ThreadMetricStorage& GetThreadStorage();
 }  // namespace common
 }  // namespace quicx
 
-#endif  // COMMON_METRICS_METRICS_REGISTRY_H
+#endif  // COMMON_METRICS_METRICS_REGISTRY

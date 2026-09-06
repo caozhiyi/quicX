@@ -4,12 +4,12 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <quicx/quic/type.h>
 #include <string>
 
-#include <quicx/common/if_event_loop.h>
-#include <quicx/quic/type.h>
-
 #include "common/network/address.h"
+#include "common/network/if_event_loop.h"
+
 #include "quic/connection/connection_path_manager.h"
 #include "quic/connection/connection_state_machine.h"
 #include "quic/connection/datagram_emitter.h"
@@ -74,8 +74,7 @@ public:
     using LocalAddressUpdatedCallback = std::function<void(const common::Address&)>;
 
     MigrationController(ConnectionStateMachine& state_machine, PathManager& path_manager,
-        TransportParam& transport_param, DatagramEmitter& emitter,
-        std::weak_ptr<common::IEventLoop> event_loop);
+        TransportParam& transport_param, DatagramEmitter& emitter, std::weak_ptr<common::IEventLoop> event_loop);
 
     ~MigrationController() = default;
 
@@ -99,8 +98,7 @@ public:
      *       Returns kFailedTimeout if the loop never picks the request up,
      *       kFailedInvalidState if the connection has no loop.
      */
-    MigrationResult InitiateMigrationTo(std::weak_ptr<void> owner, const std::string& local_ip,
-        uint16_t local_port);
+    MigrationResult InitiateMigrationTo(std::weak_ptr<void> owner, const std::string& local_ip, uint16_t local_port);
 
     /**
      * @brief Convenience wrapper: migrate to the same IP on a fresh port.
@@ -138,7 +136,7 @@ public:
 
     void SetLocalAddressUpdatedCallback(LocalAddressUpdatedCallback cb) { local_addr_updated_cb_ = std::move(cb); }
 
-    void SetRegisterSocketCallback(std::function<bool(int32_t)> cb) { register_socket_cb_ = std::move(cb); }
+    void SetRegisterSocketCallback(std::function<bool(common::SocketHandle)> cb) { register_socket_cb_ = std::move(cb); }
 
     /**
      * @brief Supplies the controller with the connection's local-address
@@ -206,7 +204,7 @@ private:
 
     MigrationFinishedCallback migration_finished_cb_;
     LocalAddressUpdatedCallback local_addr_updated_cb_;
-    std::function<bool(int32_t)> register_socket_cb_;
+    std::function<bool(common::SocketHandle)> register_socket_cb_;
     std::function<bool(int32_t)> unregister_socket_cb_;
     std::function<void(std::string&, uint32_t&)> local_addr_resolver_;
     std::function<common::Address()> peer_addr_resolver_;
@@ -214,7 +212,7 @@ private:
     bool callbacks_installed_{false};
 };
 
-}  // namespace quic
+}  // namespace quicx
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_CONNECTION_MIGRATION_CONTROLLER

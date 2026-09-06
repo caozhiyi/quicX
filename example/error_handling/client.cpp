@@ -3,11 +3,10 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
-#include <thread>
-
 #include <quicx/http3/if_client.h>
 #include <quicx/http3/if_request.h>
 #include <quicx/http3/if_response.h>
+#include <thread>
 
 class ErrorHandlingClient {
 private:

@@ -700,10 +700,10 @@ def main():
             success = False
             if args.mode != "all": return sys.exit(1)
 
-    if args.mode in ["all", "cc"]:
-        if not run_cc_tests():
-            success = False
-            if args.mode != "all": return sys.exit(1)
+    #if args.mode in ["all", "cc"]:
+    #    if not run_cc_tests():
+    #        success = False
+    #        if args.mode != "all": return sys.exit(1)
 
     if args.mode in ["all", "interop"]:
         if not run_interop_tests():

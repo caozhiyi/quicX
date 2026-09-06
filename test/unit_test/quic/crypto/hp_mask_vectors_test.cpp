@@ -2,14 +2,14 @@
 // RFC 9001 Appendix A header-protection mask test vectors. Test body follows
 // BoringSSL 2-space indentation convention; do not reformat.
 
-#include <gtest/gtest.h>
-#include <openssl/evp.h>
 #include <memory>
 
+#include <gtest/gtest.h>
+#include <openssl/evp.h>
+
+#include "quic/crypto/aes_128_gcm_cryptographer.h"
 #include "quic/crypto/hkdf.h"
 #include "quic/crypto/type.h"
-#include "quic/crypto/aes_128_gcm_cryptographer.h"
-
 
 namespace quicx {
 namespace quic {

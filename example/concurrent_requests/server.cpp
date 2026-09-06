@@ -4,15 +4,9 @@
 #include <iomanip>
 #include <iostream>
 #include <mutex>
-#include <random>
-#include <sstream>
-#include <string>
-#include <thread>
-
 #include <quicx/http3/if_request.h>
 #include <quicx/http3/if_response.h>
 #include <quicx/http3/if_server.h>
-
 // NOTE on the delays below: request handlers registered via IServer::AddHandler
 // run synchronously on the worker thread that owns the QUIC connection, and the
 // response is sent immediately once the handler returns. There is currently no
@@ -22,6 +16,11 @@
 // time per connection). Keep these simulated-latency values small so that even
 // fully-serialized processing of a whole burst of concurrent requests finishes
 // well within run_test.py's timeout budget.
+#include <random>
+#include <sstream>
+#include <string>
+#include <thread>
+
 constexpr int kFastDelayMs = 5;
 constexpr int kMediumDelayMs = 20;
 constexpr int kSlowDelayMs = 50;
@@ -83,8 +82,17 @@ std::string GetCurrentTime() {
     auto time_t_now = std::chrono::system_clock::to_time_t(now);
     auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
 
+    // std::localtime returns a pointer to a shared static buffer and is NOT
+    // thread-safe; handlers run concurrently on multiple worker threads
+    // (TSan flagged this). Use the reentrant variant per platform instead.
+    tm tm_now;
+#ifdef _WIN32
+    localtime_s(&tm_now, &time_t_now);
+#else
+    localtime_r(&time_t_now, &tm_now);
+#endif
     char buf[100];
-    std::strftime(buf, sizeof(buf), "%H:%M:%S", std::localtime(&time_t_now));
+    std::strftime(buf, sizeof(buf), "%H:%M:%S", &tm_now);
 
     std::ostringstream oss;
     oss << buf << "." << std::setfill('0') << std::setw(3) << ms.count();
@@ -150,13 +158,17 @@ int main() {
                 "<p>This server demonstrates HTTP/3 multiplexing capabilities.</p>"
                 "<h2>Endpoints:</h2><ul>"
                 "<li><b>GET /fast</b> - Fast response (" +
-                std::to_string(kFastDelayMs) + "ms delay)</li>"
+                std::to_string(kFastDelayMs) +
+                "ms delay)</li>"
                 "<li><b>GET /medium</b> - Medium response (" +
-                std::to_string(kMediumDelayMs) + "ms delay)</li>"
+                std::to_string(kMediumDelayMs) +
+                "ms delay)</li>"
                 "<li><b>GET /slow</b> - Slow response (" +
-                std::to_string(kSlowDelayMs) + "ms delay)</li>"
+                std::to_string(kSlowDelayMs) +
+                "ms delay)</li>"
                 "<li><b>GET /random</b> - Random delay (" +
-                std::to_string(kRandomDelayMinMs) + "-" + std::to_string(kRandomDelayMaxMs) + "ms)</li>"
+                std::to_string(kRandomDelayMinMs) + "-" + std::to_string(kRandomDelayMaxMs) +
+                "ms)</li>"
                 "<li><b>GET /data/:size</b> - Generate data of specific size (KB)</li>"
                 "<li><b>GET /stats</b> - Server statistics</li>"
                 "</ul>"
@@ -181,8 +193,8 @@ int main() {
             std::this_thread::sleep_for(std::chrono::milliseconds(kFastDelayMs));
 
             std::ostringstream oss;
-            oss << "{\"endpoint\":\"fast\",\"delay_ms\":" << kFastDelayMs << ",\"message\":\"Fast response\",\"timestamp\":\""
-                << GetCurrentTime() << "\"}";
+            oss << "{\"endpoint\":\"fast\",\"delay_ms\":" << kFastDelayMs
+                << ",\"message\":\"Fast response\",\"timestamp\":\"" << GetCurrentTime() << "\"}";
 
             resp->AddHeader("Content-Type", "application/json");
             resp->AppendBody(oss.str());
@@ -200,8 +212,7 @@ int main() {
 
             std::ostringstream oss;
             oss << "{\"endpoint\":\"medium\",\"delay_ms\":" << kMediumDelayMs
-                << ",\"message\":\"Medium response\",\"timestamp\":\""
-                << GetCurrentTime() << "\"}";
+                << ",\"message\":\"Medium response\",\"timestamp\":\"" << GetCurrentTime() << "\"}";
 
             resp->AddHeader("Content-Type", "application/json");
             resp->AppendBody(oss.str());
@@ -218,8 +229,8 @@ int main() {
             std::this_thread::sleep_for(std::chrono::milliseconds(kSlowDelayMs));
 
             std::ostringstream oss;
-            oss << "{\"endpoint\":\"slow\",\"delay_ms\":" << kSlowDelayMs << ",\"message\":\"Slow response\",\"timestamp\":\""
-                << GetCurrentTime() << "\"}";
+            oss << "{\"endpoint\":\"slow\",\"delay_ms\":" << kSlowDelayMs
+                << ",\"message\":\"Slow response\",\"timestamp\":\"" << GetCurrentTime() << "\"}";
 
             resp->AddHeader("Content-Type", "application/json");
             resp->AppendBody(oss.str());
@@ -232,9 +243,11 @@ int main() {
             RAII_ConcurrentCounter counter(*stats);
             stats->total_requests++;
 
-            static std::random_device rd;
-            static std::mt19937 gen(rd());
-            static std::uniform_int_distribution<> dis(kRandomDelayMinMs, kRandomDelayMaxMs);
+            // thread_local: mt19937::operator() mutates engine state; a shared
+            // static instance is a data race across worker threads (TSan flagged).
+            static thread_local std::random_device rd;
+            static thread_local std::mt19937 gen(rd());
+            static thread_local std::uniform_int_distribution<> dis(kRandomDelayMinMs, kRandomDelayMaxMs);
 
             int delay_ms = dis(gen);
             std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));

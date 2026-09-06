@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <memory>
 
+#include "common/config.h"
 #include "common/log/log_stream.h"
 #include "common/util/singleton.h"
 
@@ -76,10 +77,6 @@ inline bool LogLevelEnabled(uint8_t bit) {
 #define LOG_ERROR_S LogStream(SingletonLogger::Instance().GetStreamParam(LogLevel::kError, __FILE__, __LINE__))
 #define LOG_FATAL_S LogStream(SingletonLogger::Instance().GetStreamParam(LogLevel::kFatal, __FILE__, __LINE__))
 
-// log cache config
-static const uint16_t kLogCacheSize = 20;
-static const uint16_t kLogBlockSize = 2048;
-
 class Logger;
 class BaseLogger;
 class SingletonLogger: public common::Singleton<SingletonLogger> {
@@ -105,7 +102,7 @@ private:
     std::shared_ptr<BaseLogger> logger_;
 };
 
-}  // namespace common
+}  // namespace quicx
 }  // namespace quicx
 
-#endif
+#endif  // COMMON_LOG_LOG

@@ -2,6 +2,7 @@
 #define QUIC_CONNECTION_CONNECTION_ID_GENERATOR
 
 #include <cstdint>
+
 #include "common/util/singleton.h"
 
 namespace quicx {
@@ -24,4 +25,4 @@ private:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_CONNECTION_CONNECTION_ID_GENERATOR

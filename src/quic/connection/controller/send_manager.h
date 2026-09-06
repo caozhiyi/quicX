@@ -11,10 +11,10 @@
 #include "common/timer/if_timer.h"
 
 #include "quic/connection/connection_id_manager.h"
-#include "quic/connection/controler/anti_amplification_controller.h"
-#include "quic/connection/controler/pmtu_prober.h"
-#include "quic/connection/controler/send_control.h"
-#include "quic/connection/controler/send_flow_controller.h"
+#include "quic/connection/controller/anti_amplification_controller.h"
+#include "quic/connection/controller/pmtu_prober.h"
+#include "quic/connection/controller/send_control.h"
+#include "quic/connection/controller/send_flow_controller.h"
 #include "quic/connection/packet_builder.h"
 #include "quic/connection/type.h"
 #include "quic/frame/if_frame.h"
@@ -113,8 +113,8 @@ public:
      *        probing bypass so a cwnd-exhausted connection cannot over-send
      *        ordinary frames (RFC 9002 §7).
      */
-    std::vector<std::shared_ptr<IFrame>> GetPendingFrames(EncryptionLevel level, uint32_t max_bytes,
-        bool exempt_only = false);
+    std::vector<std::shared_ptr<IFrame>> GetPendingFrames(
+        EncryptionLevel level, uint32_t max_bytes, bool exempt_only = false);
 
     /**
      * @brief Check if there is stream data to send
@@ -205,6 +205,18 @@ public:
      * to reach the *connection's own* controller to catch that class of bug.
      */
     const AntiAmplificationController& GetAmpControllerForTest() const { return amp_controller_; }
+
+    /**
+     * @brief True when the RFC 9000 §8.1 budget cannot cover |bytes|.
+     *
+     * Read-only, and must stay that way: it exists so callers can *size* an
+     * outgoing datagram (see DatagramEmitter's §14.1 padding) before the bytes
+     * are written. CheckAndChargeAmpBudget() is the one that debits, and it has
+     * to be called exactly once, with the final size.
+     *
+     * Always false once the peer address is validated.
+     */
+    bool IsAmpBudgetBelow(uint32_t bytes) const { return amp_controller_.GetRemainingBudget() < bytes; }
 
     // ---- PMTU probing (skeleton) ----
     // Start a simple PMTU probe sequence after migration (skeleton only).
@@ -317,4 +329,4 @@ private:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_CONNECTION_CONTROLER_SEND_MANAGER

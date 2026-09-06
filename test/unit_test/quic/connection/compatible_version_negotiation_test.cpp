@@ -23,14 +23,12 @@
 //         RFC 9368 §4 client side of the upgrade).
 //       - Handshake completes, both endpoints end up on kQuicVersion2.
 
-#include <gtest/gtest.h>
-
 #include <memory>
 #include <tuple>
 #include <vector>
 
-#include "connection_test_util.h"
-#include "mock_sender.h"
+#include <gtest/gtest.h>
+
 #include "quic/common/version.h"
 #include "quic/connection/connection_base.h"
 #include "quic/connection/connection_client.h"
@@ -40,6 +38,9 @@
 #include "quic/crypto/tls/tls_ctx_server.h"
 #include "quic/packet/packet_decode.h"
 #include "quic/quicx/global_resource.h"
+
+#include "connection_test_util.h"
+#include "mock_sender.h"
 
 namespace quicx {
 namespace quic {

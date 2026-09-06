@@ -1,13 +1,15 @@
-#include "http3/metric/metrics_handler.h"
 #include <quicx/common/metrics.h>
+
 #include "common/log/log.h"
+
+#include "http3/metric/metrics_handler.h"
 
 namespace quicx {
 namespace http3 {
 
 void MetricsHandler::Handle(std::shared_ptr<IRequest> /*request*/, std::shared_ptr<IResponse> response) {
     // Export metrics in Prometheus format
-    std::string metrics_data = common::Metrics::ExportPrometheus();
+    std::string metrics_data = Metrics::ExportPrometheus();
 
     // Set response headers
     response->SetStatusCode(200);
@@ -19,5 +21,5 @@ void MetricsHandler::Handle(std::shared_ptr<IRequest> /*request*/, std::shared_p
     LOG_DEBUG("Metrics endpoint accessed, exported %zu bytes", metrics_data.size());
 }
 
-}  // namespace http3
+}  // namespace quicx
 }  // namespace quicx

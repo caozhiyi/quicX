@@ -2,13 +2,13 @@
 #define HTTP3_STREAM_REQUEST_STREAM
 
 #include <memory>
-#include <unordered_map>
-
 #include <quicx/http3/if_async_handler.h>
 #include <quicx/http3/if_request.h>
 #include <quicx/http3/if_response.h>
 #include <quicx/http3/type.h>
 #include <quicx/quic/if_quic_bidirection_stream.h>
+#include <unordered_map>
+
 #include "http3/qpack/qpack_encoder.h"
 #include "http3/stream/req_resp_base_stream.h"
 
@@ -54,6 +54,12 @@ private:
 private:
     uint32_t body_length_;
     uint32_t received_body_length_;
+    // Idempotence guard for response_handler_: the handler fires exactly once
+    // per request. A retransmitted data+FIN packet re-delivers the FIN
+    // (RecvStream normalizes duplicate FIN-only frames through by design,
+    // for peers that legally resend FIN), which would otherwise invoke the
+    // handler a second time.
+    bool response_completed_{false};
 
     std::shared_ptr<IResponse> response_;
     http_response_handler response_handler_;
@@ -64,4 +70,4 @@ private:
 }  // namespace http3
 }  // namespace quicx
 
-#endif
+#endif  // HTTP3_STREAM_REQUEST_STREAM

@@ -2,11 +2,11 @@
 #define HTTP3_HTTP_REQUEST
 
 #include <memory>
+#include <quicx/http3/if_request.h>
+#include <quicx/http3/type.h>
 #include <string>
 #include <unordered_map>
 
-#include <quicx/http3/if_request.h>
-#include <quicx/http3/type.h>
 #include "common/buffer/if_buffer.h"
 
 namespace quicx {
@@ -90,4 +90,4 @@ private:
 }  // namespace http3
 }  // namespace quicx
 
-#endif
+#endif  // HTTP3_HTTP_REQUEST

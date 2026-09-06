@@ -27,7 +27,7 @@ public:
     // add a worker
     virtual void AddWorker(std::shared_ptr<IWorker> worker) override;
     // add listener
-    virtual bool AddListener(int32_t listener_sock) override;
+    virtual bool AddListener(common::SocketHandle listener_sock) override;
     virtual bool AddListener(const std::string& ip, uint16_t port) override;
     virtual bool RemoveListener(int32_t listener_sock) override;
 
@@ -57,7 +57,7 @@ protected:
     struct ListenerInfo {
         std::string ip;
         uint16_t port;
-        int32_t sock = -1;
+        common::SocketHandle sock;  // fd <= 0: use ip/port instead
     };
     std::vector<ListenerInfo> pending_listeners_;
 };
@@ -65,4 +65,4 @@ protected:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_QUICX_MSG_RECEIVER

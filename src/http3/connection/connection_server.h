@@ -1,17 +1,16 @@
 #ifndef HTTP3_CONNECTION_SERVER_CONNECTION
 #define HTTP3_CONNECTION_SERVER_CONNECTION
 
+
 #include <functional>
 #include <memory>
-#include <unordered_map>
-
 #include <quicx/http3/type.h>
 #include <quicx/quic/if_quic_connection.h>
 #include <quicx/quic/if_quic_server.h>
 #include <quicx/quic/if_quic_stream.h>
+#include <unordered_map>
+
 #include "http3/connection/if_connection.h"
-#include "http3/stream/control_sender_stream.h"
-#include "http3/stream/control_server_receiver_stream.h"
 #include "http3/stream/push_sender_stream.h"
 #include "http3/stream/response_stream.h"
 
@@ -27,22 +26,31 @@ public:
         uint64_t max_concurrent_streams = 200, bool enable_push = false);
     virtual ~ServerConnection();
 
-    // Two-phase init: control/qpack stream wiring is deferred to Init() because
-    // weak_from_this() isn't usable inside the constructor (per
-    // ownership_and_memory.md §3.1). Init() must be called immediately after
-    // make_shared<ServerConnection>().
-    void Init() override;
-
 protected:
-    // RFC 9114 §5.2 graceful shutdown hooks (see IConnection):
-    //   - GOAWAY id on the server side is "the largest stream ID we WILL
-    //     process". We use max_seen_bidi_stream_id_ + 4 (next client-bidi
-    //     after the highest one we've already accepted), which is the
-    //     conservative upper bound: any stream-id strictly less than that
-    //     was either accepted or already past, so the client knows it can
-    //     keep retrying anything ≥ goaway_id on a fresh connection.
-    bool SendGoawayFrame(uint64_t goaway_id) override;
+    // RFC 9114 §5.2 graceful shutdown hook (see IConnection): GOAWAY id on
+    // the server side is "the largest stream ID we WILL process". We use
+    // max_seen_bidi_stream_id_ + 4 (next client-bidi after the highest one
+    // we've already accepted), which is the conservative upper bound: any
+    // stream-id strictly less than that was either accepted or already past,
+    // so the client knows it can keep retrying anything ≥ goaway_id on a
+    // fresh connection.
     uint64_t ComputeGoawayId() override;
+
+    /**
+     * @brief Role hook after a valid peer GOAWAY (see IConnection): the
+     *        server starts its symmetric drain so peers that block on our
+     *        GOAWAY + close (e.g. s2n-quic) don't idle out.
+     */
+    void OnGoawayReceived() override;
+
+    /**
+     * @brief Role-specific typed-stream factory (see IConnection):
+     *        kControl -> ControlServerReceiverStream. A client-sent push
+     *        stream is a protocol violation. Everything else falls through
+     *        to the base implementation.
+     */
+    std::shared_ptr<IRecvStream> CreateTypedStream(
+        uint64_t stream_type, const std::shared_ptr<IQuicRecvStream>& stream) override;
 
 private:
     // send push (RFC 9114 Section 4.6)
@@ -50,11 +58,6 @@ private:
     void HandlePush(std::shared_ptr<IResponse> response, std::shared_ptr<ResponseStream> response_stream);
     // handle stream status
     void HandleStream(std::shared_ptr<IQuicStream> stream, uint32_t error_code) override;
-    // Callback when stream type is identified (RFC 9114 Section 6.2)
-    void OnStreamTypeIdentified(
-        uint64_t stream_type, std::shared_ptr<IQuicRecvStream> stream, std::shared_ptr<IBufferRead> remaining_data);
-    // handle goaway frame
-    void HandleGoaway(uint64_t id);
     // handle max push id frame
     void HandleMaxPushId(uint64_t max_push_id);
     // handle cancel push frame
@@ -88,19 +91,15 @@ private:
     // on -- a self-join that throws "Resource deadlock avoided" (EDEADLK). Lock
     // before use; it may already be expired (in which case the push timer is moot).
     std::weak_ptr<IQuicServer> quic_server_;
-    // pending settings captured at construction, applied during Init()
-    Http3Settings pending_settings_;
     // push responses, push id -> response
     std::unordered_map<uint64_t, std::shared_ptr<IResponse>> push_responses_;
     // push streams, push id -> PushSenderStream (for tracking active push streams)
     std::unordered_map<uint64_t, std::shared_ptr<PushSenderStream>> push_streams_;
 
-    std::shared_ptr<ControlSenderStream> control_sender_stream_;
-    std::shared_ptr<ControlServerReceiverStream> control_recv_stream_;
     std::weak_ptr<IHttpProcessor> http_processor_;
 };
 
 }  // namespace http3
 }  // namespace quicx
 
-#endif
+#endif  // HTTP3_CONNECTION_SERVER_CONNECTION

@@ -3,16 +3,21 @@
 
 #include <functional>
 #include <memory>
+#include <quicx/quic/if_quic_connection.h>
 #include <vector>
 
 #include "common/network/address.h"
+#include "common/network/socket_handle.h"
 
-#include <quicx/quic/if_quic_connection.h>
 #include "quic/connection/connection_id.h"
 #include "quic/crypto/tls/type.h"
 #include "quic/packet/if_packet.h"
 
 namespace quicx {
+namespace common {
+class QlogTrace;
+}
+
 namespace quic {
 
 // Forward declarations
@@ -54,8 +59,7 @@ public:
     // set the callback function to handle the stream state change.
     virtual void SetStreamStateCallBack(stream_state_callback cb) override { stream_state_cb_ = cb; }
     // add a timer, implementation in BaseConnection
-    virtual uint64_t AddTimer(timer_callback callback, uint32_t timeout_ms,
-                               bool periodic = false) override = 0;
+    virtual uint64_t AddTimer(timer_callback callback, uint32_t timeout_ms, bool periodic = false) override = 0;
     // remove a timer, implementation in BaseConnection
     virtual void RemoveTimer(uint64_t timer_id) override = 0;
 
@@ -147,15 +151,47 @@ public:
     // Check if migration is in progress
     virtual bool IsMigrationInProgress() const override { return false; }
 
+    // Get the qlog trace bound to this connection (null if qlog is disabled).
+    // Internal-only accessor: deliberately kept off the public IQuicConnection
+    // interface so the internal qlog types don't leak into the public API.
+    virtual std::shared_ptr<common::QlogTrace> GetQlogTrace() const = 0;
+
     // Internal: Get local address bound to socket
     virtual bool GetLocalAddressFromSocket(int32_t sockfd, common::Address& addr);
 
-    // The active socket fd is owned by DatagramEmitter (see BaseConnection), so
-    // this is virtual rather than a field write here.
-    virtual void SetSocket(int32_t sockfd) = 0;
+    // The active socket is owned by DatagramEmitter (see BaseConnection), so
+    // this is virtual rather than a field write here. The handle carries the
+    // socket's address family from its creation site; fd <= 0 means "none".
+    virtual void SetSocket(common::SocketHandle sock) = 0;
 
-    // Set callback to register a new socket with the receiver (for connection migration)
-    using RegisterSocketCallback = std::function<bool(int32_t sockfd)>;
+    // The socket the connection currently sends from (the emitter's active
+    // socket). Lets the server worker detect a datagram that arrived on a
+    // different local listener (preferred_address) — a new path per RFC 9000
+    // §9 even when the peer's source address is unchanged.
+    virtual common::SocketHandle GetActiveSocket() const { return common::SocketHandle(-1, 0); }
+
+    // The peer's datagram arrived on a different local socket than the one
+    // this connection has been using (e.g. a client migrating to our
+    // preferred_address listener). Triggers path validation on the new
+    // path. Default no-op.
+    virtual void OnLocalSocketAddressChanged() {}
+
+    // Record the local socket a peer datagram arrived ON and report whether
+    // it is the first time this connection sees that socket. First-seen
+    // means the peer moved to a new local listener (preferred_address) —
+    // a new path per RFC 9000 §9. Deliberately keyed on the RECEIVE socket,
+    // never the send fd: a NAT-rebind probe swaps the send fd after every
+    // migration, which must not look like a new listener. Default: never
+    // new (clients have a single socket).
+    virtual bool OnRxSocket(int32_t sockfd) {
+        (void)sockfd;
+        return false;
+    }
+
+    // Set callback to register a new socket with the receiver (for connection
+    // migration). The handle carries the family from the socket's creation
+    // site so the receiver never has to probe the kernel.
+    using RegisterSocketCallback = std::function<bool(common::SocketHandle sock)>;
     virtual void SetRegisterSocketCallback(RegisterSocketCallback cb) { register_socket_cb_ = cb; }
 
     // Set callback to remove a socket from the receiver's poll set. Needed to
@@ -185,4 +221,4 @@ protected:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_CONNECTION_IF_CONNECTION

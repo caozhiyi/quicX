@@ -1,6 +1,6 @@
 # QuicX 功能支持矩阵
 
-> 适用于 **v0.1.x**。本文档是"**v0.1.x 实际支持哪些能力、哪些是部分支持、哪些刻意不实现**"的权威依据，每个 minor 版本发布时同步更新。
+> 适用于 **v1.0.x**。本文档是"**QuicX 实际支持哪些能力、哪些是部分支持、哪些刻意不实现**"的权威依据，每个 minor 版本发布时同步更新。
 >
 > 配套阅读：[`api_stability.md`](./api_stability.md)（API 稳定性策略）、
 > [`reports/interop_status.md`](../reports/interop_status.md)（互操作性测试结果）、
@@ -258,8 +258,8 @@
 
 ## 已知限制汇总（采纳前请通读）
 
-1. **不支持 Multipath / DATAGRAM / ACK Frequency** —— 需要这些的应用不应采纳 v0.1.x。
-2. **公有 API 在任何 `0.x` minor 之间都可能调整** —— 详见 [`api_stability.md`](./api_stability.md)。
+1. **不支持 Multipath / DATAGRAM / ACK Frequency** —— 需要这些能力的应用请关注后续版本。
+2. **公有 API 自 `1.0.0` 起冻结、遵循 SemVer；ABI 稳定不作承诺** —— 详见 [`api_stability.md`](./api_stability.md)。
 3. **安全响应 SLA 仅"尽力而为"** —— 具体口径见 [`../../../SECURITY.md`](../../../SECURITY.md)。
 4. **mTLS / Trailers / 连接池** 有可工作的代码，但端到端验证有限。
 
@@ -267,6 +267,5 @@
 
 ## 路线图指引
 
-- **v0.2.0** —— Linux/macOS/Windows CI；DATAGRAM 帧（计划中）
-- **v0.3.0** —— Multipath QUIC 调研；ACK Frequency
-- **v1.0.0** —— API 冻结，SemVer 正式生效
+- **v1.0.0（已发布）** —— API 冻结，SemVer 生效；24 场景 × 17 对端互通矩阵通过率 91.22%。
+- 后续计划与最新互通结果见 [`../../../CHANGELOG.md`](../../../CHANGELOG.md) 与 [`interop_status.md`](../reports/interop_status.md)。

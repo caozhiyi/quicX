@@ -56,4 +56,4 @@ protected:
 }  // namespace common
 }  // namespace quicx
 
-#endif
+#endif  // COMMON_THREAD_THREAD

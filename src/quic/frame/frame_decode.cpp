@@ -34,7 +34,8 @@ namespace quic {
 
 // frame type to craeter function map
 static const std::unordered_map<uint16_t, std::function<std::shared_ptr<IFrame>(uint16_t)>> kFrameCreatorMap = {
-    {FrameType::kPadding, [](uint16_t /*type*/) -> std::shared_ptr<IFrame> { return std::make_shared<PaddingFrame>(); }},
+    {FrameType::kPadding,
+        [](uint16_t /*type*/) -> std::shared_ptr<IFrame> { return std::make_shared<PaddingFrame>(); }},
     {FrameType::kPing, [](uint16_t /*type*/) -> std::shared_ptr<IFrame> { return std::make_shared<PingFrame>(); }},
     {FrameType::kAck, [](uint16_t /*type*/) -> std::shared_ptr<IFrame> { return std::make_shared<AckFrame>(); }},
     {FrameType::kAckEcn, [](uint16_t /*type*/) -> std::shared_ptr<IFrame> { return std::make_shared<AckEcnFrame>(); }},
@@ -43,7 +44,8 @@ static const std::unordered_map<uint16_t, std::function<std::shared_ptr<IFrame>(
     {FrameType::kStopSending,
         [](uint16_t /*type*/) -> std::shared_ptr<IFrame> { return std::make_shared<StopSendingFrame>(); }},
     {FrameType::kCrypto, [](uint16_t /*type*/) -> std::shared_ptr<IFrame> { return std::make_shared<CryptoFrame>(); }},
-    {FrameType::kNewToken, [](uint16_t /*type*/) -> std::shared_ptr<IFrame> { return std::make_shared<NewTokenFrame>(); }},
+    {FrameType::kNewToken,
+        [](uint16_t /*type*/) -> std::shared_ptr<IFrame> { return std::make_shared<NewTokenFrame>(); }},
     {FrameType::kStream, [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<StreamFrame>(type); }},
     {FrameType::kStream + 1,
         [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<StreamFrame>(type); }},
@@ -59,7 +61,8 @@ static const std::unordered_map<uint16_t, std::function<std::shared_ptr<IFrame>(
         [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<StreamFrame>(type); }},
     {FrameType::kStream + 7,
         [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<StreamFrame>(type); }},
-    {FrameType::kMaxData, [](uint16_t /*type*/) -> std::shared_ptr<IFrame> { return std::make_shared<MaxDataFrame>(); }},
+    {FrameType::kMaxData,
+        [](uint16_t /*type*/) -> std::shared_ptr<IFrame> { return std::make_shared<MaxDataFrame>(); }},
     {FrameType::kMaxStreamData,
         [](uint16_t /*type*/) -> std::shared_ptr<IFrame> { return std::make_shared<MaxStreamDataFrame>(); }},
     {FrameType::kMaxStreamsBidirectional,

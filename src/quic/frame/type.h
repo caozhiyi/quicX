@@ -2,6 +2,7 @@
 #define QUIC_FRAME_TYPE
 
 #include <cstdint>
+
 #include "common/log/log.h"
 
 namespace quicx {
@@ -84,4 +85,4 @@ enum FrameTypeBit : uint32_t {
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_FRAME_TYPE

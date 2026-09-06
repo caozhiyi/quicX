@@ -84,4 +84,4 @@ private:
 }  // namespace http3
 }  // namespace quicx
 
-#endif
+#endif  // HTTP3_QPACK_BLOCKED_REGISTRY

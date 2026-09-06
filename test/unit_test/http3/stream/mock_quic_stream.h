@@ -1,11 +1,12 @@
 #ifndef UTEST_HTTP3_STREAM_MOCK_QUIC_STREAM
 #define UTEST_HTTP3_STREAM_MOCK_QUIC_STREAM
 
+
+#include <cstdint>
+#include <memory>
 #include <quicx/quic/if_quic_bidirection_stream.h>
 #include <quicx/quic/if_quic_recv_stream.h>
 #include <quicx/quic/if_quic_send_stream.h>
-#include <cstdint>
-#include <memory>
 #include <utility>
 #include <vector>
 
@@ -66,10 +67,11 @@ public:
 
     // Test-only helper: directly invoke the registered read callback to
     // simulate the QUIC layer delivering a STREAM frame with a specific
-    // is_last (FIN) flag. The production code path (peer->Send / peer->Flush)
-    // always passes is_last=false because the mock doesn't model FIN. Tests
-    // that need to exercise FIN-aware paths (e.g. HEADERS without FIN
-    // followed by an empty STREAM with FIN) should call this directly.
+    // is_last (FIN) flag. The production code paths (peer->Send /
+    // peer->Flush) always pass is_last=false; FIN is modelled by Close(),
+    // which delivers an empty buffer with is_last=true. Tests that need
+    // out-of-band FIN patterns (e.g. HEADERS without FIN followed by an
+    // empty STREAM with FIN) can still call this directly.
     void SimulateRead(std::shared_ptr<IBufferRead> buf, bool is_last, uint32_t error = 0) {
         if (read_cb_) {
             read_cb_(buf, is_last, error);
@@ -95,6 +97,11 @@ private:
     uint64_t stream_id_;
     StreamDirection direction_;
 
+    // FIN delivery is one-shot: a second Close() on the same send direction
+    // must not deliver a second FIN (production code may legitimately call
+    // Close() more than once during stream teardown).
+    bool fin_sent_ = false;
+
     // Inbound bytes that arrived before SetStreamReadCallBack() installed
     // a read callback. The HTTP/3 Init() flow opens the QPACK encoder /
     // decoder unidirectional streams *before* the receiving side has
@@ -106,4 +113,4 @@ private:
 }  // namespace quic
 }  // namespace quicx
 
-#endif  // MOCK_QUIC_RECV_STREAM_H
+#endif  // UTEST_HTTP3_STREAM_MOCK_QUIC_STREAM

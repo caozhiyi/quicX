@@ -23,4 +23,4 @@ protected:
 }  // namespace upgrade
 }  // namespace quicx
 
-#endif  // UPGRADE_HANDLERS_HTTP_SMART_HANDLER_H
+#endif  // UPGRADE_HANDLERS_HTTP_SMART_HANDLER

@@ -1,5 +1,5 @@
 #ifdef __APPLE__
-#include "common/network/io_handle.h"
+
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -13,22 +13,18 @@
 #include <sys/uio.h>
 #include <unistd.h>  // for close
 #include <atomic>
+
 #include "common/log/log.h"
-#include "common/network/socket_family_cache.h"
+#include "common/network/io_handle.h"
 
 namespace quicx {
 namespace common {
 
-// Resolve the address family of `sockfd`, preferring our own creation-time
-// cache over any syscall. Returns 0 (AF_UNSPEC) when truly unknown — the
-// caller will then have to make a best-effort guess.
+// Resolve the address family of `sockfd` by probing the kernel. Only used
+// for fds we did not create ourselves (family not carried alongside).
+// getsockname() works even for unbound sockets on macOS — the kernel
+// reports the socket's create-time family.
 int32_t ResolveSocketFamily(int32_t sockfd) {
-    int32_t fam = GetSocketFamily(sockfd);
-    if (fam != 0) return fam;
-
-    // Not tracked by us (e.g. caller-provided fd, or a TCP fd): fall back
-    // to getsockname(). On macOS this works even for unbound sockets — the
-    // kernel reports the socket's create-time family.
     struct sockaddr_storage ss;
     socklen_t ss_len = sizeof(ss);
     memset(&ss, 0, sizeof(ss));
@@ -56,14 +52,12 @@ UdpSocketResult UdpSocket() {
         // Enable dual-stack: allow IPv4 connections on IPv6 socket.
         int off = 0;
         setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY, &off, sizeof(off));
-        RememberSocketFamily(sock, AF_INET6);
         SetUdpSocketBuffer(sock, kDefaultUdpBufferSize);
         return {sock, 0, AF_INET6};
     }
     // Fallback to IPv4-only if IPv6 is not available.
     sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (sock != -1) {
-        RememberSocketFamily(sock, AF_INET);
         SetUdpSocketBuffer(sock, kDefaultUdpBufferSize);
         return {sock, 0, AF_INET};
     }
@@ -76,7 +70,6 @@ UdpSocketResult UdpSocket4() {
     // routing issues in certain network environments (e.g., Docker bridge networks).
     int32_t sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (sock != -1) {
-        RememberSocketFamily(sock, AF_INET);
         SetUdpSocketBuffer(sock, kDefaultUdpBufferSize);
         return {sock, 0, AF_INET};
     }
@@ -84,7 +77,6 @@ UdpSocketResult UdpSocket4() {
 }
 
 SysCallInt32Result Close(int32_t sockfd) {
-    ForgetSocketFamily(sockfd);
     const int32_t rc = close(sockfd);
     return {rc, rc != -1 ? 0 : errno};
 }
@@ -196,10 +188,14 @@ SysCallInt32Result Writev(int32_t sockfd, Iovec* vec, uint32_t vec_len) {
     return {rc, rc != -1 ? 0 : errno};
 }
 
-SysCallInt32Result SendTo(int32_t sockfd, const char* msg, uint32_t len, uint16_t flag, const Address& addr) {
-    // Resolve once (O(1) cache hit on the hot path; falls back to a single
-    // syscall only for fds we didn't create ourselves, e.g. test fixtures).
-    const int32_t sock_family = ResolveSocketFamily(sockfd);
+SysCallInt32Result SendTo(const SocketHandle& sock, const char* msg, uint32_t len, uint16_t flag, const Address& addr) {
+    // The handle carries the family from creation time (free, no syscall);
+    // only fds whose family was never recorded pay the ResolveSocketFamily
+    // fallback (one getsockname syscall).
+    int32_t sock_family = sock.family;
+    if (sock_family != AF_INET6 && sock_family != AF_INET) {
+        sock_family = ResolveSocketFamily(sock.fd);
+    }
     const bool is_ipv6_socket = (sock_family == AF_INET6);
 
     // PERF (P1): consult Address-side cache. The (sock_family) tag is enough
@@ -210,7 +206,7 @@ SysCallInt32Result SendTo(int32_t sockfd, const char* msg, uint32_t len, uint16_
     const int cache_family = is_ipv6_socket ? AF_INET6 : AF_INET;
     socklen_t cached_len = 0;
     if (const struct sockaddr* cached = addr.GetCachedSockaddr(cache_family, cached_len)) {
-        const int32_t rc = sendto(sockfd, msg, len, flag, cached, cached_len);
+        const int32_t rc = sendto(sock.fd, msg, len, flag, cached, cached_len);
         return {rc, rc != -1 ? 0 : errno};
     }
 
@@ -224,7 +220,7 @@ SysCallInt32Result SendTo(int32_t sockfd, const char* msg, uint32_t len, uint16_
         addr_in6.sin6_port = htons(addr.GetPort());
         inet_pton(AF_INET6, addr.GetIp().c_str(), &addr_in6.sin6_addr);
         addr.StoreCachedSockaddr(AF_INET6, (struct sockaddr*)&addr_in6, sizeof(addr_in6));
-        const int32_t rc = sendto(sockfd, msg, len, flag, (sockaddr*)&addr_in6, sizeof(addr_in6));
+        const int32_t rc = sendto(sock.fd, msg, len, flag, (sockaddr*)&addr_in6, sizeof(addr_in6));
         return {rc, rc != -1 ? 0 : errno};
     }
 
@@ -237,7 +233,7 @@ SysCallInt32Result SendTo(int32_t sockfd, const char* msg, uint32_t len, uint16_
         std::string mapped = "::ffff:" + addr.GetIp();
         inet_pton(AF_INET6, mapped.c_str(), &addr_in6.sin6_addr);
         addr.StoreCachedSockaddr(AF_INET6, (struct sockaddr*)&addr_in6, sizeof(addr_in6));
-        const int32_t rc = sendto(sockfd, msg, len, flag, (sockaddr*)&addr_in6, sizeof(addr_in6));
+        const int32_t rc = sendto(sock.fd, msg, len, flag, (sockaddr*)&addr_in6, sizeof(addr_in6));
         return {rc, rc != -1 ? 0 : errno};
     }
 
@@ -249,7 +245,7 @@ SysCallInt32Result SendTo(int32_t sockfd, const char* msg, uint32_t len, uint16_
     addr_cli.sin_addr.s_addr = inet_addr(addr.GetIp().c_str());
     addr.StoreCachedSockaddr(AF_INET, (struct sockaddr*)&addr_cli, sizeof(addr_cli));
 
-    const int32_t rc = sendto(sockfd, msg, len, flag, (sockaddr*)&addr_cli, sizeof(addr_cli));
+    const int32_t rc = sendto(sock.fd, msg, len, flag, (sockaddr*)&addr_cli, sizeof(addr_cli));
     return {rc, rc != -1 ? 0 : errno};
 }
 
@@ -327,7 +323,7 @@ SysCallInt32Result SendmMsg(int32_t sockfd, MMsghdr* msgvec, uint32_t vlen, uint
 // macOS has no UDP GSO (UDP_SEGMENT is Linux-specific). Return a sentinel
 // errno that makes the caller (UdpSender::SendBatch) permanently disable
 // the GSO path on first attempt and fall back to sendmmsg.
-SysCallInt32Result SendMsgGso(int32_t /*sockfd*/, const char* /*payload*/, uint32_t /*total_len*/,
+SysCallInt32Result SendMsgGso(const SocketHandle& /*sock*/, const char* /*payload*/, uint32_t /*total_len*/,
     uint16_t /*segment_size*/, const Address& /*addr*/) {
     return {-1, EIO};
 }

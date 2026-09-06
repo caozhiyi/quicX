@@ -1,10 +1,11 @@
-#include <gtest/gtest.h>
+#include <quicx/common/metrics.h>
+#include <quicx/common/type.h>
 #include <thread>
 #include <vector>
 
-#include <quicx/common/metrics.h>
-#include <quicx/common/metrics_std.h>
-#include <quicx/common/type.h>
+#include <gtest/gtest.h>
+
+#include "common/metrics/metrics_std.h"
 
 namespace quicx {
 namespace common {
@@ -13,7 +14,7 @@ class MetricsTest: public testing::Test {
 protected:
     void SetUp() override {
         MetricsConfig config;
-        config.enable = true;
+        config.enable_ = true;
         Metrics::Initialize(config);
     }
 };
@@ -119,7 +120,7 @@ TEST_F(MetricsTest, MultiThreaded) {
 // Test 7: Disable Config
 TEST(MetricsDisableTest, DisableMetrics) {
     MetricsConfig config;
-    config.enable = false;
+    config.enable_ = false;
     Metrics::Initialize(config);
 
     auto id = Metrics::RegisterCounter("disabled_counter");
