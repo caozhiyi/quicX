@@ -1,14 +1,14 @@
-#include <openssl/rand.h>
 #include <algorithm>
 #include <cstring>
+#include <quicx/common/metrics.h>
 #include <vector>
+
+#include <openssl/rand.h>
 
 #include "common/buffer/buffer_chunk.h"
 #include "common/log/log.h"
 #include "common/log/log_context.h"
-
-#include <quicx/common/metrics.h>
-#include <quicx/common/metrics_std.h>
+#include "common/metrics/metrics_std.h"
 
 #include "quic/common/version.h"
 #include "quic/config.h"
@@ -30,8 +30,7 @@ namespace quic {
 
 ServerWorker::ServerWorker(const QuicServerConfig& config, std::shared_ptr<TLSCtx> ctx, std::shared_ptr<ISender> sender,
     const QuicTransportParams& params, connection_state_callback connection_handler,
-    std::shared_ptr<common::IEventLoop> event_loop,
-    std::shared_ptr<RetryTokenManager> shared_retry_token_manager):
+    std::shared_ptr<common::IEventLoop> event_loop, std::shared_ptr<RetryTokenManager> shared_retry_token_manager):
     Worker(config.config_, ctx, sender, params, connection_handler, event_loop),
     server_alpn_(config.alpn_),
     max_connections_per_worker_(config.max_connections_per_worker_),
@@ -109,7 +108,7 @@ bool ServerWorker::ShouldSendRetry(bool has_valid_token, const common::Address& 
 
         case RetryPolicy::ALWAYS:
             // Security priority: always send Retry for new connections without token
-            common::Metrics::CounterInc(common::MetricsStd::QuicRetryByPolicy);
+            Metrics::CounterInc(common::MetricsStd::QuicRetryByPolicy);
             return true;
 
         case RetryPolicy::SELECTIVE: {
@@ -118,14 +117,14 @@ bool ServerWorker::ShouldSendRetry(bool has_valid_token, const common::Address& 
             // Check 1: High connection rate (server under load)
             if (rate_monitor_ && rate_monitor_->IsHighRate(selective_config_.rate_threshold_)) {
                 LOG_DEBUG("ShouldSendRetry: high connection rate detected, sending Retry");
-                common::Metrics::CounterInc(common::MetricsStd::QuicRetryByHighRate);
+                Metrics::CounterInc(common::MetricsStd::QuicRetryByHighRate);
                 return true;
             }
 
             // Check 2: Suspicious IP (potential attack)
             if (ip_limiter_ && ip_limiter_->IsSuspicious(client_addr)) {
                 LOG_DEBUG("ShouldSendRetry: suspicious IP %s, sending Retry", client_addr.GetIp().c_str());
-                common::Metrics::CounterInc(common::MetricsStd::QuicRetryBySuspiciousIP);
+                Metrics::CounterInc(common::MetricsStd::QuicRetryBySuspiciousIP);
                 return true;
             }
 
@@ -163,10 +162,26 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
         // removes the entry from conn_map_. Without this pin, the iterator
         // would be the last owner and `this` would be destroyed mid-call.
         auto connection = conn->second;
-        connection->SetSocket(packet_info.net_packet_->GetSocket());
+
+        // RFC 9000 §9: a datagram arriving on a different local listener
+        // (the preferred_address socket) opens a NEW path even when the
+        // peer's source address is unchanged. Detect it via the connection's
+        // set of already-seen rx sockets — NOT by comparing against the
+        // current send fd: a NAT-rebind probe swaps the send fd after every
+        // completed migration, which would otherwise re-trigger validation
+        // on every subsequent packet and starve the transfer. Validate the
+        // new path so its first transmitted packet carries PATH_CHALLENGE —
+        // the interop "connectionmigration" check asserts exactly that.
+        const common::SocketHandle rx_sock = packet_info.net_packet_->GetSocket();
+        const bool local_socket_changed = connection->OnRxSocket(rx_sock.fd);
+
+        connection->SetSocket(rx_sock);
         // report observed address for path change detection
         auto& observed_addr = packet_info.net_packet_->GetAddress();
         connection->OnObservedPeerAddress(observed_addr);
+        if (local_socket_changed) {
+            connection->OnLocalSocketAddressChanged();
+        }
         // record received bytes on candidate path to unlock anti-amplification budget
         if (packet_info.net_packet_->GetData()) {
             connection->OnCandidatePathDatagramReceived(
@@ -249,7 +264,7 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
 
                 if (has_valid_token) {
                     LOG_DEBUG("Valid Retry token received. ODCID extracted: %llu", odcid.Hash());
-                    common::Metrics::CounterInc(common::MetricsStd::QuicRetryTokensValidated);
+                    Metrics::CounterInc(common::MetricsStd::QuicRetryTokensValidated);
                     // RFC 9000 §7.3: After Retry, the server MUST set
                     // original_destination_connection_id to the DCID from the
                     // client's very first Initial (extracted from the token),
@@ -260,7 +275,7 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
                     original_dcid = odcid;
                 } else {
                     LOG_WARN("Invalid Retry token received");
-                    common::Metrics::CounterInc(common::MetricsStd::QuicRetryTokensInvalid);
+                    Metrics::CounterInc(common::MetricsStd::QuicRetryTokensInvalid);
                 }
             }
 
@@ -270,7 +285,7 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
                 uint32_t client_version = long_header->GetVersion();
                 if (SendRetryPacket(
                         client_addr, packet_info.net_packet_->GetSocket(), dst_cid, src_cid, client_version)) {
-                    common::Metrics::CounterInc(common::MetricsStd::QuicRetryPacketsSent);
+                    Metrics::CounterInc(common::MetricsStd::QuicRetryPacketsSent);
                     return true;  // Retry sent, don't create connection yet
                 } else {
                     LOG_ERROR("Failed to send Retry packet");
@@ -288,8 +303,7 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
     callbacks.retire_conn_id_cb = [this](auto a) { HandleRetireConnectionId(a); };
     callbacks.connection_close_cb = [this](auto a, auto b, auto c) { HandleConnectionClose(a, b, c); };
 
-    auto new_conn = std::make_shared<ServerConnection>(ctx_, event_loop_.lock(), server_alpn_, callbacks,
-        ecn_enabled_);
+    auto new_conn = std::make_shared<ServerConnection>(ctx_, event_loop_.lock(), server_alpn_, callbacks, ecn_enabled_);
 
     // Inject Sender for direct packet transmission
     new_conn->SetSender(sender_);
@@ -374,7 +388,8 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
     // which is the P4 residue observed in profile_rss_lifecycle.
     auto hs_loop = event_loop_.lock();
     if (!hs_loop) return false;
-    handshake_timers_[new_conn] = hs_loop->AddTimer(life_token_,
+    handshake_timers_[new_conn] = hs_loop->AddTimer(
+        life_token_,
         [new_conn, this]() {
             if (connecting_set_.find(new_conn) != connecting_set_.end()) {
                 LOG_INFO(
@@ -408,8 +423,8 @@ void ServerWorker::HandleHandshakeDone(std::shared_ptr<IConnection> conn) {
     Worker::HandleHandshakeDone(conn);
 }
 
-bool ServerWorker::SendRetryPacket(const common::Address& addr, int32_t socket, const ConnectionID& original_dcid,
-    const ConnectionID& original_scid, uint32_t version) {
+bool ServerWorker::SendRetryPacket(const common::Address& addr, common::SocketHandle socket,
+    const ConnectionID& original_dcid, const ConnectionID& original_scid, uint32_t version) {
     if (!retry_token_manager_) {
         LOG_ERROR("Retry token manager not initialized");
         return false;
@@ -504,8 +519,8 @@ bool ServerWorker::ValidateRetryToken(
     return retry_token_manager_->ValidateToken(token, addr, out_original_dcid, retry_token_lifetime_);
 }
 
-void ServerWorker::SendVersionNegotiatePacket(const common::Address& addr, int32_t socket, const uint8_t* client_dcid,
-    uint8_t client_dcid_len, const uint8_t* client_scid, uint8_t client_scid_len) {
+void ServerWorker::SendVersionNegotiatePacket(const common::Address& addr, common::SocketHandle socket,
+    const uint8_t* client_dcid, uint8_t client_dcid_len, const uint8_t* client_scid, uint8_t client_scid_len) {
     VersionNegotiationPacket version_negotiation_packet;
 
     // RFC 9000 §17.2.1: echo client's SCID as VN's DCID, client's DCID as VN's SCID
@@ -528,7 +543,7 @@ void ServerWorker::SendVersionNegotiatePacket(const common::Address& addr, int32
 }
 
 bool ServerWorker::SendStatelessReset(
-    const common::Address& addr, int32_t socket, const ConnectionID& dcid, uint32_t triggering_packet_size) {
+    const common::Address& addr, common::SocketHandle socket, const ConnectionID& dcid, uint32_t triggering_packet_size) {
     // RFC 9000 §10.3 layout:
     //   0b01xxxxxx (short-header form, fixed bit set, rest random)
     //   unpredictable bytes

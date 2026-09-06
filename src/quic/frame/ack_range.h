@@ -28,4 +28,4 @@ private:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_FRAME_ACK_RANGE_FRAME

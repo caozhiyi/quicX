@@ -1,14 +1,11 @@
 #ifndef QUIC_INCLUDE_IF_QUIC_CONNECTION
 #define QUIC_INCLUDE_IF_QUIC_CONNECTION
 
-#include <quicx/quic/type.h>
 #include <memory>
+#include <quicx/quic/type.h>
 #include <string>
 
 namespace quicx {
-namespace common {
-class QlogTrace;
-}
 
 /**
  * @brief Represents a live QUIC connection.
@@ -117,8 +114,7 @@ public:
      *     itself. Defaults to false (one-shot).
      * @return Timer ID that can be used to cancel the timer.
      */
-    virtual uint64_t AddTimer(timer_callback callback, uint32_t timeout_ms,
-                              bool periodic = false) = 0;
+    virtual uint64_t AddTimer(timer_callback callback, uint32_t timeout_ms, bool periodic = false) = 0;
 
     /**
      * @brief Cancel a previously scheduled timer.
@@ -165,7 +161,7 @@ public:
      *       - If the loop is stopped or wedged the call gives up after a
      *         few seconds and returns false rather than blocking forever.
      */
-    virtual bool InitiateMigration() { return false; }
+    virtual bool InitiateMigration() = 0;
 
     /**
      * @brief Initiate connection migration to a specific local address (client-side only).
@@ -174,8 +170,8 @@ public:
      * This creates a new socket bound to the specified local address,
      * rotates the DCID, and initiates path validation.
      *
-     * @param local_addr New local address to migrate to (IP:port).
-     *                   If port is 0, system chooses an ephemeral port.
+     * @param local_ip   New local IP address to migrate to.
+     * @param local_port New local port; if 0, system chooses an ephemeral port.
      * @return MigrationResult indicating success or failure reason.
      *
      * @note Thread-safe, with the same dispatch semantics and locking caveat
@@ -183,11 +179,7 @@ public:
      *       never picks the request up, kFailedInvalidState if the connection
      *       no longer has a loop.
      */
-    virtual MigrationResult InitiateMigrationTo(const std::string& local_ip, uint16_t local_port = 0) {
-        (void)local_ip;
-        (void)local_port;
-        return MigrationResult::kFailedInvalidState;
-    }
+    virtual MigrationResult InitiateMigrationTo(const std::string& local_ip, uint16_t local_port = 0) = 0;
 
     /**
      * @brief Set callback for migration events.
@@ -198,7 +190,7 @@ public:
      *
      * @param cb Callback to invoke on migration events.
      */
-    virtual void SetMigrationCallback(migration_callback cb) { (void)cb; }
+    virtual void SetMigrationCallback(migration_callback cb) = 0;
 
     /**
      * @brief Get current local address of the connection.
@@ -206,10 +198,7 @@ public:
      * @param addr Filled with the local IP string.
      * @param port Filled with the local UDP port.
      */
-    virtual void GetLocalAddr(std::string& addr, uint32_t& port) {
-        addr = "";
-        port = 0;
-    }
+    virtual void GetLocalAddr(std::string& addr, uint32_t& port) = 0;
 
     /**
      * @brief Check if active migration is supported.
@@ -218,23 +207,16 @@ public:
      *
      * @return true if active migration is allowed.
      */
-    virtual bool IsMigrationSupported() const { return false; }
+    virtual bool IsMigrationSupported() const = 0;
 
     /**
      * @brief Check if a migration/path validation is currently in progress.
      *
      * @return true if migration is ongoing.
      */
-    virtual bool IsMigrationInProgress() const { return false; }
-
-    /**
-     * @brief Get the qlog trace associated with this connection.
-     *
-     * @return Shared pointer to QlogTrace, or nullptr if qlog is not enabled.
-     */
-    virtual std::shared_ptr<common::QlogTrace> GetQlogTrace() const { return nullptr; }
+    virtual bool IsMigrationInProgress() const = 0;
 };
 
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_INCLUDE_IF_QUIC_CONNECTION

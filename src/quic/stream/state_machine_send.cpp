@@ -90,8 +90,25 @@ bool StreamStateMachineSend::AllAckDone() {
             state_ = StreamState::kResetRecvd;
             NotifyStateChange(old_state, state_);
             break;
+        case StreamState::kDataRecvd:
+        case StreamState::kResetRecvd:
+            // Idempotent re-entry, not an error.
+            //
+            // SendStream::CheckAllDataAcked() re-fires on every ACK that leaves
+            // `fin_sent_ && acked_offset_ >= send_data_offset_` satisfied, and
+            // QUIC routinely delivers more than one such ACK for a single
+            // stream: when the same bytes were carried by both the original
+            // packet and a retransmission, the peer ACKs both packet numbers
+            // and OnDataAcked() runs twice for one logical range.
+            //
+            // The terminal state is already correct here, so "all acks done" is
+            // trivially true. Returning false would tell the caller the
+            // transition failed when nothing did, and logging at ERROR level
+            // drowned out real failures during the handshakeloss investigation.
+            LOG_DEBUG("AllAckDone on already-terminal state %d, ignoring", static_cast<int>(state_));
+            break;
         default:
-            LOG_ERROR("current status not allow ack done. status:%d", state_);
+            LOG_ERROR("current status not allow ack done. status:%d", static_cast<int>(state_));
             return false;
     }
     return true;

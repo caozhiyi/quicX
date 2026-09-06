@@ -21,9 +21,8 @@
 namespace quicx {
 namespace quic {
 
-ClientConnection::ClientConnection(
-    std::shared_ptr<TLSCtx> ctx, std::shared_ptr<common::IEventLoop> loop, const ConnectionCallbacks& callbacks,
-    bool ecn_enabled):
+ClientConnection::ClientConnection(std::shared_ptr<TLSCtx> ctx, std::shared_ptr<common::IEventLoop> loop,
+    const ConnectionCallbacks& callbacks, bool ecn_enabled):
     BaseConnection(StreamIDGenerator::StreamStarter::kClient, ecn_enabled, loop, callbacks) {
     tls_connection_ = std::make_shared<TLSClientConnection>(ctx, &connection_crypto_);
     if (!tls_connection_->Init()) {
@@ -41,14 +40,8 @@ ClientConnection::ClientConnection(
     frame_processor_->SetHandshakeDoneCallback([this](auto a) { return HandleHandshakeDoneFrame(a); });
 }
 
-ClientConnection::~ClientConnection() {
-    // Clean up qlog trace
-    if (qlog_trace_) {
-        // Use connection ID hash as trace identifier
-        std::string trace_id = std::to_string(cid_coordinator_->GetRemoteConnectionIDManager()->GetCurrentID().Hash());
-        common::QlogManager::Instance().RemoveTrace(trace_id);
-    }
-}
+// ~ClientConnection is defaulted; qlog trace cleanup runs in ~BaseConnection
+// via GetQlogTraceIdForCleanup.
 
 bool ClientConnection::Dial(const common::Address& addr, const std::string& alpn, const QuicTransportParams& tp_config,
     const std::string& server_name) {
@@ -240,9 +233,6 @@ bool ClientConnection::DialFinalize(std::shared_ptr<TLSClientConnection> tls_con
 
     // Create qlog trace for this connection
     if (common::QlogManager::Instance().IsEnabled()) {
-        std::string trace_id = std::to_string(dcid.Hash());
-        qlog_trace_ = common::QlogManager::Instance().CreateTrace(trace_id, common::VantagePoint::kClient);
-
         common::ConnectionStartedData data;
         data.src_ip = "0.0.0.0";  // Client source determined by OS
         data.src_port = 0;
@@ -253,19 +243,7 @@ bool ClientConnection::DialFinalize(std::shared_ptr<TLSClientConnection> tls_con
         data.protocol = "QUIC";
         data.ip_version = addr.IsIPv6() ? "ipv6" : "ipv4";
 
-        QLOG_CONNECTION_STARTED(qlog_trace_, data);
-
-        connection_crypto_.SetQlogTrace(qlog_trace_);
-        send_manager_.SetQlogTrace(qlog_trace_);
-        if (stream_manager_) {
-            stream_manager_->SetQlogTrace(qlog_trace_);
-        }
-        if (frame_processor_) {
-            frame_processor_->SetQlogTrace(qlog_trace_);
-        }
-        if (cid_coordinator_) {
-            cid_coordinator_->SetQlogTrace(qlog_trace_);
-        }
+        InstallQlogTrace(std::to_string(dcid.Hash()), common::VantagePoint::kClient, data);
     }
 
     return true;
@@ -340,8 +318,8 @@ bool ClientConnection::HandleHandshakeDoneFrame(std::shared_ptr<IFrame> /*frame*
     if (has_pending_preferred_addr_) {
         has_pending_preferred_addr_ = false;
         const auto addr = pending_preferred_addr_;
-        LOG_INFO("Initiating deferred migration to server's preferred address: %s:%d", addr.GetIp().c_str(),
-            addr.GetPort());
+        LOG_INFO(
+            "Initiating deferred migration to server's preferred address: %s:%d", addr.GetIp().c_str(), addr.GetPort());
         // Post rather than run inline: the server typically packs
         // HANDSHAKE_DONE and its NEW_CONNECTION_ID frames into the SAME
         // packet, and frames are processed in wire order — HANDSHAKE_DONE
@@ -351,8 +329,8 @@ bool ClientConnection::HandleHandshakeDoneFrame(std::shared_ptr<IFrame> /*frame*
         // this packet's frames (the NEW_CONNECTION_IDs) land in the pool
         // first; the task then runs with a fresh DCID available.
         if (auto loop = event_loop_.lock()) {
-            auto weak_base = std::weak_ptr<BaseConnection>(
-                std::static_pointer_cast<BaseConnection>(shared_from_this()));
+            auto weak_base =
+                std::weak_ptr<BaseConnection>(std::static_pointer_cast<BaseConnection>(shared_from_this()));
             // RFC allows the peer to deliver HANDSHAKE_DONE and its
             // NEW_CONNECTION_IDs in SEPARATE packets; if the remote CID pool
             // is still empty when the task runs, retry briefly instead of
@@ -372,11 +350,13 @@ bool ClientConnection::HandleHandshakeDoneFrame(std::shared_ptr<IFrame> /*frame*
                     std::weak_ptr<void>(self), addr.GetIp(), addr.GetPort());
                 if (result == MigrationResult::kFailedNoAvailableCID && (*attempts)-- > 0) {
                     LOG_DEBUG("Deferred migration: CID pool still empty, retrying (%d attempts left)", *attempts);
-                    loop->PostDelayed([try_migrate]() {
-                        if (*try_migrate) {
-                            (*try_migrate)();
-                        }
-                    }, 50);
+                    loop->PostDelayed(
+                        [try_migrate]() {
+                            if (*try_migrate) {
+                                (*try_migrate)();
+                            }
+                        },
+                        50);
                 }
             };
             loop->PostTask(*try_migrate);
@@ -403,25 +383,9 @@ bool ClientConnection::HandleHandshakeDoneFrame(std::shared_ptr<IFrame> /*frame*
         });
     }
 
-    // Mark handshake complete to stop PTO probing
-    send_manager_.GetSendControl().SetHandshakeComplete();
-
-    // RFC 9000 Section 4.10: Discard Initial and Handshake packet number spaces
-    recv_control_.DiscardPacketNumberSpace(PacketNumberSpace::kInitialNumberSpace);
-    recv_control_.DiscardPacketNumberSpace(PacketNumberSpace::kHandshakeNumberSpace);
-    send_manager_.DiscardPacketNumberSpace(PacketNumberSpace::kInitialNumberSpace);
-    send_manager_.DiscardPacketNumberSpace(PacketNumberSpace::kHandshakeNumberSpace);
-    LOG_INFO("Discarded Initial and Handshake packet number spaces per RFC 9000");
-
-    // Log key_discarded events for Initial and Handshake keys
-    if (qlog_trace_) {
-        common::KeyDiscardedData discard_data;
-        discard_data.key_type = "initial";
-        discard_data.trigger = "handshake_done";
-        QLOG_KEY_DISCARDED(qlog_trace_, discard_data);
-        discard_data.key_type = "handshake";
-        QLOG_KEY_DISCARDED(qlog_trace_, discard_data);
-    }
+    // Stop PTO probing, drop Initial/Handshake number spaces (RFC 9000 §4.10),
+    // qlog key_discarded events — shared with the server's completion path.
+    FinalizeHandshakePacketNumberSpaces();
 
     LOG_DEBUG("handshake_done_cb_ is %s", handshake_done_cb_ ? "SET" : "NULL");
     if (handshake_done_cb_) {
@@ -634,54 +598,25 @@ bool ClientConnection::OnRetryPacket(const std::shared_ptr<IPacket>& packet) {
     return true;
 }
 
-void ClientConnection::WriteCryptoData(std::shared_ptr<IBufferRead> buffer, int32_t err, uint16_t encryption_level) {
-    LOG_INFO("ClientConnection::WriteCryptoData called. buffer_len=%d, err=%d, level=%d", buffer->GetDataLength(), err,
-        encryption_level);
-    if (err != 0) {
-        LOG_ERROR("get crypto data failed. err:%d", err);
-        return;
+void ClientConnection::OnTlsHandshakeComplete() {
+    LOG_DEBUG("handshake done.");
+    // RFC 9000 §4.1.2: the client considers the handshake confirmed once its
+    // own handshake is complete (server CRYPTO received + client Finished
+    // sent).  This is symmetric to the server confirming on receiving the
+    // client's Finished (ServerConnection::OnTlsHandshakeComplete).  It is
+    // essential under packet corruption/loss, where the server's
+    // HANDSHAKE_DONE frame and/or its first 1-RTT packet can both be lost
+    // while the handshake itself already succeeded — without this the client
+    // would stay in Connecting forever, never issue its request, and the
+    // interop handshakecorruption / handshakeloss tests would time out.  (We
+    // still also confirm on HANDSHAKE_DONE and on any received 1-RTT packet.)
+    if (!handshake_done_processed_) {
+        HandleHandshakeDoneFrame(nullptr);
     }
+}
 
-    // Pass buffer memory to BoringSSL via VisitData, then advance read pointer
-    // to consume the data. This prevents re-processing on subsequent calls.
-    uint32_t total_consumed = 0;
-    bool process_ok = true;
-    buffer->VisitData([&](uint8_t* data, uint32_t len) -> bool {
-        if (!tls_connection_->ProcessCryptoData(data, len, encryption_level)) {
-            LOG_ERROR("process crypto data failed. err:%d", err);
-            process_ok = false;
-            return false;  // stop visiting
-        }
-        total_consumed += len;
-        return true;  // continue to next segment
-    });
-
-    // Advance read pointer to consume processed data, preventing duplicate
-    // processing on subsequent recv_cb_ invocations
-    if (total_consumed > 0) {
-        buffer->MoveReadPt(total_consumed);
-    }
-
-    if (!process_ok) {
-        return;
-    }
-
-    if (tls_connection_->DoHandleShake()) {
-        LOG_DEBUG("handshake done.");
-        // RFC 9000 §4.1.2: the client considers the handshake confirmed once its
-        // own handshake is complete (server CRYPTO received + client Finished
-        // sent).  This is symmetric to the server confirming on receiving the
-        // client's Finished (ServerConnection::DoHandleShake).  It is essential
-        // under packet corruption/loss, where the server's HANDSHAKE_DONE frame
-        // and/or its first 1-RTT packet can both be lost while the handshake
-        // itself already succeeded — without this the client would stay in
-        // Connecting forever, never issue its request, and the interop
-        // handshakecorruption / handshakeloss tests would time out.  (We still
-        // also confirm on HANDSHAKE_DONE and on any received 1-RTT packet.)
-        if (!handshake_done_processed_) {
-            HandleHandshakeDoneFrame(nullptr);
-        }
-    }
+std::string ClientConnection::GetQlogTraceIdForCleanup() const {
+    return std::to_string(cid_coordinator_->GetRemoteConnectionIDManager()->GetCurrentID().Hash());
 }
 
 bool ClientConnection::ValidatePeerConnectionIds(const TransportParam& remote_tp) {
@@ -700,8 +635,7 @@ bool ClientConnection::ValidatePeerConnectionIds(const TransportParam& remote_tp
     if (tp_odcid != expected_odcid) {
         LOG_ERROR("original_destination_connection_id mismatch: tp_len=%zu, expected_len=%zu", tp_odcid.length(),
             expected_odcid.length());
-        InnerConnectionClose(QuicErrorCode::kTransportParameterError, 0,
-            "original_destination_connection_id mismatch");
+        InnerConnectionClose(QuicErrorCode::kTransportParameterError, 0, "original_destination_connection_id mismatch");
         return false;
     }
 
@@ -719,8 +653,7 @@ bool ClientConnection::ValidatePeerConnectionIds(const TransportParam& remote_tp
         }
     } else if (!tp_rscid.empty()) {
         LOG_ERROR("retry_source_connection_id present without a Retry. len:%zu", tp_rscid.length());
-        InnerConnectionClose(QuicErrorCode::kTransportParameterError, 0,
-            "unexpected retry_source_connection_id");
+        InnerConnectionClose(QuicErrorCode::kTransportParameterError, 0, "unexpected retry_source_connection_id");
         return false;
     }
 

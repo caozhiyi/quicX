@@ -3,14 +3,12 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <vector>
-
 #include <quicx/quic/type.h>  // for kQuicVersion1 / kQuicVersion2
-
 // NOTE: The on-the-wire QUIC protocol version constants
 // (kQuicVersion1 / kQuicVersion2) are now defined in the public header
 // <quicx/quic/type.h>. This internal header keeps the helper functions and
 // the supported-versions table.
+#include <vector>
 
 namespace quicx {
 namespace quic {
@@ -52,4 +50,4 @@ const char* VersionToString(uint32_t version);
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_COMMON_VERSION

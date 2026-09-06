@@ -1,5 +1,5 @@
-#include "quic/packet/type.h"
 #include "quic/common/version.h"
+#include "quic/packet/type.h"
 
 namespace quicx {
 namespace quic {

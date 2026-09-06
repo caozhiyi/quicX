@@ -36,4 +36,4 @@ const std::string& GetErrorString(QuicErrorCode code);
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_CONNECTION_ERROR

@@ -5,6 +5,7 @@
 #include <deque>
 #include <memory>
 
+#include "quic/congestion_control/cc_config.h"
 #include "quic/congestion_control/if_congestion_control.h"
 #include "quic/congestion_control/if_pacer.h"
 
@@ -27,6 +28,11 @@ public:
 
     uint64_t GetCongestionWindow() const override { return cwnd_bytes_; }
     uint64_t GetBytesInFlight() const override { return bytes_in_flight_; }
+    // RFC 9002 §7: bytes discarded with a packet number space leave
+    // bytes_in_flight without being declared lost.
+    void OnPacketsDiscarded(uint64_t discarded_bytes) override {
+        bytes_in_flight_ = (bytes_in_flight_ > discarded_bytes) ? bytes_in_flight_ - discarded_bytes : 0;
+    }
     uint64_t GetPacingRateBytesPerSec() const override;
     uint64_t NextSendTime(uint64_t now) const override;
 
@@ -81,8 +87,6 @@ private:
     uint64_t min_rtt_us_ = 0;
     uint64_t min_rtt_stamp_us_ = 0;
 
-    // Bandwidth filter
-    static constexpr size_t kBwWindow = 10;
     std::deque<BwSample> bw_window_;
     uint64_t max_bw_bps_ = 0;
 
@@ -101,9 +105,6 @@ private:
     uint64_t probe_bw_state_start_us_ = 0;
     uint64_t rounds_since_probe_ = 0;
 
-    // ProbeRTT
-    static constexpr uint64_t kProbeRttIntervalUs = 10ull * 1000ull * 1000ull;  // 10s
-    static constexpr uint64_t kProbeRttTimeUs = 200ull * 1000ull;               // 200ms
     bool probe_rtt_done_stamp_valid_ = false;
     uint64_t probe_rtt_done_stamp_us_ = 0;
 
@@ -137,7 +138,7 @@ private:
     std::shared_ptr<common::QlogTrace> qlog_trace_;
 };
 
-}  // namespace quic
 }  // namespace quicx
+}  // namespace quic
 
-#endif
+#endif  // QUIC_CONGESTION_CONTROL_BBR_V3_CONGESTION_CONTROL

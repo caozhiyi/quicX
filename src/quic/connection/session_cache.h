@@ -6,7 +6,9 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+
 #include "common/util/singleton.h"
+
 #include "quic/crypto/tls/tls_connection_client.h"
 
 namespace quicx {

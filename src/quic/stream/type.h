@@ -28,4 +28,4 @@ enum class StreamState : uint16_t {
 }
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_STREAM_TYPE

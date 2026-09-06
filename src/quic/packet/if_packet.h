@@ -167,4 +167,4 @@ protected:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_PACKET_PACKET_INTERFACE

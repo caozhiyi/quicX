@@ -1,10 +1,10 @@
+#include <quicx/common/metrics.h>
 #include <sstream>
 #include <thread>
 
-#include <quicx/common/metrics.h>
-#include <quicx/common/metrics_std.h>
 #include "common/log/log.h"
 #include "common/log/log_context.h"
+#include "common/metrics/metrics_std.h"
 #include "common/qlog/qlog.h"
 
 #include "quic/common/constants.h"
@@ -154,7 +154,7 @@ void Worker::ProcessSend() {
         conn->SetSendSink(nullptr);
 
         // Single sendmmsg(2) over the whole drain. The fast path is one
-        // syscall total; the cache-miss / fault-injection / mixed-socket
+        // syscall total; the cache-miss / mixed-socket
         // fallbacks inside UdpSender::SendBatch degrade gracefully to N
         // sendto()s with no semantic change.
         if (!tx_batch.empty()) {
@@ -177,7 +177,7 @@ void Worker::ProcessSend() {
         // kMaxPacketsPerRound (in quic/config.h) would help. We sample
         // whether we sent zero packets too — that means we entered
         // ProcessSend without anything to do.
-        common::Metrics::HistogramObserve(common::MetricsStd::DiagPktPerIterHist, static_cast<uint64_t>(packets_sent));
+        Metrics::HistogramObserve(common::MetricsStd::DiagPktPerIterHist, static_cast<uint64_t>(packets_sent));
 
         // If we hit the limit, keep connection in active set for next round
         if (packets_sent >= kMaxPacketsPerRound) {
@@ -194,7 +194,8 @@ void Worker::ProcessSend() {
     }
 }
 
-bool Worker::SendImmediate(std::shared_ptr<common::IBuffer> buffer, const common::Address& addr, int32_t socket) {
+bool Worker::SendImmediate(std::shared_ptr<common::IBuffer> buffer, const common::Address& addr,
+    common::SocketHandle socket) {
     if (!buffer || buffer->GetDataLength() == 0) {
         LOG_WARN("SendImmediate: invalid buffer or empty data");
         return false;
@@ -204,7 +205,6 @@ bool Worker::SendImmediate(std::shared_ptr<common::IBuffer> buffer, const common
     packet->SetData(buffer);
     packet->SetAddress(addr);
     packet->SetSocket(socket);
-
     if (!sender_->Send(packet)) {
         LOG_ERROR("SendImmediate: udp send failed");
         return false;

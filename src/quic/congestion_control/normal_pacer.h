@@ -1,6 +1,7 @@
 #ifndef QUIC_CONGESTION_CONTROL_NORMAL_PACER
 #define QUIC_CONGESTION_CONTROL_NORMAL_PACER
 
+
 #include "quic/congestion_control/if_pacer.h"
 
 namespace quicx {
@@ -38,4 +39,4 @@ private:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_CONGESTION_CONTROL_NORMAL_PACER

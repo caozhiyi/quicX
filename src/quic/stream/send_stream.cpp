@@ -1,10 +1,9 @@
 #include <algorithm>
 #include <cstdint>
+#include <quicx/common/metrics.h>
 
 #include "common/log/log.h"
-
-#include <quicx/common/metrics.h>
-#include <quicx/common/metrics_std.h>
+#include "common/metrics/metrics_std.h"
 
 #include "quic/config.h"
 #include "quic/frame/max_stream_data_frame.h"
@@ -86,7 +85,7 @@ void SendStream::Reset(uint32_t error) {
     ToSend();
 
     // Metrics: RESET_STREAM sent
-    common::Metrics::CounterInc(common::MetricsStd::QuicStreamsResetTx);
+    Metrics::CounterInc(common::MetricsStd::QuicStreamsResetTx);
 }
 
 int32_t SendStream::Send(uint8_t* data, uint32_t len) {
@@ -223,7 +222,7 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor, Encryptio
             LOG_DEBUG("stream send data blocked. stream id:%llu, peer data limit:%llu", stream_id_, peer_data_limit_);
 
             // Metrics: Stream blocked by flow control
-            common::Metrics::CounterInc(common::MetricsStd::QuicStreamDataBlocked);
+            Metrics::CounterInc(common::MetricsStd::QuicStreamDataBlocked);
 
             if (!visitor->HandleFrame(frame)) {
                 LOG_DEBUG("stream send data blocked failed. stream id:%d, frame type:%d", stream_id_, frame->GetType());
@@ -287,14 +286,14 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor, Encryptio
         }
 
         // Diagnostic (datagram fill): record the four budget components
-        common::Metrics::CounterInc(common::MetricsStd::DiagStreamSlackSum, stream_send_size);
-        common::Metrics::CounterInc(common::MetricsStd::DiagVisitorLeftSum, conn_send_size);
-        common::Metrics::HistogramObserve(common::MetricsStd::DiagSendSizeHist, send_size);
+        Metrics::CounterInc(common::MetricsStd::DiagStreamSlackSum, stream_send_size);
+        Metrics::CounterInc(common::MetricsStd::DiagVisitorLeftSum, conn_send_size);
+        Metrics::HistogramObserve(common::MetricsStd::DiagSendSizeHist, send_size);
 
         // Diagnostic (send_buffer state): chunk fragmentation snapshot.
-        common::Metrics::CounterInc(common::MetricsStd::DiagSendBufTotalSum, send_buffer_->GetDataLength());
-        common::Metrics::CounterInc(common::MetricsStd::DiagSendBufChunksSum, send_buffer_->GetChunkCount());
-        common::Metrics::CounterInc(common::MetricsStd::DiagSendBufProbeCount);
+        Metrics::CounterInc(common::MetricsStd::DiagSendBufTotalSum, send_buffer_->GetDataLength());
+        Metrics::CounterInc(common::MetricsStd::DiagSendBufChunksSum, send_buffer_->GetChunkCount());
+        Metrics::CounterInc(common::MetricsStd::DiagSendBufProbeCount);
 
         LOG_DEBUG(
             "stream send calc: stream_id:%d, peer_limit:%llu, send_offset:%llu, stream_send_size:%u, "
@@ -323,10 +322,10 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor, Encryptio
             common::SharedBufferSpan data = send_buffer_->GetCoalescedReadable(send_size);
             if (data.Valid()) {
                 frame->SetData(data);
-                common::Metrics::CounterInc(common::MetricsStd::DiagFirstChunkSum, data.GetLength());
-                common::Metrics::CounterInc(common::MetricsStd::DiagStreamSendSizeSum, data.GetLength());
-                common::Metrics::CounterInc(common::MetricsStd::DiagStreamSendCount);
-                common::Metrics::HistogramObserve(common::MetricsStd::DiagFirstChunkHist, data.GetLength());
+                Metrics::CounterInc(common::MetricsStd::DiagFirstChunkSum, data.GetLength());
+                Metrics::CounterInc(common::MetricsStd::DiagStreamSendSizeSum, data.GetLength());
+                Metrics::CounterInc(common::MetricsStd::DiagStreamSendCount);
+                Metrics::HistogramObserve(common::MetricsStd::DiagFirstChunkHist, data.GetLength());
             }
         }
     }
@@ -445,7 +444,7 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor, Encryptio
     }
 
     // Metrics: Stream data sent
-    common::Metrics::CounterInc(common::MetricsStd::QuicStreamsBytesTx, frame->GetData().GetLength());
+    Metrics::CounterInc(common::MetricsStd::QuicStreamsBytesTx, frame->GetData().GetLength());
 
     // if there is still data in the buffer, signal that more packets are needed
     if (send_buffer_->GetDataLength() > 0) {

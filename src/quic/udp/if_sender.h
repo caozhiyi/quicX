@@ -3,6 +3,9 @@
 
 #include <cstdint>
 #include <vector>
+
+#include "common/network/socket_handle.h"
+
 #include "quic/udp/net_packet.h"
 
 namespace quicx {
@@ -58,13 +61,14 @@ public:
     /**
      * @brief Create a sender instance
      *
-     * @param sockfd Socket file descriptor, -1 to create new socket
+     * @param sock Socket handle (fd + family). fd < 0 means "no fallback
+     *             socket" — every packet must then carry its own socket.
      * @return Sender instance
      */
-    static std::shared_ptr<ISender> MakeSender(int32_t sockfd = -1);
+    static std::shared_ptr<ISender> MakeSender(common::SocketHandle sock = common::SocketHandle(-1, 0));
 };
 
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_UDP_IF_SENDER

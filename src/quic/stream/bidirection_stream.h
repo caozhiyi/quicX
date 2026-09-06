@@ -2,6 +2,7 @@
 #define QUIC_STREAM_BIDIRECTION_STREAM
 
 #include <quicx/quic/if_quic_bidirection_stream.h>
+
 #include "quic/stream/recv_stream.h"
 #include "quic/stream/send_stream.h"
 
@@ -69,4 +70,4 @@ protected:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_STREAM_BIDIRECTION_STREAM

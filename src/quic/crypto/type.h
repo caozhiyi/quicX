@@ -1,11 +1,13 @@
 #ifndef QUIC_CRYPTO_TYPE
 #define QUIC_CRYPTO_TYPE
 
-#include <openssl/evp.h>
 #include <array>
 #include <cstdint>
 
+#include <openssl/evp.h>
+
 #include "common/util/c_smart_ptr.h"
+
 #include "quic/common/version.h"
 
 namespace quicx {
@@ -167,4 +169,4 @@ inline QuicLabels GetQuicLabels(uint32_t version) {
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_CRYPTO_TYPE

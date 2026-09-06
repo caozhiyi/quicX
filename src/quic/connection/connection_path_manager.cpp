@@ -1,17 +1,17 @@
-
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
+
 #include <openssl/mem.h>
 
 #include "common/log/log.h"
+#include "common/network/if_event_loop.h"
+#include "common/network/io_handle.h"
 #include "common/util/time.h"
 
-#include <quicx/common/if_event_loop.h>
-#include "common/network/io_handle.h"
 #include "quic/connection/connection_id_coordinator.h"
 #include "quic/connection/connection_path_manager.h"
-#include "quic/connection/controler/send_manager.h"
+#include "quic/connection/controller/send_manager.h"
 #include "quic/connection/transport_param.h"
 #include "quic/frame/path_challenge_frame.h"
 #include "quic/frame/path_response_frame.h"
@@ -53,8 +53,11 @@ void PathManager::StartPathValidationProbeWithPreRotation() {
     StartPathValidationProbeInternal(true);
 }
 
-void PathManager::StartPathValidationProbeInternal(bool dcid_pre_rotated) {
-    if (path_probe_inflight_) {
+void PathManager::StartPathValidationProbeInternal(bool dcid_pre_rotated, bool probe_state_pre_set) {
+    // Allow continuation when path_probe_inflight_ was pre-set by
+    // InitiateMigrationToPeerAddress to prevent queued-packet leakage
+    // to the old peer address during the socket handoff window.
+    if (!probe_state_pre_set && path_probe_inflight_) {
         return;
     }
 
@@ -78,14 +81,14 @@ void PathManager::StartPathValidationProbeInternal(bool dcid_pre_rotated) {
         return;
     }
     memcpy(pending_path_challenge_data_, challenge->GetData(), 8);
-    path_probe_inflight_ = true;
+    if (!probe_state_pre_set) {
+        path_probe_inflight_ = true;
+        EnterAntiAmplification();
+        send_manager_.ResetAmpBudget();
+    }
 
-    EnterAntiAmplification();
-    // Reset anti-amplification budget on send manager
-    send_manager_.ResetAmpBudget();
-
-    LOG_DEBUG("PathManager: path validation challenge ready (candidate %s:%d)",
-        candidate_peer_addr_.GetIp().c_str(), candidate_peer_addr_.GetPort());
+    LOG_DEBUG("PathManager: path validation challenge ready (candidate %s:%d)", candidate_peer_addr_.GetIp().c_str(),
+        candidate_peer_addr_.GetPort());
     // The PATH_CHALLENGE must be the first packet sent on the new path
     // (interop runners assert this; RFC 9000 §9 expects path validation
     // before the path carries data). Send it synchronously, bypassing the
@@ -106,7 +109,8 @@ void PathManager::StartPathValidationProbeInternal(bool dcid_pre_rotated) {
     if (is_client_initiated_migration_) {
         auto loop = event_loop_.lock();
         if (loop) {
-            migration_timeout_task_ = loop->AddTimer(life_token_,
+            migration_timeout_task_ = loop->AddTimer(
+                life_token_,
                 [this]() {
                     if (path_probe_inflight_ && is_client_initiated_migration_) {
                         LOG_WARN("PathManager: migration timeout after %u ms", path_validation_timeout_ms_);
@@ -183,9 +187,21 @@ void PathManager::OnPathResponse(const uint8_t* data) {
         send_manager_.ResetMtuForNewPath();
         // Kick off a minimal PMTU probe sequence on the new path
         send_manager_.StartMtuProbe();
-
-        ExitAntiAmplification();
+    } else {
+        // Local-only path change (client migrated to our preferred_address
+        // listener): the path is still new per RFC 9000 §9.4, so congestion
+        // and PMTU state must not carry over from the old one.
+        send_manager_.ResetPathSignals();
+        send_manager_.ResetMtuForNewPath();
+        send_manager_.StartMtuProbe();
     }
+
+    // A probe enters anti-amplification regardless of which address
+    // component changed (peer address for NAT rebind / active migration,
+    // local socket for a preferred-address migration). A validated path
+    // always leaves it; keeping the exit inside the peer_addr_changed branch
+    // would pin streams off forever on local-only changes.
+    ExitAntiAmplification();
 
     // Handle client-initiated migration completion
     if (is_client_initiated_migration_) {
@@ -309,8 +325,8 @@ MigrationResult PathManager::InitiateMigrationToAddress(const ::quicx::common::A
     LOG_DEBUG("PathManager: pre-rotated DCID for client-initiated migration");
 
     // 4. Create new socket bound to the specified local address
-    int32_t new_socket = CreateBoundSocket(local_addr);
-    if (new_socket < 0) {
+    common::SocketHandle new_socket = CreateBoundSocket(local_addr);
+    if (new_socket.fd < 0) {
         // Rotation already happened, but we failed. This is bad but we continue with old socket.
         LOG_ERROR("PathManager: failed to create socket for migration");
         return MigrationResult::kFailedSocketCreation;
@@ -402,8 +418,8 @@ MigrationResult PathManager::InitiateMigrationToPeerAddress(const ::quicx::commo
     //    scenario), so the family comes from the new address, not peer_addr_.
     bool target_is_ipv4 = (peer_addr.GetIp().find(':') == std::string::npos);
     ::quicx::common::Address bind_any(target_is_ipv4 ? "0.0.0.0" : "::", 0);
-    int32_t new_socket = CreateBoundSocket(bind_any, target_is_ipv4);
-    if (new_socket < 0) {
+    common::SocketHandle new_socket = CreateBoundSocket(bind_any, target_is_ipv4);
+    if (new_socket.fd < 0) {
         LOG_ERROR("PathManager: failed to create socket for preferred-address migration");
         return MigrationResult::kFailedSocketCreation;
     }
@@ -423,6 +439,15 @@ MigrationResult PathManager::InitiateMigrationToPeerAddress(const ::quicx::commo
     migration_start_time_ = common::UTCTimeMsec();
     candidate_peer_addr_ = peer_addr;
 
+    // Pre-set path_probe_inflight_ BEFORE handing the probe socket to the
+    // emitter.  Without this, GetSendAddress() still returns peer_addr_ (the
+    // old address) for any packets the emitter flushes on the new socket
+    // between the socket handoff and StartPathValidationProbeInternal().
+    // Those packets would create a new path (new_src_port, old_dst_port)
+    // carrying the same DCID as the migration probe — which the interop
+    // CM test rejects (RFC 9000 §9.5 expects a new DCID per path).
+    path_probe_inflight_ = true;
+
     // 6. Hand the probe socket to its owner (MigrationController): emitter
     //    prefers it for egress, receiver registers it so the PATH_RESPONSE can
     //    arrive on it.
@@ -435,10 +460,43 @@ MigrationResult PathManager::InitiateMigrationToPeerAddress(const ::quicx::commo
         new_local_addr_.GetPort(), peer_addr_.GetIp().c_str(), peer_addr_.GetPort(), peer_addr.GetIp().c_str(),
         peer_addr.GetPort());
 
-    // 7. Start path validation with the pre-installed DCID
-    StartPathValidationProbeInternal(dcid_pre_rotated);
+    // 7. Start path validation with the pre-installed DCID.
+    //    probe_state_pre_set=true because we already set path_probe_inflight_
+    //    and candidate_peer_addr_ above.
+    StartPathValidationProbeInternal(dcid_pre_rotated, true);
 
     return MigrationResult::kSuccess;
+}
+
+void PathManager::OnLocalSocketAddressChanged() {
+    // RFC 9000 §9 defines a path by its local AND remote addresses. A
+    // datagram arriving on a different local listener (e.g. the
+    // preferred_address socket) opens a NEW path even when the peer's
+    // source address is unchanged — OnObservedPeerAddress() never fires for
+    // it, and the first packet we send on the new path would carry no
+    // PATH_CHALLENGE, which is exactly what the interop "connectionmigration"
+    // check rejects. Start validation of the (unchanged) peer on the new
+    // path; the probe is emitted synchronously via send_probe_now_cb_ on
+    // the already-switched active socket.
+    if (path_probe_inflight_) {
+        // The datagram that changed the local socket may also have changed
+        // the peer address; the probe started by OnObservedPeerAddress()
+        // (which ran first) already covers the new path.
+        return;
+    }
+
+    LOG_INFO("PathManager: local socket changed, validating current peer %s:%d on the new path",
+        peer_addr_.GetIp().c_str(), peer_addr_.GetPort());
+
+    candidate_peer_addr_ = peer_addr_;
+    StartPathValidationProbe();
+
+    if (!path_probe_inflight_) {
+        // Keys not ready — should not happen for a post-handshake migration,
+        // but don't leave a dangling candidate behind.
+        candidate_peer_addr_ = common::Address();
+        LOG_DEBUG("PathManager: local-socket path probe not started");
+    }
 }
 
 // ==================== Anti-Amplification ====================
@@ -500,7 +558,8 @@ void PathManager::ScheduleProbeRetry() {
     probe_retry_count_++;
     probe_retry_delay_ms_ = std::min<uint32_t>(probe_retry_delay_ms_ * 2, kMaxProbeDelayMs);
 
-    path_probe_task_ = loop->AddTimer(life_token_,
+    path_probe_task_ = loop->AddTimer(
+        life_token_,
         [this]() {
             if (!path_probe_inflight_) {
                 return;
@@ -617,16 +676,17 @@ void PathManager::CleanupMigrationState() {
     migration_start_time_ = 0;
 }
 
-int32_t PathManager::CreateBoundSocket(const ::quicx::common::Address& local_addr, std::optional<bool> force_ipv4) {
+common::SocketHandle PathManager::CreateBoundSocket(
+    const ::quicx::common::Address& local_addr, std::optional<bool> force_ipv4) {
     // Determine socket family: an explicit override wins (preferred-address
     // migration can cross families, e.g. current peer IPv6, target IPv4);
     // otherwise match the current peer.
-    bool peer_is_ipv4 =
-        force_ipv4.has_value() ? *force_ipv4 : (peer_addr_.GetIp().find(':') == std::string::npos);
+    bool peer_is_ipv4 = force_ipv4.has_value() ? *force_ipv4 : (peer_addr_.GetIp().find(':') == std::string::npos);
 
     // Create the right kind of UDP socket. UdpSocket*() returns the actual
-    // address family of the resulting fd, which we forward to Bind() so that
-    // no probing (getsockname / SO_DOMAIN / IPV6_V6ONLY) is needed.
+    // address family of the resulting fd, which we forward to Bind() and hand
+    // to the socket's owner (via the returned SocketHandle) so that no probing
+    // (getsockname / SO_DOMAIN / IPV6_V6ONLY) is ever needed downstream.
     common::UdpSocketResult sock_ret;
     if (peer_is_ipv4) {
         // IPv4-only socket: avoids IPv6 dual-stack routing issues
@@ -634,14 +694,14 @@ int32_t PathManager::CreateBoundSocket(const ::quicx::common::Address& local_add
         sock_ret = common::UdpSocket4();
         if (sock_ret.error_code_ != 0) {
             LOG_ERROR("PathManager: failed to create IPv4 UDP socket: errno=%d", sock_ret.error_code_);
-            return -1;
+            return common::SocketHandle(-1, 0);
         }
     } else {
         // IPv6 dual-stack socket for IPv6 peers.
         sock_ret = common::UdpSocket();
         if (sock_ret.error_code_ != 0) {
             LOG_ERROR("PathManager: failed to create UDP socket: errno=%d", sock_ret.error_code_);
-            return -1;
+            return common::SocketHandle(-1, 0);
         }
     }
     const int32_t sockfd = sock_ret.return_value_;
@@ -662,7 +722,7 @@ int32_t PathManager::CreateBoundSocket(const ::quicx::common::Address& local_add
         LOG_ERROR("PathManager: failed to bind socket to %s:%d: errno=%d", bind_addr.GetIp().c_str(),
             bind_addr.GetPort(), bind_ret.error_code_);
         common::Close(sockfd);
-        return -1;
+        return common::SocketHandle(-1, 0);
     }
 
     // Get the actual assigned port and address
@@ -673,7 +733,7 @@ int32_t PathManager::CreateBoundSocket(const ::quicx::common::Address& local_add
     LOG_INFO("PathManager: created migration socket %d bound to %s:%d (peer_is_ipv4=%d)", sockfd,
         new_local_addr_.GetIp().c_str(), new_local_addr_.GetPort(), peer_is_ipv4);
 
-    return sockfd;
+    return common::SocketHandle(sockfd, sock_family);
 }
 
 }  // namespace quic

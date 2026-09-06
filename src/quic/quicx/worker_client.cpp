@@ -78,7 +78,8 @@ void ClientWorker::Connect(const std::string& ip, uint16_t port, const std::stri
         auto loop = event_loop_.lock();
         if (!loop) return;
         // Store the handle so we can cancel when the handshake completes
-        handshake_timers_[conn] = loop->AddTimer(life_token_,
+        handshake_timers_[conn] = loop->AddTimer(
+            life_token_,
             [conn, timeout_ms, this]() {
                 // Only timeout if still in connecting state (handshake not completed)
                 if (connecting_set_.find(conn) != connecting_set_.end()) {
@@ -102,7 +103,7 @@ bool ClientWorker::InnerHandlePacket(PacketParseResult& packet_info) {
         common::LogTagGuard guard("conn:" + std::to_string(cid_code));
         // Pin the connection with a local shared_ptr copy (see worker_server.cpp).
         auto connection = conn->second;
-        // update socket fd so GetLocalAddr() works for connection migration
+        // update socket so GetLocalAddr() works for connection migration
         connection->SetSocket(packet_info.net_packet_->GetSocket());
         // report observed address for path change detection
         auto& observed_addr = packet_info.net_packet_->GetAddress();
@@ -241,7 +242,8 @@ void ClientWorker::HandleVersionNegotiation(std::shared_ptr<IConnection> conn, c
     if (timeout_ms > 0) {
         auto vn_loop2 = event_loop_.lock();
         if (!vn_loop2) return;
-        handshake_timers_[new_conn] = vn_loop2->AddTimer(life_token_,
+        handshake_timers_[new_conn] = vn_loop2->AddTimer(
+            life_token_,
             [new_conn, timeout_ms, this]() {
                 if (connecting_set_.find(new_conn) != connecting_set_.end()) {
                     LOG_WARN("handshake timeout for reconnected connection. cid:%llu, timeout_ms:%d",

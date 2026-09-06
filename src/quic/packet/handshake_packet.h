@@ -1,8 +1,8 @@
-
 #ifndef QUIC_PACKET_HANDSHAKE_PACKET
 #define QUIC_PACKET_HANDSHAKE_PACKET
 
 #include <memory>
+
 #include "quic/packet/header/long_header.h"
 #include "quic/packet/if_packet.h"
 #include "quic/packet/type.h"
@@ -43,4 +43,4 @@ private:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_PACKET_HANDSHAKE_PACKET

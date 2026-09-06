@@ -2,6 +2,7 @@
 #define QUIC_CONGESTION_CONTROL_RENO_CONGESTION_CONTROL
 
 #include <memory>
+
 #include "quic/congestion_control/if_congestion_control.h"
 #include "quic/congestion_control/if_pacer.h"
 
@@ -24,6 +25,11 @@ public:
 
     uint64_t GetCongestionWindow() const override { return cwnd_bytes_; }
     uint64_t GetBytesInFlight() const override { return bytes_in_flight_; }
+    // RFC 9002 §7: bytes discarded with a packet number space leave
+    // bytes_in_flight without being declared lost.
+    void OnPacketsDiscarded(uint64_t discarded_bytes) override {
+        bytes_in_flight_ = (bytes_in_flight_ > discarded_bytes) ? bytes_in_flight_ - discarded_bytes : 0;
+    }
     uint64_t GetPacingRateBytesPerSec() const override;
     uint64_t NextSendTime(uint64_t now) const override;
 
@@ -57,7 +63,7 @@ private:
     std::shared_ptr<common::QlogTrace> qlog_trace_;
 };
 
-}  // namespace quic
+}  // namespace quicx
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_CONGESTION_CONTROL_RENO_CONGESTION_CONTROL

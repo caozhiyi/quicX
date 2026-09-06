@@ -1,6 +1,7 @@
-#include "quic/common/version.h"
 #include <cstddef>
 #include <cstdint>
+
+#include "quic/common/version.h"
 
 namespace quicx {
 namespace quic {

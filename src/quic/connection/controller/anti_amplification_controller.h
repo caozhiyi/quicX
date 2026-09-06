@@ -4,6 +4,8 @@
 #include <atomic>
 #include <cstdint>
 
+#include "quic/config.h"
+
 namespace quicx {
 namespace quic {
 
@@ -166,11 +168,6 @@ private:
     // 3x budget, keeping us safely within RFC 9000 Section 8.1.
     std::atomic<uint64_t> sent_bytes_{0};      // Total bytes sent to unvalidated address
     std::atomic<uint64_t> received_bytes_{0};  // Total bytes received from unvalidated address
-
-    // Constants (RFC 9000 Section 8.1)
-    static constexpr uint64_t kAmplificationFactor = 3;     // Maximum amplification factor
-    static constexpr uint64_t kDefaultInitialCredit = 400;  // Initial credit (~allows 1200 bytes)
-    static constexpr double kNearLimitThreshold = 0.9;      // 90% of limit for Retry consideration
 };
 
 }  // namespace quic

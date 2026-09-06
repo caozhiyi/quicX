@@ -91,10 +91,10 @@ bool QuicServer::Init(const QuicServerConfig& config) {
     }
 
     // Initialize QLog if enabled
-    if (config.config_.qlog_config_.enabled) {
+    if (config.config_.qlog_config_.enabled_) {
         common::QlogManager::Instance().SetConfig(config.config_.qlog_config_);
         common::QlogManager::Instance().Enable(true);
-        LOG_INFO("QLog enabled. Output dir: %s", config.config_.qlog_config_.output_dir.c_str());
+        LOG_INFO("QLog enabled. Output dir: %s", config.config_.qlog_config_.output_dir_.c_str());
     } else {
         common::QlogManager::Instance().Enable(false);
     }
@@ -150,8 +150,8 @@ bool QuicServer::Init(const QuicServerConfig& config) {
 
     worker_map_.reserve(config.config_.worker_thread_num_);
     if (config.config_.thread_mode_ == ThreadMode::kSingleThread) {
-        auto worker = std::make_shared<ServerWorker>(config, tls_ctx, sender, params_, connection_state_cb_,
-            master_event_loop_, shared_retry_token_manager);
+        auto worker = std::make_shared<ServerWorker>(
+            config, tls_ctx, sender, params_, connection_state_cb_, master_event_loop_, shared_retry_token_manager);
         master_event_loop_->RunInLoop(
             [worker, this]() { master_event_loop_->AddFixedProcess(worker, [worker]() { worker->Process(); }); });
 
@@ -167,8 +167,8 @@ bool QuicServer::Init(const QuicServerConfig& config) {
                 return false;
             }
 
-            auto worker_ptr = std::make_shared<ServerWorker>(config, tls_ctx, sender, params_, connection_state_cb_,
-                worker_loop, shared_retry_token_manager);
+            auto worker_ptr = std::make_shared<ServerWorker>(
+                config, tls_ctx, sender, params_, connection_state_cb_, worker_loop, shared_retry_token_manager);
             worker_ptr->SetConnectionIDNotify(master_);
 
             auto worker = std::make_shared<WorkerWithThread>(worker_loop, worker_ptr);
@@ -202,8 +202,7 @@ void QuicServer::Destroy() {
 void QuicServer::AddTimer(uint32_t timeout_ms, std::function<void()> cb) {
     // Fire-and-forget by contract (IQuicServer hands back no handle), so this is
     // PostDelayed rather than a cancellable timer.
-    master_event_loop_->RunInLoop(
-        [this, timeout_ms, cb]() { master_event_loop_->PostDelayed(cb, timeout_ms); });
+    master_event_loop_->RunInLoop([this, timeout_ms, cb]() { master_event_loop_->PostDelayed(cb, timeout_ms); });
 }
 
 bool QuicServer::ListenAndAccept(const std::string& ip, uint16_t port) {

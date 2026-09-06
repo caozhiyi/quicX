@@ -38,4 +38,4 @@ private:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_STREAM_STREAM_ID_GENERATOR

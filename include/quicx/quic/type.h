@@ -4,21 +4,16 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
-#include <string>
-
 #include <quicx/common/if_buffer_read.h>
 #include <quicx/common/type.h>
+#include <string>
 
 namespace quicx {
-
-namespace quic {
 
 // On-the-wire QUIC protocol version constants (RFC 9000 / RFC 9369).
 // NOTE: Unrelated to the QuicX library's product version (see <quicx/common/version.h>).
 static constexpr uint32_t kQuicVersion1 = 0x00000001;  // QUIC v1 (RFC 9000)
 static constexpr uint32_t kQuicVersion2 = 0x6b3343cf;  // QUIC v2 (RFC 9369)
-
-}  // namespace quic
 
 /**
  * @brief Direction of a QUIC stream.
@@ -41,10 +36,10 @@ enum class ThreadMode : uint8_t {
  * @brief Runtime knobs shared by clients and servers.
  */
 struct QuicConfig {
-    ThreadMode thread_mode_ = ThreadMode::kMultiThread;   //!< Threading strategy.
-    uint16_t worker_thread_num_ = 2;                      //!< Number of worker threads when in multi-thread mode.
-    LogLevel log_level_ = LogLevel::kNull;                //!< Minimum log level emitted by the stack.
-    std::string log_path_ = "./logs";                     //!< Log path.
+    ThreadMode thread_mode_ = ThreadMode::kMultiThread;  //!< Threading strategy.
+    uint16_t worker_thread_num_ = 2;                     //!< Number of worker threads when in multi-thread mode.
+    LogLevel log_level_ = LogLevel::kNull;               //!< Minimum log level emitted by the stack.
+    std::string log_path_ = "./logs";                    //!< Log path.
 
     bool enable_ecn_ = false;         //!< Toggle ECN handling.
     bool enable_0rtt_ = false;        //!< Allow 0-RTT data when tickets are available.
@@ -53,7 +48,7 @@ struct QuicConfig {
 
     //! QUIC version to use (RFC 9000 v1 or RFC 9369 v2).
     //! Default to QUIC v2 (kQuicVersion2) as preferred version.
-    uint32_t quic_version_ = quic::kQuicVersion2;
+    uint32_t quic_version_ = kQuicVersion2;
 
     QlogConfig qlog_config_;  //!< QLog configuration.
 
@@ -240,4 +235,4 @@ typedef std::function<void(std::shared_ptr<IQuicConnection> conn, const Migratio
 
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_INCLUDE_TYPE

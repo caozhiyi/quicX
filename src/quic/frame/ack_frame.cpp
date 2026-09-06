@@ -1,8 +1,9 @@
-#include "quic/frame/ack_frame.h"
 #include "common/buffer/buffer_decode_wrapper.h"
 #include "common/buffer/buffer_encode_wrapper.h"
 #include "common/decode/decode.h"
 #include "common/log/log.h"
+
+#include "quic/frame/ack_frame.h"
 
 namespace quicx {
 namespace quic {
@@ -80,7 +81,6 @@ bool AckFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type) {
                 static_cast<long long>(remaining));
             return false;
         }
-
 
         CHECK_DECODE_ERROR(wrapper.DecodeVarint(first_ack_range_), "failed to decode first ack range");
 

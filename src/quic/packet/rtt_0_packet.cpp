@@ -184,8 +184,8 @@ bool Rtt0Packet::DecodeWithCrypto(std::shared_ptr<common::IBuffer> /*buffer*/) {
     const size_t sample_need = static_cast<size_t>(packet_num_offset_) + 4 + kHeaderProtectSampleLength;
     const size_t span_len = static_cast<size_t>(span.GetEnd() - span.GetStart());
     if (span_len < sample_need) {
-        LOG_ERROR("payload too short for header protection sample. payload_len:%zu, required:%zu", span_len,
-            sample_need);
+        LOG_ERROR(
+            "payload too short for header protection sample. payload_len:%zu, required:%zu", span_len, sample_need);
         return false;
     }
     common::BufferSpan sample = common::BufferSpan(span.GetStart() + packet_num_offset_ + 4,

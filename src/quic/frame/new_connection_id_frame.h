@@ -2,6 +2,7 @@
 #define QUIC_FRAME_NEW_CONNECTION_ID_FRAME
 
 #include <cstdint>
+
 #include "quic/connection/connection_id.h"
 #include "quic/connection/type.h"
 #include "quic/frame/if_frame.h"
@@ -45,4 +46,4 @@ private:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_FRAME_NEW_CONNECTION_ID_FRAME

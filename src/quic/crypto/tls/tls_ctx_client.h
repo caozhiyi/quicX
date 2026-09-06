@@ -2,6 +2,7 @@
 #define QUIC_CRYPTO_TLS_TLS_CLIENT_CTX
 
 #include <string>
+
 #include "quic/crypto/tls/tls_ctx.h"
 
 namespace quicx {
@@ -22,4 +23,4 @@ public:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_CRYPTO_TLS_TLS_CLIENT_CTX

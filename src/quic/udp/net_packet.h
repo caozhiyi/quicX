@@ -2,8 +2,10 @@
 #define QUIC_UDP_NET_PACKET
 
 #include <memory>
+
 #include "common/buffer/if_buffer.h"
 #include "common/network/address.h"
+#include "common/network/socket_handle.h"
 
 namespace quicx {
 namespace quic {
@@ -11,7 +13,6 @@ namespace quic {
 class NetPacket {
 public:
     NetPacket():
-        sock_(0),
         time_(0) {}
     virtual ~NetPacket() {}
 
@@ -21,8 +22,8 @@ public:
     void SetAddress(const common::Address& addr) { addr_ = addr; }
     const common::Address& GetAddress() { return addr_; }
 
-    void SetSocket(int32_t sockfd) { sock_ = sockfd; }
-    int32_t GetSocket() const { return sock_; }
+    void SetSocket(common::SocketHandle sock) { sock_ = sock; }
+    common::SocketHandle GetSocket() const { return sock_; }
 
     void SetTime(uint64_t time) { time_ = time; }
     uint64_t GetTime() { return time_; }
@@ -31,7 +32,10 @@ public:
     uint8_t GetEcn() const { return ecn_; }
 
 protected:
-    int32_t sock_;          // socket fd
+    // fd + the address family it was created with. The family is filled in
+    // by whoever put the fd here (socket creator / receiver / emitter), so
+    // the send path never has to re-derive it from the kernel.
+    common::SocketHandle sock_;
     uint64_t time_;         // packet generate time
     common::Address addr_;  // peer address
     std::shared_ptr<common::IBuffer> buffer_;
@@ -41,4 +45,4 @@ protected:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_UDP_NET_PACKET

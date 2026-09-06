@@ -1,8 +1,9 @@
 #ifndef QUIC_CRYPTO_HKDF
 #define QUIC_CRYPTO_HKDF
 
-#include <openssl/ossl_typ.h>
 #include <cstdint>
+
+#include <openssl/ossl_typ.h>
 
 namespace quicx {
 namespace quic {
@@ -22,4 +23,4 @@ public:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_CRYPTO_HKDF

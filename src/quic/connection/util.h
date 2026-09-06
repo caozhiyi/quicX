@@ -3,7 +3,9 @@
 
 #include <cstdint>
 #include <string>
+
 #include "common/network/address.h"
+
 #include "quic/packet/type.h"
 
 namespace quicx {
@@ -39,10 +41,10 @@ bool ValidatePreferredAddressBinary(const std::string& raw);
 // |out_cid| (when non-null) receives the connection ID carried in the
 // structure, per RFC 9000 §9.6.
 // @return true only if |raw| has the expected binary layout.
-bool ParsePreferredAddressBinary(const std::string& raw, bool peer_is_ipv4, common::Address& out,
-                                 std::string* out_cid = nullptr);
+bool ParsePreferredAddressBinary(
+    const std::string& raw, bool peer_is_ipv4, common::Address& out, std::string* out_cid = nullptr);
 
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_CONNECTION_CONTROLER_UTIL

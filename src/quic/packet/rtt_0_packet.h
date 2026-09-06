@@ -1,8 +1,8 @@
-
 #ifndef QUIC_PACKET_RTT_0_PACKET
 #define QUIC_PACKET_RTT_0_PACKET
 
 #include <memory>
+
 #include "quic/packet/header/long_header.h"
 #include "quic/packet/if_packet.h"
 #include "quic/packet/type.h"
@@ -57,7 +57,7 @@ private:
     std::vector<std::shared_ptr<IFrame>> frames_list_;
 };
 
-}  // namespace quic
+}  // namespace quicx
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_PACKET_RTT_0_PACKET

@@ -1,15 +1,15 @@
 #include <cstdio>
 #include <cstring>
-
 #ifdef _WIN32
 #include <ws2tcpip.h>
 #else
 #include <arpa/inet.h>
 #endif
 
-#include "quic/connection/util.h"
 #include "common/log/log.h"
+
 #include "quic/connection/type.h"
+#include "quic/connection/util.h"
 #include "quic/frame/stream_frame.h"
 #include "quic/frame/type.h"
 
@@ -30,8 +30,8 @@ bool ValidatePreferredAddressBinary(const std::string& raw) {
     return cid_len <= kMaxCidLength && raw.size() >= kHeader + cid_len + 16;
 }
 
-bool ParsePreferredAddressBinary(const std::string& raw, bool peer_is_ipv4,
-                                 common::Address& out, std::string* out_cid) {
+bool ParsePreferredAddressBinary(
+    const std::string& raw, bool peer_is_ipv4, common::Address& out, std::string* out_cid) {
     // Nothing may be read from |raw| before its layout is validated.
     if (!ValidatePreferredAddressBinary(raw)) {
         return false;
@@ -39,8 +39,7 @@ bool ParsePreferredAddressBinary(const std::string& raw, bool peer_is_ipv4,
     const size_t kHeader = 4 + 2 + 16 + 2 + 1;  // 25 (up to, not including, the CID)
     const uint8_t* p = reinterpret_cast<const uint8_t*>(raw.data());
 
-    const uint32_t ipv4 = (uint32_t(p[0]) << 24) | (uint32_t(p[1]) << 16) |
-                          (uint32_t(p[2]) << 8) | uint32_t(p[3]);
+    const uint32_t ipv4 = (uint32_t(p[0]) << 24) | (uint32_t(p[1]) << 16) | (uint32_t(p[2]) << 8) | uint32_t(p[3]);
     const uint16_t ipv4_port = (uint16_t(p[4]) << 8) | uint16_t(p[5]);
     const uint8_t* ipv6 = p + 6;
     const uint16_t ipv6_port = (uint16_t(p[22]) << 8) | uint16_t(p[23]);

@@ -12,4 +12,4 @@ enum class PacketHeaderType {
 }
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_PACKET_HEADER_TYPE

@@ -15,6 +15,9 @@ const uint16_t kMaxV6PacketSize = 1452;
 // 1500(Ethernet) - 20(IPv4 header) - 8(UDP header) = 1472.
 const uint16_t kMaxV4PacketSize = 1472;
 
+// RFC 9000 §7.2: connection IDs are 0..20 bytes. 20 is the hard maximum the
+// protocol allows; 8 bytes is the RFC's RECOMMENDED minimum for endpoints
+// that use CIDs (long enough to be unique for the connection's lifetime).
 const uint8_t kMaxConnectionLength = 20;
 const uint8_t kMinConnectionLength = 8;
 
@@ -37,14 +40,7 @@ const uint8_t kHeaderProtectLength = 5;
 // initial datagrams.
 constexpr uint16_t kMinInitialPacketSize = 1200;
 
-// RFC 9000 §8.2.4: An endpoint SHOULD abandon path validation based on
-// timer. The timer SHOULD be at least three times the current PTO. We use a
-// fixed 6 s default that is comfortably above 3×PTO for typical Internet
-// paths (PTO ≈ a few hundred ms) and bounds how long a stuck migration can
-// linger before we give up and either fall back to the prior path or close.
-constexpr uint32_t kDefaultPathValidationTimeoutMs = 6000;
-
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_COMMON_CONSTANTS

@@ -2,10 +2,10 @@
 
 #include "common/log/log.h"
 #include "common/qlog/qlog.h"
+
 #include "quic/congestion_control/bbr_v1_congestion_control.h"
 #include "quic/congestion_control/normal_pacer.h"
 #include "quic/congestion_control/util.h"
-
 // References for BBRv1 (this implementation is a teaching subset, not a
 // drop-in BBR):
 //   [BBR-Queue]    Cardwell et al., "BBR: Congestion-Based Congestion

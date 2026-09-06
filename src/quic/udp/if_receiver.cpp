@@ -8,5 +8,5 @@ std::shared_ptr<IReceiver> IReceiver::MakeReceiver(std::shared_ptr<common::IEven
     return std::make_shared<UdpReceiver>(event_loop);
 }
 
-}  // namespace quic
+}  // namespace quicx
 }  // namespace quicx

@@ -1,24 +1,18 @@
 #include <cstdio>
 #include <cstring>
-
-#ifdef _WIN32
-#include <ws2tcpip.h>
-#else
-#include <arpa/inet.h>
-#endif
-
-#include <quicx/common/if_event_loop.h>
 #include <quicx/common/metrics.h>
-#include <quicx/common/metrics_std.h>
+
 #include "common/buffer/buffer_chunk.h"
 #include "common/buffer/buffer_span.h"
 #include "common/buffer/single_block_buffer.h"
 #include "common/log/log.h"
+#include "common/metrics/metrics_std.h"
+#include "common/network/if_event_loop.h"
 #include "common/network/io_handle.h"
 #include "common/qlog/qlog.h"
 #include "common/util/time.h"
-#include "quic/common/constants.h"
 
+#include "quic/common/constants.h"
 #include "quic/common/version.h"
 #include "quic/connection/connection_base.h"
 #include "quic/connection/connection_closer.h"
@@ -27,11 +21,13 @@
 #include "quic/connection/connection_timer_coordinator.h"
 #include "quic/connection/encryption_level_scheduler.h"
 #include "quic/connection/error.h"
-#include "quic/connection/util.h"
 #include "quic/connection/stateless_reset_token_generator.h"
+#include "quic/connection/util.h"
 #include "quic/frame/connection_close_frame.h"
+#include "quic/frame/padding_frame.h"
 #include "quic/frame/ping_frame.h"
 #include "quic/frame/type.h"
+#include "quic/packet/init_packet.h"
 #include "quic/packet/packet_number.h"
 #include "quic/packet/rtt_1_packet.h"
 #include "quic/packet/type.h"
@@ -60,10 +56,9 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_
     // path at setup, which is not the negotiator's business.
     version_negotiator_ = std::make_unique<VersionNegotiator>(is_server_, connection_crypto_, transport_param_);
     version_negotiator_->SetPushTransportParamCallback([this](TransportParam& tp) { return EncodeAndPushTpToTls(tp); });
-    version_negotiator_->SetCloseConnectionCallback(
-        [this](uint64_t error, uint16_t trigger_frame, std::string reason) {
-            InnerConnectionClose(error, trigger_frame, std::move(reason));
-        });
+    version_negotiator_->SetCloseConnectionCallback([this](uint64_t error, uint16_t trigger_frame, std::string reason) {
+        InnerConnectionClose(error, trigger_frame, std::move(reason));
+    });
 
     // Metrics: Record handshake start time (wall clock; see field comment in
     // connection_base.h — this is intentionally NOT the monotonic clock used
@@ -186,6 +181,10 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_
     // so hooking the budget here means no send path can bypass it — including
     // handshake packets, coalesced Initial/Handshake, retransmits and bare ACKs.
     emitter_->SetAmpBudgetCheck([this](uint32_t bytes) { return send_manager_.CheckAndChargeAmpBudget(bytes); });
+    // Read-only twin of the gate above, so the §14.1 padding can be sized
+    // against the remaining budget *before* the bytes are written (the gate
+    // itself debits, so it must only be called once, with the final size).
+    emitter_->SetAmpBudgetQuery([this](uint32_t bytes) { return !send_manager_.IsAmpBudgetBelow(bytes); });
 
     // Sole owner of socket lifecycle across migration. It performs the socket
     // switch and the close(2); we only forward the finished event to the
@@ -196,13 +195,11 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_
     // The controller owns the loop-thread dispatch for migration; hand it the
     // connection's address resolvers so it can pick the migration address family
     // on the loop thread (race-free) rather than on the caller's thread.
-    migration_controller_->SetLocalAddressResolver(
-        [this](std::string& ip, uint32_t& port) { GetLocalAddr(ip, port); });
+    migration_controller_->SetLocalAddressResolver([this](std::string& ip, uint32_t& port) { GetLocalAddr(ip, port); });
     migration_controller_->SetPeerAddressResolver([this]() { return GetPeerAddress(); });
     migration_controller_->SetMigrationFinishedCallback(
         [this](const MigrationInfo& info) { OnMigrationFinished(info); });
-    migration_controller_->SetLocalAddressUpdatedCallback(
-        [this](const common::Address& addr) { local_addr_ = addr; });
+    migration_controller_->SetLocalAddressUpdatedCallback([this](const common::Address& addr) { local_addr_ = addr; });
 
     // Initialize stream manager (refactored) - uses IConnectionEventSink interface (no callbacks!)
     stream_manager_ = std::make_unique<StreamManager>(
@@ -223,18 +220,25 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_
     frame_processor_->SetStreamStateCallback(stream_state_cb_);
 
     // Metrics: Connection created
-    common::Metrics::GaugeInc(common::MetricsStd::QuicConnectionsActive);
-    common::Metrics::CounterInc(common::MetricsStd::QuicConnectionsTotal);
+    Metrics::GaugeInc(common::MetricsStd::QuicConnectionsActive);
+    Metrics::CounterInc(common::MetricsStd::QuicConnectionsTotal);
 }
 
 BaseConnection::~BaseConnection() {
+    // Clean up qlog trace (keyed by the role-specific id, see
+    // GetQlogTraceIdForCleanup). Runs after the derived destructor body but
+    // while all members are still alive.
+    if (qlog_trace_) {
+        common::QlogManager::Instance().RemoveTrace(GetQlogTraceIdForCleanup());
+    }
+
     // Metrics: Connection closed
-    common::Metrics::GaugeDec(common::MetricsStd::QuicConnectionsActive);
-    common::Metrics::CounterInc(common::MetricsStd::QuicConnectionsClosed);
+    Metrics::GaugeDec(common::MetricsStd::QuicConnectionsActive);
+    Metrics::CounterInc(common::MetricsStd::QuicConnectionsClosed);
 
     // Metrics: Record PTO count per connection
     uint32_t pto_count = send_manager_.GetRttCalculator().GetConsecutivePTOCount();
-    common::Metrics::HistogramObserve(common::MetricsStd::PtoCountPerConnection, pto_count);
+    Metrics::HistogramObserve(common::MetricsStd::PtoCountPerConnection, pto_count);
 
     // Clear stream manager first to prevent callbacks from accessing destroyed objects
     // Streams may still hold callbacks that reference stream_manager_, so we need to
@@ -411,12 +415,10 @@ void BaseConnection::AddTransportParam(const QuicTransportParams& tp_config) {
     if (transport_param_.HasPreferredAddressBinary() && cid_coordinator_) {
         ConnectionID new_cid = cid_coordinator_->GetLocalConnectionIDManager()->Generator();
         uint8_t reset_token[kStatelessResetTokenLength];
-        StatelessResetTokenGenerator::Instance().Generate(
-            new_cid.GetID(), new_cid.GetLength(), reset_token);
+        StatelessResetTokenGenerator::Instance().Generate(new_cid.GetID(), new_cid.GetLength(), reset_token);
         PreferredAddress pa = transport_param_.GetPreferredAddressBinary();
         pa.cid.assign(reinterpret_cast<const char*>(new_cid.GetID()), new_cid.GetLength());
-        pa.stateless_reset_token.assign(reinterpret_cast<const char*>(reset_token),
-            kStatelessResetTokenLength);
+        pa.stateless_reset_token.assign(reinterpret_cast<const char*>(reset_token), kStatelessResetTokenLength);
         transport_param_.SetPreferredAddressBinary(pa);
     }
 
@@ -533,6 +535,13 @@ void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket
             // lost under corruption/loss — otherwise the client stalls in
             // Connecting and never sends its request.
             if (packets[i]->GetCryptoLevel() == PacketCryptoLevel::kApplicationCryptoLevel) {
+                // RFC 9000 §4.1.2: a 1-RTT packet confirms the handshake. From
+                // the server's side this is also the proof that the peer got
+                // our HANDSHAKE_DONE (or at least our 1-RTT keys), which ends
+                // the unconfirmed-handshake idle grace window.
+                if (timer_coordinator_) {
+                    timer_coordinator_->SetHandshakeConfirmed();
+                }
                 OnApplicationDataPacketProcessed();
             }
         }
@@ -651,7 +660,8 @@ void BaseConnection::HandlePacketsInClosingState(uint64_t now, std::vector<std::
             frame->SetErrFrameType(connection_closer_->GetClosingTriggerFrame());
             frame->SetReason(connection_closer_->GetClosingReason());
             EnqueueFrameDuringTermination(frame);
-            connection_closer_->MarkConnectionCloseRetransmitted(current_time);        }
+            connection_closer_->MarkConnectionCloseRetransmitted(current_time);
+        }
     }
 }
 
@@ -910,6 +920,19 @@ bool BaseConnection::OnNormalPacket(
     // and is tracked as a separate step.
     if (!packet->DecodeWithCrypto(nullptr)) {
         LOG_ERROR("decode packet after decrypt failed.");
+        // A 1-RTT packet we cannot decrypt means the peer already holds 1-RTT
+        // write keys, i.e. it considers the handshake confirmed and has sent
+        // its Finished (RFC 9000 §4.1.2). Record that: TrySendRetransmit()
+        // uses it to stop re-sending Initial the peer already consumed, and the
+        // PTO path then probes at Handshake level instead, which elicits an ACK
+        // exposing the missing Finished.
+        if (packet->GetCryptoLevel() == kApplication) {
+            peer_sent_undecryptable_1rtt_ = true;
+            // Tell SendControl to skip Initial packets during PTO so the
+            // probe targets Handshake level, eliciting an ACK that surfaces
+            // the missing Finished.
+            send_manager_.GetSendControl().SetSkipInitialForPTO(true);
+        }
         if (qlog_trace_) {
             common::PacketDroppedData drop_data;
             drop_data.packet_type = packet->GetHeader()->GetPacketType();
@@ -956,7 +979,7 @@ bool BaseConnection::OnHandshakePacket(const std::shared_ptr<IPacket>& packet) {
 
 bool BaseConnection::OnFrames(std::vector<std::shared_ptr<IFrame>>& frames, uint16_t crypto_level) {
     // Metrics: Frames received
-    common::Metrics::CounterInc(common::MetricsStd::FramesRxTotal, frames.size());
+    Metrics::CounterInc(common::MetricsStd::FramesRxTotal, frames.size());
 
     // Update last communicate time for PING frames
     for (size_t i = 0; i < frames.size(); i++) {
@@ -967,7 +990,7 @@ bool BaseConnection::OnFrames(std::vector<std::shared_ptr<IFrame>>& frames, uint
         }
         // Metrics: Connection-level flow control blocked
         if (type == FrameType::kDataBlocked) {
-            common::Metrics::CounterInc(common::MetricsStd::QuicFlowControlBlocked);
+            Metrics::CounterInc(common::MetricsStd::QuicFlowControlBlocked);
         }
     }
 
@@ -1081,8 +1104,8 @@ void BaseConnection::OnTransportParams(TransportParam& remote_tp) {
             bool peer_is_ipv4 = GetPeerAddress().GetIp().find(':') == std::string::npos;
             common::Address addr;
             std::string preferred_cid;
-            if (!ParsePreferredAddressBinary(transport_param_.GetPreferredAddress(), peer_is_ipv4, addr,
-                    &preferred_cid)) {
+            if (!ParsePreferredAddressBinary(
+                    transport_param_.GetPreferredAddress(), peer_is_ipv4, addr, &preferred_cid)) {
                 LOG_ERROR("Failed to parse server preferred_address");
             } else {
                 if (!preferred_cid.empty()) {
@@ -1103,8 +1126,8 @@ void BaseConnection::OnTransportParams(TransportParam& remote_tp) {
                     LOG_INFO("Deferring preferred-address migration to %s:%d until handshake completes",
                         addr.GetIp().c_str(), addr.GetPort());
                 } else {
-                    LOG_INFO("Client initiating migration to server's preferred address: %s:%d",
-                        addr.GetIp().c_str(), addr.GetPort());
+                    LOG_INFO("Client initiating migration to server's preferred address: %s:%d", addr.GetIp().c_str(),
+                        addr.GetPort());
                     // Full preferred-address migration: creates a socket matching
                     // the target's family (the classic scenario is IPv6 -> IPv4)
                     // and pre-rotates the DCID so the first packet on the new path
@@ -1113,8 +1136,8 @@ void BaseConnection::OnTransportParams(TransportParam& remote_tp) {
                     // socket, which cannot reach an address of another family,
                     // and kept the old DCID.
                     migration_controller_->InitiateMigrationToPeer(
-                        std::weak_ptr<void>(std::static_pointer_cast<BaseConnection>(shared_from_this())),
-                        addr.GetIp(), addr.GetPort());
+                        std::weak_ptr<void>(std::static_pointer_cast<BaseConnection>(shared_from_this())), addr.GetIp(),
+                        addr.GetPort());
                 }
             }
         }
@@ -1140,7 +1163,7 @@ void BaseConnection::ThreadTransferAfter() {
 
 void BaseConnection::OnIdleTimeout() {
     // Metrics: Idle timeout
-    common::Metrics::CounterInc(common::MetricsStd::IdleTimeoutTotal);
+    Metrics::CounterInc(common::MetricsStd::IdleTimeoutTotal);
 
     InnerConnectionClose(QuicErrorCode::kNoError, 0, "idle timeout.");
 }
@@ -1159,11 +1182,11 @@ void BaseConnection::CheckPTOTimeout() {
     uint32_t consecutive_ptos = send_manager_.GetRttCalculator().GetConsecutivePTOCount();
 
     // RFC 9002: Close connection after persistent timeout (~3 PTO cycles)
-    if (consecutive_ptos >= RttCalculator::kMaxConsecutivePTOs) {
+    if (consecutive_ptos >= kMaxConsecutivePTOs) {
         LOG_WARN("Connection idle timeout: %u consecutive PTOs without ACK, closing connection", consecutive_ptos);
 
         // Metrics: PTO count
-        common::Metrics::CounterInc(common::MetricsStd::PtoCountTotal);
+        Metrics::CounterInc(common::MetricsStd::PtoCountTotal);
 
         // Close with no error (idle timeout is normal termination)
         InnerConnectionClose(QuicErrorCode::kNoError, 0, "Persistent PTO timeout");
@@ -1211,6 +1234,29 @@ void BaseConnection::OnObservedPeerAddress(const common::Address& addr) {
     }
 }
 
+void BaseConnection::OnLocalSocketAddressChanged() {
+    if (path_manager_) {
+        path_manager_->OnLocalSocketAddressChanged();
+    }
+}
+
+bool BaseConnection::OnRxSocket(int32_t sockfd) {
+    if (sockfd <= 0) {
+        return false;
+    }
+    // At most two listeners per connection (main + preferred_address).
+    for (int i = 0; i < 2; ++i) {
+        if (rx_sockets_[i] == sockfd) {
+            return false;  // already known rx socket
+        }
+        if (rx_sockets_[i] <= 0) {
+            rx_sockets_[i] = sockfd;  // first sighting
+            return i > 0;             // the very first socket is the handshake path
+        }
+    }
+    return false;  // table full; treat as known (never re-trigger)
+}
+
 void BaseConnection::EnqueueFrameDuringTermination(std::shared_ptr<IFrame> frame) {
     // OnConnectionActive() deliberately suppresses wake-ups once
     // IsTerminating() is true, to stop retransmission churn on a dying
@@ -1232,7 +1278,7 @@ void BaseConnection::EnqueueFrameDuringTermination(std::shared_ptr<IFrame> frame
 // reducing std::bind overhead and improving performance.
 
 void BaseConnection::OnConnectionActive() {
-    common::Metrics::CounterInc(common::MetricsStd::DiagActiveSendCalls);
+    Metrics::CounterInc(common::MetricsStd::DiagActiveSendCalls);
     // Don't trigger send retry if connection is closing, draining, or closed
     // This prevents unnecessary retransmissions when connection is terminating
     if (state_machine_.IsTerminating()) {
@@ -1272,19 +1318,19 @@ void BaseConnection::InnerConnectionClose(uint64_t error, uint16_t trigger_frame
         // Metrics: Error statistics
         switch (error) {
             case QuicErrorCode::kFlowControlError:
-                common::Metrics::CounterInc(common::MetricsStd::ErrorsFlowControl);
+                Metrics::CounterInc(common::MetricsStd::ErrorsFlowControl);
                 break;
             case QuicErrorCode::kStreamLimitError:
-                common::Metrics::CounterInc(common::MetricsStd::ErrorsStreamLimit);
+                Metrics::CounterInc(common::MetricsStd::ErrorsStreamLimit);
                 break;
             case QuicErrorCode::kProtocolViolation:
             case QuicErrorCode::kFrameEncodingError:
             case QuicErrorCode::kTransportParameterError:
             case QuicErrorCode::kConnectionIdLimitError:
-                common::Metrics::CounterInc(common::MetricsStd::ErrorsProtocol);
+                Metrics::CounterInc(common::MetricsStd::ErrorsProtocol);
                 break;
             case QuicErrorCode::kInternalError:
-                common::Metrics::CounterInc(common::MetricsStd::ErrorsInternal);
+                Metrics::CounterInc(common::MetricsStd::ErrorsInternal);
                 break;
             default:
                 break;
@@ -1317,14 +1363,90 @@ void BaseConnection::InnerStreamClose(uint64_t stream_id) {
         stream_manager_->CloseStream(stream_id);
 
         // Metrics: Stream closed
-        common::Metrics::GaugeDec(common::MetricsStd::QuicStreamsActive);
-        common::Metrics::CounterInc(common::MetricsStd::QuicStreamsClosed);
+        Metrics::GaugeDec(common::MetricsStd::QuicStreamsActive);
+        Metrics::CounterInc(common::MetricsStd::QuicStreamsClosed);
     }
 }
 
 void BaseConnection::OnStreamDataAcked(uint64_t stream_id, uint64_t offset_start, uint64_t length, bool has_fin) {
     // Delegate to stream manager
     stream_manager_->OnStreamDataAcked(stream_id, offset_start, length, has_fin);
+}
+
+void BaseConnection::WriteCryptoData(std::shared_ptr<IBufferRead> buffer, int32_t err, uint16_t encryption_level) {
+    LOG_DEBUG("WriteCryptoData: buffer_len=%d, err=%d, level=%d", buffer->GetDataLength(), err, encryption_level);
+    if (err != 0) {
+        LOG_ERROR("get crypto data failed. err:%d", err);
+        return;
+    }
+
+    // Pass buffer memory to BoringSSL via VisitData, then advance read pointer
+    // to consume the data. This prevents re-processing on subsequent calls.
+    uint32_t total_consumed = 0;
+    bool process_ok = true;
+    buffer->VisitData([&](uint8_t* data, uint32_t len) -> bool {
+        if (!tls_connection_->ProcessCryptoData(data, len, encryption_level)) {
+            LOG_ERROR("process crypto data failed. err:%d", err);
+            process_ok = false;
+            return false;  // stop visiting
+        }
+        total_consumed += len;
+        return true;  // continue to next segment
+    });
+
+    // Advance read pointer to consume processed data, preventing duplicate
+    // processing on subsequent recv_cb_ invocations
+    if (total_consumed > 0) {
+        buffer->MoveReadPt(total_consumed);
+    }
+
+    if (!process_ok) {
+        return;
+    }
+
+    if (tls_connection_->DoHandleShake()) {
+        OnTlsHandshakeComplete();
+    }
+}
+
+void BaseConnection::FinalizeHandshakePacketNumberSpaces() {
+    // Mark handshake complete to stop PTO probing
+    send_manager_.GetSendControl().SetHandshakeComplete();
+
+    // RFC 9000 Section 4.10: discard Initial and Handshake packet number spaces
+    recv_control_.DiscardPacketNumberSpace(PacketNumberSpace::kInitialNumberSpace);
+    recv_control_.DiscardPacketNumberSpace(PacketNumberSpace::kHandshakeNumberSpace);
+    send_manager_.DiscardPacketNumberSpace(PacketNumberSpace::kInitialNumberSpace);
+    send_manager_.DiscardPacketNumberSpace(PacketNumberSpace::kHandshakeNumberSpace);
+    LOG_INFO("Discarded Initial and Handshake packet number spaces per RFC 9000");
+
+    // Log key_discarded events for Initial and Handshake keys
+    if (qlog_trace_) {
+        common::KeyDiscardedData discard_data;
+        discard_data.key_type = "initial";
+        discard_data.trigger = "handshake_done";
+        QLOG_KEY_DISCARDED(qlog_trace_, discard_data);
+        discard_data.key_type = "handshake";
+        QLOG_KEY_DISCARDED(qlog_trace_, discard_data);
+    }
+}
+
+void BaseConnection::InstallQlogTrace(
+    const std::string& trace_id, common::VantagePoint vp, const common::ConnectionStartedData& data) {
+    qlog_trace_ = common::QlogManager::Instance().CreateTrace(trace_id, vp);
+    QLOG_CONNECTION_STARTED(qlog_trace_, data);
+
+    connection_crypto_.SetQlogTrace(qlog_trace_);
+    send_manager_.SetQlogTrace(qlog_trace_);
+    if (stream_manager_) {
+        stream_manager_->SetQlogTrace(qlog_trace_);
+    }
+    if (frame_processor_) {
+        frame_processor_->SetQlogTrace(qlog_trace_);
+    }
+    if (cid_coordinator_) {
+        cid_coordinator_->SetQlogTrace(qlog_trace_);
+    }
 }
 
 void BaseConnection::AddConnectionId(ConnectionID& id) {
@@ -1375,10 +1497,10 @@ void BaseConnection::GetLocalAddr(std::string& addr, uint32_t& port) {
 
     // Otherwise query the socket. The active fd (primary, or the probe socket
     // while a migration is in flight) is owned by the emitter.
-    const int32_t sock = emitter_->GetActiveSocket();
-    if (sock > 0) {
+    const common::SocketHandle sock = emitter_->GetActiveSocket();
+    if (sock.fd > 0) {
         common::Address local;
-        if (GetLocalAddressFromSocket(sock, local)) {
+        if (GetLocalAddressFromSocket(sock.fd, local)) {
             local_addr_ = local;
             addr = local_addr_.GetIp();
             port = local_addr_.GetPort();
@@ -1427,7 +1549,7 @@ void BaseConnection::OnStateToConnected() {
         const uint64_t now_ms = common::UTCTimeMsec();
         if (now_ms >= handshake_start_wall_time_ms_) {
             uint64_t duration_us = (now_ms - handshake_start_wall_time_ms_) * 1000;
-            common::Metrics::GaugeSet(common::MetricsStd::QuicHandshakeDurationUs, duration_us);
+            Metrics::GaugeSet(common::MetricsStd::QuicHandshakeDurationUs, duration_us);
             LOG_DEBUG("Handshake completed in %llu microseconds", duration_us);
         } else {
             LOG_DEBUG("Skipping handshake duration metric: wall clock moved backwards");
@@ -1591,6 +1713,36 @@ bool BaseConnection::TrySendRetransmit() {
 
     // Determine encryption level and get cryptographer
     auto crypto_level = lost_pkt->GetCryptoLevel();
+
+    // Peer already sent 1-RTT => it considers the handshake confirmed, which
+    // means it has received every handshake byte we sent, Initial included
+    // (RFC 9000 §4.1.2). Re-sending Initial now is pure waste: the peer will
+    // not learn anything new from it.
+    //
+    // Interop handshakecorruption (30% bit flips) hit exactly this: the peer's
+    // Finished was lost, so our TLS never completed and we had no 1-RTT read
+    // key, while the peer had moved on and was sending 1-RTT application data.
+    // We spent ~18 s retransmitting Initial the peer had already consumed, then
+    // timed out with "downloaded: 0 bytes".
+    //
+    // Skipping it lets the PTO path fall through to a probe at Handshake level
+    // (RFC 9002 §6.2.4 permits probing in Initial/Handshake before the handshake
+    // is confirmed), which elicits an ACK and surfaces the missing Finished.
+    //
+    // EXCEPTION — Initial packets carrying CRYPTO (our ServerHello) MUST still
+    // be retransmitted. The §4.1.2 inference above is broken for 0-RTT: a PSK
+    // client holds early-traffic keys WITHOUT having received any of our
+    // flight, so an undecryptable 1-RTT packet does NOT imply it consumed our
+    // Initial. Observed (2026-09-02, picoquic handshakeloss 30% loss): resumed
+    // connections sent 0-RTT right after the ClientHello, the ServerHello was
+    // lost, and this skip suppressed its retransmission forever — the client
+    // never saw a ServerHello and the connection stalled to the 300 s timeout.
+    if (peer_sent_undecryptable_1rtt_ && crypto_level == kInitial &&
+        !(lost_pkt->GetFrameTypeBit() & FrameTypeBit::kCryptoBit)) {
+        LOG_INFO("BaseConnection::TrySendRetransmit: skipping Initial retransmission, peer already sent 1-RTT");
+        return !lost_packets.empty();  // try next lost packet
+    }
+
     auto cryptographer = connection_crypto_.GetCryptographer(crypto_level);
     if (!cryptographer) {
         LOG_WARN(
@@ -1613,9 +1765,46 @@ bool BaseConnection::TrySendRetransmit() {
     // [DIAG-RTX] Capture the *original* PN before we overwrite it, so the
     // first-send log line can be correlated with this retransmission.
     uint64_t orig_pn = lost_pkt->GetPacketNumber();
+
+    // Drop the unacked entry keyed by the ORIGINAL packet number -- before the
+    // object is renumbered, while the stale key is still derivable from it.
+    // Once SetPacketNumber() runs, that entry becomes unreachable by lookup
+    // (its key no longer matches the object's PN) yet survives in the table,
+    // and OnPTOTimer() -- which only inspects begin() -- would then keep
+    // landing on it and stop finding anything to retransmit after the first
+    // PTO. See SendControl::RemoveStaleUnackedEntry().
+    send_control.RemoveStaleUnackedEntry(ns, orig_pn, lost_pkt);
+
     lost_pkt->SetPacketNumber(new_pn);
     lost_pkt->GetHeader()->SetPacketNumberLength(PacketNumber::GetPacketNumberLength(new_pn));
     lost_pkt->SetCryptographer(cryptographer);
+
+    // RFC 9000 §5.1: a retransmission is a brand-new packet on the wire and has
+    // to carry the destination connection ID that is current at (re)send time.
+    // The reused IPacket still holds the DCID it was first encoded with; if the
+    // peer retired that CID in the meantime (NEW_CONNECTION_ID /
+    // RETIRE_CONNECTION_ID) it drops the packet as unknown-CID, the packet is
+    // never ACKed, and loss detection re-declares it forever.
+    //
+    // Observed on handshakeloss (30% drop, msquic server): a 32-byte HTTP/3 GET
+    // whose first send was dropped was retransmitted ~408 times over ~30 s, not
+    // one of them ever ACKed, while freshly built packets on the very same
+    // connection were ACKed normally -- because only the retransmit path skips
+    // PacketBuilder::SetConnectionIDs(). The retransmission loop then became
+    // self-sustaining: every 1-RTT ACK from the peer reset pto_count, so PTO
+    // stayed at its ~70 ms base value instead of backing off.
+    //
+    // Mirrors what PacketBuilder::SetConnectionIDs() does for newly built
+    // packets. Only the DCID is refreshed: the SCID is carried by long-header
+    // packets only, and for the 1-RTT space (where this was seen) the DCID is
+    // the sole field the peer routes on.
+    if (cid_coordinator_) {
+        auto remote_cid_mgr = cid_coordinator_->GetRemoteConnectionIDManager();
+        if (remote_cid_mgr) {
+            auto remote_cid = remote_cid_mgr->GetCurrentID();
+            lost_pkt->GetHeader()->SetDestinationConnectionId(remote_cid.GetID(), remote_cid.GetLength());
+        }
+    }
 
     // RFC 9001 §6.5: A retransmitted packet MUST be re-encoded with the *current*
     // key phase and *current* cryptographer. Without this synchronization the
@@ -1639,29 +1828,18 @@ bool BaseConnection::TrySendRetransmit() {
     }
     auto buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
 
-    // Payload snapshot for retransmit debugging, paired with the "first-send"
-    // dump in PacketBuilder::BuildDataPacket. Both are gated: snprintf×16 plus
-    // LOG_INFO per packet was measured at ~5us/packet there, and this side runs
-    // once per retransmission -- i.e. hottest exactly during the loss storms it
-    // exists to diagnose. The gate was previously only applied to the other
-    // half of the pair.
-#ifdef QUICX_DIAG_RTX
-    if (auto rtt1 = std::dynamic_pointer_cast<Rtt1Packet>(lost_pkt)) {
-        auto pl = rtt1->GetPayload();
-        char head[64] = {0};
-        uint32_t dump_len = pl.GetLength() < 16 ? pl.GetLength() : 16;
-        for (uint32_t i = 0; i < dump_len; ++i) {
-            std::snprintf(head + i * 3, sizeof(head) - i * 3, "%02x ", pl.Valid() ? pl.GetStart()[i] : 0);
-        }
-        LOG_INFO(
-            "[DIAG-RTX] retransmit-pre orig_pn=%llu new_pn=%llu payload_len=%u "
-            "payload_valid=%d chunk=%p head=%s",
-            (unsigned long long)orig_pn, (unsigned long long)new_pn, pl.GetLength(), (int)pl.Valid(),
-            (void*)pl.GetChunk().get(), head);
+    // RFC 9000 §14.1 (+ picoquic interop): a *standalone* retransmitted
+    // Initial packet must still form a >=1200 B datagram. The original send
+    // may have been coalesced (Initial ~242 B + Handshake ~1027 B in one
+    // 1269 B datagram), so the Initial packet object itself is far below the
+    // floor — and peers that enforce §14.1 on server Initial datagrams
+    // (picoquic) silently drop a 242 B retransmission. Observed 2026-09-02,
+    // handshakeloss (30% loss) PSK-resumed connections: the ServerHello was
+    // retransmitted 13 times at 242 B, the client dropped every one and the
+    // handshake stalled to the 300 s timeout.
+    if (crypto_level == kInitial) {
+        PadInitialToDatagramFloor(lost_pkt);
     }
-#else
-    (void)orig_pn;
-#endif
 
     if (!lost_pkt->Encode(buffer)) {
         LOG_ERROR("BaseConnection::TrySendRetransmit: failed to re-encode lost packet pn=%llu", new_pn);
@@ -1687,26 +1865,78 @@ bool BaseConnection::TrySendRetransmit() {
     // INFO-level log line. (The same lesson is recorded on OnConnectionActive,
     // where INFO-level logging on a per-send path stalled the worker thread on
     // disk IO for seconds at a time.)
-#ifdef QUICX_DIAG_RTX
-    std::string sd_summary;
-    for (const auto& sd : lost_entry.stream_data) {
-        sd_summary += "{sid=" + std::to_string(sd.stream_id) + ",off=" + std::to_string(sd.offset_start) +
-                      ",len=" + std::to_string(sd.length) + ",fin=" + std::to_string(sd.has_fin) + "}";
+    if (crypto_level == kInitial) {
+        // Standalone retransmission of an Initial packet: the datagram it forms
+        // still has to reach the §14.1 floor. The in-packet padding above gets
+        // it close; the emitter measures and tops it up if it fell short (it did
+        // for a long while — see the note in DatagramEmitter::Emit).
+        emitter_->MarkDatagramCarriesInitial();
     }
-    LOG_INFO(
-        "BaseConnection::TrySendRetransmit: retransmitted lost packet with new pn=%llu, size=%u, "
-        "stream_data count=%zu ranges=%s",
-        new_pn, encoded_size, lost_entry.stream_data.size(), sd_summary.c_str());
-#else
-    LOG_DEBUG("BaseConnection::TrySendRetransmit: retransmitted pn=%llu, size=%u, stream_data count=%zu", new_pn,
-        encoded_size, lost_entry.stream_data.size());
-#endif
 
     return scope.Commit(buffer);
 }
 
+void BaseConnection::PadInitialToDatagramFloor(const std::shared_ptr<IPacket>& lost_pkt) {
+    auto init_pkt = std::dynamic_pointer_cast<InitPacket>(lost_pkt);
+    if (!init_pkt) {
+        return;
+    }
+
+    // InitPacket::Encode() re-encrypts the cached payload_ span, it does NOT
+    // re-encode frames_list_ — so padding must be baked into the payload
+    // itself. PADDING frames are just 0x00 bytes at the tail of the
+    // (plaintext) payload: build a new span = old payload + zeros.
+
+    // Probe-encode to measure the exact standalone datagram size.
+    auto probe_chunk = std::make_shared<common::BufferChunk>(quic::GlobalResource::Instance().GetThreadLocalBlockPool());
+    if (!probe_chunk || !probe_chunk->Valid()) {
+        return;
+    }
+    auto probe_buffer = std::make_shared<common::SingleBlockBuffer>(probe_chunk);
+    if (!init_pkt->Encode(probe_buffer)) {
+        return;
+    }
+
+    // probe_size is the size of the FULL on-wire packet — long header +
+    // encrypted payload + AEAD tag — because it comes out of
+    // InitPacket::Encode(). So pad straight up to the floor; there is no
+    // separate envelope left to account for.
+    //
+    // The first version of this subtracted a 20 B envelope first (copied from
+    // PacketBuilder, where the buffer holds plaintext frames and the envelope
+    // really is still to come), which put every retransmitted Initial at
+    // exactly 1180 B: 20 B short of the RFC 9000 §14.1 floor. picoquic
+    // discards those as "Server initial too short" — 38 of them in one
+    // handshakecorruption run — which is what left its client retransmitting
+    // on a 2.1 → 4.2 → 8.3 → 16.7 s backoff while the server believed it was
+    // replying.
+    uint32_t probe_size = probe_buffer->GetDataLength();
+    if (probe_size >= kMinInitialPacketSize) {
+        return;
+    }
+
+    uint32_t pad = kMinInitialPacketSize - probe_size;
+    auto payload = init_pkt->GetPayload();
+    uint32_t payload_len = payload.GetLength();
+    if (!payload.Valid() || payload_len + pad >= probe_chunk->GetLength()) {
+        return;
+    }
+
+    auto new_chunk = std::make_shared<common::BufferChunk>(quic::GlobalResource::Instance().GetThreadLocalBlockPool());
+    if (!new_chunk || !new_chunk->Valid()) {
+        return;
+    }
+
+    std::memcpy(new_chunk->GetData(), payload.GetStart(), payload_len);
+    std::memset(new_chunk->GetData() + payload_len, 0, pad);
+    init_pkt->SetPayload(common::SharedBufferSpan(new_chunk, new_chunk->GetData(), payload_len + pad));
+    LOG_DEBUG(
+        "BaseConnection::PadInitialToDatagramFloor: padded Initial retransmission to datagram floor (probe=%u, pad=%u)",
+        probe_size, pad);
+}
+
 int BaseConnection::TrySendBurst(int budget) {
-    common::Metrics::CounterInc(common::MetricsStd::DiagTrySendIters);
+    Metrics::CounterInc(common::MetricsStd::DiagTrySendIters);
     // Tie the lifetime guards of our timer controllers to this connection (see
     // OnPackets for rationale). Ensures PTO / retransmit callbacks are skipped
     // once we are destroyed.
@@ -1766,7 +1996,7 @@ int BaseConnection::TrySendBurst(int budget) {
         sent += TrySendNewBurst(budget - sent);
     }
     if (sent > 0) {
-        common::Metrics::HistogramObserve(common::MetricsStd::DiagTrySendBurstPkts, static_cast<uint64_t>(sent));
+        Metrics::HistogramObserve(common::MetricsStd::DiagTrySendBurstPkts, static_cast<uint64_t>(sent));
     }
     return sent;
 }
@@ -1861,10 +2091,18 @@ int BaseConnection::TrySendNewBurst(int budget) {
             // bypass below is deliberately NARROW — exempt frames only, no
             // stream data, no min-size padding — so a congested-but-validated
             // path cannot use it to over-send (RFC 9002 §7).
-            if (!send_manager_.IsCongestionControlExempt() && !send_manager_.HasPendingProbingFrame()) {
+            // ACK-only packets bypass congestion control per RFC 9002 §7.
+            // send_ctx.has_pending_ack covers the case where the ACK frame
+            // hasn't been generated yet (MayGenerateAckFrame runs later at
+            // line 1974) — IsCongestionControlExempt() only checks
+            // wait_frame_list_, so without this check a pending ACK is
+            // invisible to the cwnd-full gate and the burst breaks before
+            // the ACK frame is ever created.
+            if (!send_ctx.has_pending_ack && !send_manager_.IsCongestionControlExempt() &&
+                !send_manager_.HasPendingProbingFrame()) {
                 LOG_DEBUG("BaseConnection::TrySendBurst: congestion window full at pkt #%d", sent);
                 send_manager_.SetCwndLimited();
-                common::Metrics::CounterInc(common::MetricsStd::DiagTrySendCwndBlocked);
+                Metrics::CounterInc(common::MetricsStd::DiagTrySendCwndBlocked);
                 break;
             }
             probe_bypass = true;
@@ -1907,7 +2145,7 @@ int BaseConnection::TrySendNewBurst(int budget) {
         }
         if (frames.empty() && !has_stream_data) {
             LOG_DEBUG("BaseConnection::TrySendBurst: no data to send at pkt #%d", sent);
-            common::Metrics::CounterInc(common::MetricsStd::DiagTrySendNoData);
+            Metrics::CounterInc(common::MetricsStd::DiagTrySendNoData);
             break;
         }
 
@@ -1917,6 +2155,7 @@ int BaseConnection::TrySendNewBurst(int budget) {
         PacketBuilder::DataPacketContext build_ctx = tmpl;
         build_ctx.frames = std::move(frames);
         build_ctx.include_stream_data = has_stream_data;
+
         if (probe_bypass) {
             // Narrow-bypass datagram must fit tight amp/cwnd budgets — no
             // 1200 B minimum-size padding on this one.
@@ -1931,8 +2170,9 @@ int BaseConnection::TrySendNewBurst(int budget) {
             }
         }
         if (burst_has_challenge) {
-            LOG_DEBUG("BaseConnection::TrySendBurst: challenge in new-burst datagram (frames=%zu, min_size=%u, "
-                      "has_stream_data=%d)",
+            LOG_DEBUG(
+                "BaseConnection::TrySendBurst: challenge in new-burst datagram (frames=%zu, min_size=%u, "
+                "has_stream_data=%d)",
                 build_ctx.frames.size(), build_ctx.min_size, has_stream_data ? 1 : 0);
         }
 
@@ -1992,14 +2232,20 @@ int BaseConnection::TrySendNewBurst(int budget) {
         // normal path, so no iteration can leak an open bracket.
         auto scope = emitter_->Open();
 
-        uint64_t t_build_start = common::Metrics::NowUs();
+        uint64_t t_build_start = Metrics::NowUs();
         auto result = packet_builder_->BuildDataPacket(
             build_ctx, buffer, send_manager_.GetPacketNumber(), send_manager_.GetSendControl());
         {
-            uint64_t t_build_end = common::Metrics::NowUs();
+            uint64_t t_build_end = Metrics::NowUs();
             if (t_build_end > t_build_start) {
-                common::Metrics::HistogramObserve(common::MetricsStd::DiagBuildLatencyUs, t_build_end - t_build_start);
+                Metrics::HistogramObserve(common::MetricsStd::DiagBuildLatencyUs, t_build_end - t_build_start);
             }
+        }
+
+        if (result.success && build_ctx.level == kInitial) {
+            // Datagram carries an Initial packet → it must reach the §14.1 floor.
+            // Topped up by the emitter against the measured size at commit.
+            emitter_->MarkDatagramCarriesInitial();
         }
 
         if (!result.success) {
@@ -2012,7 +2258,7 @@ int BaseConnection::TrySendNewBurst(int budget) {
             if (has_stream_data && !fc_blocked_with_data) {
                 send_manager_.SetFlowControlBlocked();
             }
-            common::Metrics::CounterInc(common::MetricsStd::DiagTrySendBuildFail);
+            Metrics::CounterInc(common::MetricsStd::DiagTrySendBuildFail);
             // qlog draft-03: Scope's destructor discards the bracket opened
             // above so a subsequent packet doesn't inherit a stale (empty) id.
             break;
@@ -2029,17 +2275,17 @@ int BaseConnection::TrySendNewBurst(int budget) {
         }
 
         // 4h. Send (or enqueue into the worker batch sink).
-        uint64_t t_send_start = common::Metrics::NowUs();
+        uint64_t t_send_start = Metrics::NowUs();
         bool send_success = scope.Commit(buffer);
         {
-            uint64_t t_send_end = common::Metrics::NowUs();
+            uint64_t t_send_end = Metrics::NowUs();
             if (t_send_end > t_send_start) {
-                common::Metrics::HistogramObserve(common::MetricsStd::DiagSendLatencyUs, t_send_end - t_send_start);
+                Metrics::HistogramObserve(common::MetricsStd::DiagSendLatencyUs, t_send_end - t_send_start);
             }
         }
 
         if (send_success) {
-            common::Metrics::HistogramObserve(common::MetricsStd::DiagPktPayloadHist, buffer->GetDataLength());
+            Metrics::HistogramObserve(common::MetricsStd::DiagPktPayloadHist, buffer->GetDataLength());
         }
         if (burst_has_challenge) {
             LOG_DEBUG("BaseConnection::TrySendBurst: challenge datagram send result=%d, pn=%llu, size=%u",
@@ -2171,6 +2417,9 @@ int BaseConnection::TryCoalescedInitialHandshake() {
         // Scope's destructor discards the empty datagram bracket.
         return 0;
     }
+    // This datagram carries an Initial packet, so it has to reach the §14.1
+    // floor. The emitter tops it up against the measured size when it ships.
+    emitter_->MarkDatagramCarriesInitial();
     const uint32_t initial_size = init_result.packet_size;
     LOG_DEBUG("BaseConnection::TryCoalescedInitialHandshake: built Initial pn=%llu size=%u", init_result.packet_number,
         initial_size);
@@ -2260,7 +2509,7 @@ int BaseConnection::TryCoalescedInitialHandshake() {
         // detected as lost via the normal PTO path. Nothing more to do.
         return 0;
     }
-    common::Metrics::HistogramObserve(common::MetricsStd::DiagPktPayloadHist, buffer->GetDataLength());
+    Metrics::HistogramObserve(common::MetricsStd::DiagPktPayloadHist, buffer->GetDataLength());
     return 2;
 }
 
@@ -2329,6 +2578,11 @@ bool BaseConnection::SendImmediateAck(PacketNumberSpace ns) {
         buffer, send_manager_.GetPacketNumber(), send_manager_.GetSendControl(), connection_crypto_.GetVersion(),
         connection_crypto_.GetCurrentKeyPhase());
 
+    if (result.success && target_level == kInitial) {
+        // An Initial-level ACK still forms a datagram carrying an Initial packet.
+        emitter_->MarkDatagramCarriesInitial();
+    }
+
     if (!result.success) {
         LOG_ERROR("BaseConnection::SendImmediateAck: failed to build packet: %s", result.error_message.c_str());
         // Scope's destructor discards the empty datagram bracket.
@@ -2340,7 +2594,38 @@ bool BaseConnection::SendImmediateAck(PacketNumberSpace ns) {
 
     // 5. Send immediately: bypass the batch sink so the ACK does not wait for
     // the end-of-round sendmmsg flush.
-    return scope.Commit(buffer, /*bypass_batch=*/true);
+    bool sent = scope.Commit(buffer, /*bypass_batch=*/true);
+
+    // 6. Loss-resilience duplicate for 1-RTT ACKs.
+    //
+    // Measured on handshakeloss (30% drop each way) against quinn: the client
+    // loses its HTTP request, then probes with PING instead of retransmitting
+    // the request data. The ACK we send back is the *only* thing that tells it
+    // the request is gone (its largest_acked falls behind), so if that single
+    // 35-byte ACK is dropped too, the request is never retransmitted and the
+    // connection ends in `connection lost` with a 0-byte download. With 30%
+    // loss, one copy arrives only ~70% of the time; two copies raise that to
+    // ~91%. RFC 9002 §6.2.4 already permits sending two probes per PTO, so
+    // the duplicate is protocol-legal. It is limited to the application space
+    // (handshake ACKs are coalesced with CRYPTO and are already robust), and
+    // the cost is one 35-byte datagram per immediate 1-RTT ACK.
+    if (sent && ns == kApplicationNumberSpace) {
+        auto dup_chunk =
+            std::make_shared<common::BufferChunk>(quic::GlobalResource::Instance().GetThreadLocalBlockPool());
+        if (!dup_chunk || !dup_chunk->Valid()) {
+            return sent;
+        }
+        auto dup_buffer = std::make_shared<common::SingleBlockBuffer>(dup_chunk);
+        auto dup_scope = emitter_->Open();
+        auto dup_result = packet_builder_->BuildAckPacket(target_level, cryptographer, ack_frame,
+            cid_coordinator_->GetLocalConnectionIDManager().get(),
+            cid_coordinator_->GetRemoteConnectionIDManager().get(), dup_buffer, send_manager_.GetPacketNumber(),
+            send_manager_.GetSendControl(), connection_crypto_.GetVersion(), connection_crypto_.GetCurrentKeyPhase());
+        if (dup_result.success) {
+            dup_scope.Commit(dup_buffer, /*bypass_batch=*/true);
+        }
+    }
+    return sent;
 }
 
 bool BaseConnection::SendImmediateProbe(const std::shared_ptr<IFrame>& frame) {

@@ -1,7 +1,9 @@
-#include "quic/congestion_control/normal_pacer.h"
 #include <quicx/common/metrics.h>
-#include <quicx/common/metrics_std.h>
+
+#include "common/metrics/metrics_std.h"
 #include "common/util/time.h"
+
+#include "quic/congestion_control/normal_pacer.h"
 
 namespace quicx {
 namespace quic {
@@ -41,7 +43,7 @@ uint64_t NormalPacer::TimeUntilSend() const {
     uint64_t delay_ms = next_send_time_ms_ - now_ms;
 
     // Metrics: Record pacing delay in microseconds
-    common::Metrics::GaugeSet(common::MetricsStd::PacingDelayUs, delay_ms * 1000);
+    Metrics::GaugeSet(common::MetricsStd::PacingDelayUs, delay_ms * 1000);
 
     return delay_ms;
 }

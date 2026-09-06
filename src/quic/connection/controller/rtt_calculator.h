@@ -4,21 +4,10 @@
 #include <atomic>
 #include <cstdint>
 
+#include "quic/config.h"
+
 namespace quicx {
 namespace quic {
-
-// Built-in default initial RTT (milliseconds).
-//
-// RFC 9002 §6.2.2 recommends 333 ms; we use 250 ms which is aggressive-but-safe
-// for typical Internet RTTs and keeps our initial PTO
-// (= SRTT + 4·RTTVAR + max_ack_delay = 250 + 500 + 25 = 775 ms) within the
-// same order of magnitude as the RFC baseline (~1.1 s).
-//
-// Do **not** hard-code this value at callers — always go through
-// GetDefaultInitialRtt(), which honours the process-level override installed
-// by SetDefaultInitialRtt(). This is the P3 knob from
-// docs/internal/perf_e2e_analysis.md §6.
-static constexpr uint32_t kInitRttDefaultMs = 250;
 
 // Returns the process-wide initial RTT in milliseconds. Used by RttCalculator
 // on construction / Reset() to seed smoothed_rtt_ before any RTT sample is
@@ -44,7 +33,7 @@ public:
 
     void Reset();
 
-    uint32_t GetPT0Interval(uint32_t max_ack_delay);
+    uint32_t GetPTOInterval(uint32_t max_ack_delay);
 
     uint32_t GetLatestRtt() { return latest_rtt_.load(std::memory_order_relaxed); }
     uint32_t GetRttVar() { return rtt_var_.load(std::memory_order_relaxed); }
@@ -55,12 +44,14 @@ public:
     uint32_t GetPTOWithBackoff(uint32_t max_ack_delay);
     void OnPTOExpired();
     void OnPacketAcked();
-    uint32_t GetConsecutivePTOCount() const {
-        return consecutive_pto_count_.load(std::memory_order_relaxed);
-    }
+    uint32_t GetConsecutivePTOCount() const { return consecutive_pto_count_.load(std::memory_order_relaxed); }
 
-    static constexpr uint32_t kMaxPTOBackoff = 6;        // Max 2^6 = 64x backoff
-    static constexpr uint32_t kMaxConsecutivePTOs = 16;  // ~3 PTO cycles for idle timeout
+    // RFC 9000 §4.1.2: the handshake is confirmed once the peer acknowledges a
+    // packet we sent at the 1-RTT level. Until then it is unconfirmed, and the
+    // probe cadence is deliberately kept dense (see kMaxPTOBackoffUnconfirmed).
+    // Idempotent; safe to call on every ACK.
+    void SetHandshakeConfirmed() { handshake_confirmed_.store(true, std::memory_order_relaxed); }
+    bool IsHandshakeConfirmed() const { return handshake_confirmed_.load(std::memory_order_relaxed); }
 
 private:
     // All RTT/PTO state is accessed from both the ACK-processing path (worker
@@ -78,9 +69,10 @@ private:
     // RFC 9002: PTO backoff state
     std::atomic<uint32_t> pto_count_{0};              // Current backoff exponent
     std::atomic<uint32_t> consecutive_pto_count_{0};  // Count of consecutive PTOs without ACK
+    std::atomic<bool> handshake_confirmed_{false};    // Peer has ACKed a 1-RTT packet
 };
 
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_CONNECTION_CONTROLER_RTT_CALCULATOR

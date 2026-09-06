@@ -40,4 +40,4 @@ protected:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_FRAME_STREAM_FRAME_INTERFACE

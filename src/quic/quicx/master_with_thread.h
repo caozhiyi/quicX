@@ -3,9 +3,10 @@
 
 #include <future>
 
-#include <quicx/common/if_event_loop.h>
+#include "common/network/if_event_loop.h"
 #include "common/structure/thread_safe_queue.h"
 #include "common/thread/thread.h"
+
 #include "quic/quicx/master.h"
 
 namespace quicx {
@@ -29,7 +30,7 @@ public:
     // retire a connection id
     virtual void RetireConnectionID(ConnectionID& cid, const std::string& worker_id) override;
     // add listener (override to ensure socket is registered in Master thread's EventLoop)
-    virtual bool AddListener(int32_t listener_sock) override;
+    virtual bool AddListener(common::SocketHandle listener_sock) override;
     virtual bool AddListener(const std::string& ip, uint16_t port) override;
     virtual bool RemoveListener(int32_t listener_sock) override;
     // process the master
@@ -58,4 +59,4 @@ private:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_QUICX_MSG_RECEIVER_WITH_THREAD

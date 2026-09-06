@@ -1,9 +1,10 @@
-
 #ifndef QUIC_PACKET_RETRY_PACKET
 #define QUIC_PACKET_RETRY_PACKET
 
 #include <memory>
+
 #include "common/buffer/buffer_span.h"
+
 #include "quic/packet/header/long_header.h"
 #include "quic/packet/if_packet.h"
 #include "quic/packet/type.h"
@@ -52,7 +53,7 @@ private:
     uint8_t retry_integrity_tag_[kRetryIntegrityTagLength];
 };
 
-}  // namespace quic
+}  // namespace quicx
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_PACKET_RETRY_PACKET

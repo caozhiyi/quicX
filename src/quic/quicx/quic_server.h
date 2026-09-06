@@ -1,8 +1,10 @@
 #ifndef QUIC_QUICX_QUIC_SERVER
 #define QUIC_QUICX_QUIC_SERVER
 
-#include <quicx/common/if_event_loop.h>
 #include <quicx/quic/if_quic_server.h>
+
+#include "common/network/if_event_loop.h"
+
 #include "quic/quicx/master_with_thread.h"
 
 namespace quicx {
@@ -44,4 +46,4 @@ private:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_QUICX_QUIC_SERVER

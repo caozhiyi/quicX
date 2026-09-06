@@ -131,8 +131,8 @@ void ConnectionCrypto::OnTransportParams(EncryptionLevel /*level*/, const uint8_
         // partially overwritten) parameters.
         LOG_ERROR("decode remote transport failed.");
         if (handshake_error_cb_) {
-            handshake_error_cb_(static_cast<uint64_t>(QuicErrorCode::kTransportParameterError),
-                "invalid transport parameters");
+            handshake_error_cb_(
+                static_cast<uint64_t>(QuicErrorCode::kTransportParameterError), "invalid transport parameters");
         }
         return;
     }

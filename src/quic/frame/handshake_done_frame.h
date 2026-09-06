@@ -16,4 +16,4 @@ public:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_FRAME_HANDSHAKE_DONE_FRAME

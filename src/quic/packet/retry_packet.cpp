@@ -1,6 +1,8 @@
-#include "quic/packet/retry_packet.h"
 #include <cstring>
+
 #include "common/log/log.h"
+
+#include "quic/packet/retry_packet.h"
 #include "quic/packet/type.h"
 
 namespace quicx {
@@ -75,7 +77,6 @@ bool RetryPacket::DecodeWithoutCrypto(std::shared_ptr<common::IBuffer> buffer, b
     buffer->MoveReadPt(cur_pos - span.GetStart());
     return true;
 }
-
 
 void RetryPacket::SetRetryIntegrityTag(uint8_t* tag) {
     std::memcpy(retry_integrity_tag_, tag, kRetryIntegrityTagLength);

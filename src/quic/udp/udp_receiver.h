@@ -7,7 +7,8 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include <quicx/common/if_event_loop.h>
+#include "common/network/if_event_loop.h"
+
 #include "quic/udp/if_receiver.h"
 
 namespace quicx {
@@ -24,7 +25,7 @@ public:
     UdpReceiver(std::shared_ptr<common::IEventLoop> event_loop);
     ~UdpReceiver();
 
-    virtual bool AddReceiver(int32_t socket_fd, std::shared_ptr<IPacketReceiver> receiver) override;
+    virtual bool AddReceiver(common::SocketHandle sock, std::shared_ptr<IPacketReceiver> receiver) override;
     virtual bool AddReceiver(const std::string& ip, uint16_t port, std::shared_ptr<IPacketReceiver> receiver) override;
     virtual bool RemoveReceiver(int32_t socket_fd) override;
 
@@ -48,10 +49,19 @@ private:
 private:
     bool ecn_enabled_;
     std::weak_ptr<common::IEventLoop> event_loop_;  // Observer reference (owner is QuicClient/QuicServer)
-    std::unordered_map<int32_t, std::weak_ptr<IPacketReceiver>> receiver_map_;
+    // Registered entry: the receiver plus the socket handle whose family
+    // travelled from the fd's creation site (socket_handle.h convention).
+    // Storing the handle next to the receiver keeps fd -> family ownership
+    // local to the registration entry: it dies with the entry, so a
+    // closed-and-reused fd can never yield a stale family.
+    struct Registered {
+        std::weak_ptr<IPacketReceiver> receiver_;
+        common::SocketHandle sock_;
+    };
+    std::unordered_map<int32_t, Registered> receiver_map_;
     // fds that were created internally by AddReceiver(ip, port, ...); the
     // receiver owns their lifecycle and must close them on teardown. fds that
-    // were registered via AddReceiver(fd, ...) are owned by the caller and are
+    // were registered via AddReceiver(sock, ...) are owned by the caller and are
     // NOT tracked here (to avoid double-close).
     std::unordered_set<int32_t> owned_fds_;
 };
@@ -59,4 +69,4 @@ private:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_UDP_UDP_RECEIVER

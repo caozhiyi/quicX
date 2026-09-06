@@ -7,6 +7,7 @@
 #include <memory>
 #include <vector>
 
+#include "quic/config.h"
 #include "quic/connection/connection_id_manager.h"
 
 namespace quicx {
@@ -187,10 +188,6 @@ private:
     std::shared_ptr<ConnectionIDManager> local_conn_id_manager_;
     std::shared_ptr<ConnectionIDManager> remote_conn_id_manager_;
 
-    // Pool size constants
-    static constexpr size_t kMinLocalCIDPoolSize = 3;  // Keep at least 3 CIDs in pool
-    static constexpr size_t kMaxLocalCIDPoolSize = 8;  // Generate up to 8 CIDs
-
     uint64_t peer_active_cid_limit_{2};  // Default to 2 (RFC 9000)
 
     // Qlog trace for connection ID events
@@ -207,7 +204,6 @@ private:
     // Stateless reset tokens advertised by the peer. Bounded so a peer that floods
     // NEW_CONNECTION_ID frames cannot grow this without limit; the peer's own
     // active_connection_id_limit already bounds how many CIDs are useful.
-    static constexpr size_t kMaxPeerResetTokens = 32;
     std::vector<std::array<uint8_t, 16>> peer_reset_tokens_;
 };
 

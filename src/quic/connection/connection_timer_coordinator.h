@@ -6,8 +6,8 @@
 #include <memory>
 #include <unordered_map>
 
-#include <quicx/common/if_event_loop.h>
-#include <quicx/common/if_timer_scheduler.h>
+#include "common/network/if_event_loop.h"
+#include "common/timer/if_timer_scheduler.h"
 
 namespace quicx {
 
@@ -59,6 +59,22 @@ public:
      * @brief Stop idle timeout timer (called when connection closes)
      */
     void StopIdleTimer();
+
+    // RFC 9000 §4.1.2: enter the "handshake sent, not yet confirmed" window.
+    //
+    // The server has emitted HANDSHAKE_DONE but has no evidence the peer
+    // received it. Until the peer's first 1-RTT ACK arrives the connection is
+    // in its most fragile state: the peer is still retransmitting its Finished
+    // on its own (exponentially backed-off) schedule, and if our idle timeout
+    // is shorter than the peer's next retry we close the connection right
+    // before the packet that would have saved it. Widen the idle timeout to
+    // kHandshakeConfirmGraceMs for that window only.
+    void EnterHandshakeConfirmGrace();
+
+    // End the window above: the peer has acknowledged our 1-RTT packet, so the
+    // handshake is confirmed (RFC 9000 §4.1.2) and the negotiated idle timeout
+    // applies again from now on.
+    void SetHandshakeConfirmed();
 
     // ==================== Keep-Alive ====================
 
@@ -125,6 +141,12 @@ private:
     // Internal idle timeout callback
     void OnIdleTimeoutInternal();
 
+    // Effective idle timeout: the negotiated value, widened to
+    // kHandshakeConfirmGraceMs while an unconfirmed handshake is in flight.
+    // Every place that arms/rearms the idle timer must go through this so the
+    // grace window cannot be lost by a rearm.
+    uint32_t GetIdleTimeoutMs() const;
+
     // (Re-)arm the keep-alive timer on the given loop using the stored
     // callback and interval. Shared by StartKeepAliveTimer and
     // OnThreadTransferAfter.
@@ -145,7 +167,7 @@ private:
 
     // Idle timeout state. The handle is the timer: destroying or reassigning it
     // cancels, from any thread. That replaces the previous
-    //IsInLoopThread() ? RemoveTimer(task) : RunInLoop(remove by id)
+    // IsInLoopThread() ? RemoveTimer(task) : RunInLoop(remove by id)
     // dance which appeared three times in this file and lost the timer id on the
     // cross-thread path (the reinstalled task got a fresh id that died with the
     // lambda, so Stop/~TimerCoordinator could never cancel it again -- and its
@@ -153,6 +175,10 @@ private:
     ::quicx::common::Timer idle_timer_;
     IdleTimeoutCallback idle_timeout_callback_;
     bool idle_timer_active_{false};
+
+    // Unconfirmed-handshake idle grace window (see EnterHandshakeConfirmGrace).
+    bool handshake_confirm_grace_{false};
+    bool handshake_confirmed_{false};
 
     // Keep-alive state. Same lifetime rules as the idle timer above, plus the
     // callback/interval needed to re-arm after a thread transfer.

@@ -17,5 +17,5 @@ RemoteTransportParamSnapshot RemoteTransportParamSnapshot::From(const TransportP
     return snapshot;
 }
 
-}  // namespace quic
+}  // namespace quicx
 }  // namespace quicx

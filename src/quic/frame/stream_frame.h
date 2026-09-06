@@ -3,8 +3,10 @@
 
 #include <cstdint>
 #include <memory>
+
 #include "common/buffer/if_buffer.h"
 #include "common/buffer/shared_buffer_span.h"
+
 #include "quic/frame/if_stream_frame.h"
 
 namespace quicx {
@@ -52,7 +54,7 @@ private:
     common::SharedBufferSpan data_;  // the bytes from the designated stream to be delivered.
 };
 
-}  // namespace quic
+}  // namespace quicx
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_FRAME_STREAM_FRAME

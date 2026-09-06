@@ -2,6 +2,7 @@
 #define QUIC_FRAME_RETIRE_CONNECTION_ID_FRAME
 
 #include <cstdint>
+
 #include "quic/frame/if_frame.h"
 
 namespace quicx {
@@ -26,4 +27,4 @@ private:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_FRAME_RETIRE_CONNECTION_ID_FRAME

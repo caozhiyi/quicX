@@ -2,8 +2,10 @@
 #define QUIC_STREAM_IF_FRAME_VISITOR
 
 #include <vector>
+
 #include "common/buffer/if_buffer.h"
-#include "quic/connection/controler/send_control.h"
+
+#include "quic/connection/controller/send_control.h"
 #include "quic/frame/if_frame.h"
 
 namespace quicx {
@@ -55,4 +57,4 @@ public:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_STREAM_IF_FRAME_VISITOR

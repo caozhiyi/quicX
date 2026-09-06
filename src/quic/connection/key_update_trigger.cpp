@@ -1,6 +1,7 @@
-#include "quic/connection/key_update_trigger.h"
 #include "common/log/log.h"
+
 #include "quic/config.h"
+#include "quic/connection/key_update_trigger.h"
 
 namespace quicx {
 namespace quic {

@@ -5,6 +5,8 @@
 #include <map>
 
 #include "common/buffer/multi_block_buffer.h"
+
+#include "quic/config.h"
 #include "quic/crypto/tls/type.h"
 #include "quic/stream/if_stream.h"
 
@@ -59,14 +61,6 @@ public:
     // offset + length must not exceed 2^62-1.
     static constexpr uint64_t kMaxCryptoOffset = (1ULL << 62) - 1;
 
-    // RFC 9000 §7.5: "an endpoint MAY discard the data or [...] generate a
-    // CRYPTO_BUFFER_EXCEEDED connection error". Initial keys are derived from a
-    // publicly known DCID, so anyone (including a spoofed source address) can inject
-    // CRYPTO frames before the handshake completes. Without a cap, a stream of frames
-    // at scattered high offsets grows this buffer without bound.
-    static constexpr uint64_t kMaxOutOrderBytes = 64 * 1024;
-    static constexpr size_t kMaxOutOrderFrames = 512;
-
 protected:
     void OnCryptoFrame(std::shared_ptr<IFrame> frame);
 
@@ -98,4 +92,4 @@ private:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_STREAM_CRYPTO_STREAM

@@ -1,9 +1,11 @@
 #include <cstdlib>
 #include <cstring>
+
 #include <openssl/rand.h>
 #include <openssl/siphash.h>
 
 #include "common/log/log.h"
+
 #include "quic/connection/connection_id_generator.h"
 
 namespace quicx {

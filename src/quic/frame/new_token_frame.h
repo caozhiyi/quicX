@@ -2,6 +2,7 @@
 #define QUIC_FRAME_NEW_TOKEN_FRAME
 
 #include <cstdint>
+
 #include "quic/frame/if_frame.h"
 
 namespace quicx {
@@ -35,7 +36,7 @@ private:
     uint8_t* token_;
 };
 
-}  // namespace quic
+}  // namespace quicx
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_FRAME_NEW_TOKEN_FRAME

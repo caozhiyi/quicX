@@ -8,8 +8,10 @@
 
 #include "common/buffer/if_buffer.h"
 #include "common/network/address.h"
+#include "common/network/socket_handle.h"
 #include "common/qlog/qlog_trace.h"
-#include "quic/connection/controler/send_control.h"
+
+#include "quic/connection/controller/send_control.h"
 #include "quic/udp/if_sender.h"
 #include "quic/udp/net_packet.h"
 
@@ -74,8 +76,19 @@ public:
      */
     using AmpBudgetCheck = std::function<bool(uint32_t datagram_bytes)>;
 
-    DatagramEmitter(SendControl& send_control, AddressProvider addr_provider,
-        std::shared_ptr<common::QlogTrace> qlog_trace);
+    /**
+     * @brief Read-only companion to AmpBudgetCheck: "would |bytes| fit?".
+     *
+     * AmpBudgetCheck debits (it is TryCharge), so it cannot be used to size an
+     * outgoing datagram — asking twice would charge twice. This one only
+     * answers the question, and must therefore never debit. It exists so the
+     * §14.1 padding below can decide whether padding to the floor is even
+     * affordable before the bytes are written.
+     */
+    using AmpBudgetQuery = std::function<bool(uint32_t datagram_bytes)>;
+
+    DatagramEmitter(
+        SendControl& send_control, AddressProvider addr_provider, std::shared_ptr<common::QlogTrace> qlog_trace);
 
     ~DatagramEmitter() = default;
 
@@ -114,7 +127,8 @@ public:
 
     private:
         friend class DatagramEmitter;
-        explicit Scope(DatagramEmitter* owner): owner_(owner) {}
+        explicit Scope(DatagramEmitter* owner):
+            owner_(owner) {}
 
         DatagramEmitter* owner_{nullptr};
         bool committed_{false};
@@ -133,6 +147,22 @@ public:
     void SetAmpBudgetCheck(AmpBudgetCheck cb) { amp_budget_check_ = std::move(cb); }
 
     /**
+     * @brief Install the read-only budget probe used to size the §14.1 padding.
+     * Absent probe == assume the budget allows it.
+     */
+    void SetAmpBudgetQuery(AmpBudgetQuery cb) { amp_budget_query_ = std::move(cb); }
+
+    /**
+     * @brief Mark the datagram being built as carrying an Initial packet.
+     *
+     * Such a datagram must reach the RFC 9000 §14.1 floor of 1200 B before it
+     * is shipped. The padding is applied in Emit(), against the datagram's
+     * measured size, rather than being predicted while the packet is built.
+     * Cleared by Open() and after every Emit().
+     */
+    void MarkDatagramCarriesInitial() { datagram_carries_initial_ = true; }
+
+    /**
      * @brief Install the qlog trace. Traces are created after the connection is
      *        constructed (once the ODCID is known), hence the setter.
      */
@@ -148,34 +178,35 @@ public:
 
     // ==================== socket ownership ====================
 
-    // Called from the worker on every received datagram to keep the egress fd
-    // in sync with the local socket the packet arrived on. During an in-progress
-    // migration the probe socket is the preferred egress fd (GetActiveSocket()
-    // prefers probe_sockfd_ while non-zero), so a PATH_RESPONSE that arrives on
-    // the probe socket must NOT clobber the primary sockfd_: doing so makes
-    // SwitchToProbeSocket() retire the *new* socket instead of the *old* one,
-    // leaving every subsequent send to fail with EBADF.
-    void SetSocket(int32_t fd) {
-        if (probe_sockfd_ > 0 && fd == probe_sockfd_) {
+    // Called from the worker on every received datagram to keep the egress
+    // socket in sync with the local socket the packet arrived on. During an
+    // in-progress migration the probe socket is the preferred egress socket
+    // (GetActiveSocket() prefers probe_sock_ while non-zero), so a
+    // PATH_RESPONSE that arrives on the probe socket must NOT clobber the
+    // primary sock_: doing so makes SwitchToProbeSocket() retire the *new*
+    // socket instead of the *old* one, leaving every subsequent send to fail
+    // with EBADF.
+    void SetSocket(common::SocketHandle sock) {
+        if (probe_sock_.fd > 0 && sock.fd == probe_sock_.fd) {
             return;
         }
-        sockfd_ = fd;
+        sock_ = sock;
     }
 
     /**
      * @brief Install the migration probe socket (preferred while non-zero).
      */
-    void SetProbeSocket(int32_t fd) { probe_sockfd_ = fd; }
+    void SetProbeSocket(common::SocketHandle sock) { probe_sock_ = sock; }
 
-    int32_t GetProbeSocket() const { return probe_sockfd_; }
+    common::SocketHandle GetProbeSocket() const { return probe_sock_; }
 
     /**
      * @brief Promote the probe socket to primary (migration succeeded).
      *
-     * @return The retired primary fd. The caller owns it and must unregister
-     *         and close it — this class never closes sockets.
+     * @return The retired primary socket. The caller owns it and must
+     *         unregister and close its fd — this class never closes sockets.
      */
-    [[nodiscard]] int32_t SwitchToProbeSocket();
+    [[nodiscard]] common::SocketHandle SwitchToProbeSocket();
 
     /**
      * @brief Abandon the probe socket (migration failed).
@@ -183,13 +214,13 @@ public:
      * The caller is responsible for unregistering and closing the fd it
      * obtained from GetProbeSocket() beforehand.
      */
-    void ClearProbeSocket() { probe_sockfd_ = 0; }
+    void ClearProbeSocket() { probe_sock_ = common::SocketHandle(0, 0); }
 
     /**
-     * @brief The fd outbound datagrams go out on. Sole implementation of the
-     *        "prefer probe socket while migrating" rule.
+     * @brief The socket outbound datagrams go out on. Sole implementation of
+     *        the "prefer probe socket while migrating" rule.
      */
-    int32_t GetActiveSocket() const { return (probe_sockfd_ > 0) ? probe_sockfd_ : sockfd_; }
+    common::SocketHandle GetActiveSocket() const { return (probe_sock_.fd > 0) ? probe_sock_ : sock_; }
 
     // ==================== test seams ====================
 
@@ -210,12 +241,20 @@ private:
     AddressProvider addr_provider_;
     std::shared_ptr<common::QlogTrace> qlog_trace_;
     AmpBudgetCheck amp_budget_check_;
+    AmpBudgetQuery amp_budget_query_;
+
+    // Set by the packet-building paths when the datagram being assembled carries
+    // an Initial packet; consumed (and cleared) by Emit(). See
+    // MarkDatagramCarriesInitial().
+    bool datagram_carries_initial_{false};
 
     std::shared_ptr<ISender> sender_;
     std::vector<std::shared_ptr<NetPacket>>* send_sink_{nullptr};
 
-    int32_t sockfd_{0};
-    int32_t probe_sockfd_{0};
+    // fd + family: the family travels with the fd so the send path never
+    // re-derives it from the kernel. fd == 0 means "no socket installed yet".
+    common::SocketHandle sock_;
+    common::SocketHandle probe_sock_;
 
     // The id 0 is reserved for "no datagram open"; first real id is 1.
     uint64_t next_datagram_id_{1};
@@ -224,4 +263,4 @@ private:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_CONNECTION_DATAGRAM_EMITTER

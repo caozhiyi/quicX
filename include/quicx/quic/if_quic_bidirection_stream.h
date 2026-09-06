@@ -63,4 +63,4 @@ public:
 
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_INCLUDE_IF_QUIC_BIDRECTION_STREAM

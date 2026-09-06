@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "common/log/log.h"
+
 #include "quic/connection/connection_crypto.h"
 #include "quic/connection/transport_param.h"
 #include "quic/connection/version_context.h"
@@ -150,9 +151,7 @@ public:
     /**
      * @brief True if |pkt_version| differs from what we currently speak.
      */
-    bool DiffersFromCurrent(uint32_t pkt_version) const {
-        return pkt_version != 0 && pkt_version != ctx_.quic_version;
-    }
+    bool DiffersFromCurrent(uint32_t pkt_version) const { return pkt_version != 0 && pkt_version != ctx_.quic_version; }
 
     // ==================== Protocol handlers ====================
 
@@ -201,7 +200,7 @@ private:
     std::shared_ptr<common::QlogTrace> qlog_trace_;
 };
 
-}  // namespace quic
+}  // namespace quicx
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_CONNECTION_VERSION_NEGOTIATOR

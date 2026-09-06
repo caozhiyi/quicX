@@ -1,20 +1,20 @@
-#include "quic/connection/packet_builder.h"
-
 #include <algorithm>
 #include <cstdio>
 
 #include "common/buffer/single_block_buffer.h"
 #include "common/log/log.h"
+#include "common/metrics/metrics_std.h"
+#include "common/util/hex.h"
 #include "common/util/time.h"
 #include "quicx/common/metrics.h"
-#include "quicx/common/metrics_std.h"
 
 #include "quic/common/constants.h"
 #include "quic/common/version.h"
 #include "quic/config.h"
 #include "quic/connection/connection_id_manager.h"
 #include "quic/connection/connection_stream_manager.h"
-#include "quic/connection/controler/send_control.h"
+#include "quic/connection/controller/send_control.h"
+#include "quic/connection/packet_builder.h"
 #include "quic/connection/util.h"
 #include "quic/frame/padding_frame.h"
 #include "quic/packet/handshake_packet.h"
@@ -183,7 +183,7 @@ PacketBuilder::BuildResult PacketBuilder::BuildDataPacket(const DataPacketContex
     //   t1 -> t2 : packet object create + header setup + payload bind   (build_phase_setup_us)
     //   t2 -> t3 : packet->Encode (AEAD seal + header protection)        (build_phase_encode_us)
     //   t3 -> t4 : send_control bookkeeping (OnPacketSend + result fill) (build_phase_record_us)
-    const uint64_t t0 = common::Metrics::NowUs();
+    const uint64_t t0 = Metrics::NowUs();
 
     // 1. Validate required parameters
     if (!ctx.cryptographer) {
@@ -370,7 +370,7 @@ PacketBuilder::BuildResult PacketBuilder::BuildDataPacket(const DataPacketContex
     }
 
     // 7. Create packet object
-    const uint64_t t1 = common::Metrics::NowUs();
+    const uint64_t t1 = Metrics::NowUs();
     auto packet = CreatePacketByLevel(ctx.level);
     if (!packet) {
         result.error_message = "failed to create packet for level=" + std::to_string(ctx.level);
@@ -439,24 +439,21 @@ PacketBuilder::BuildResult PacketBuilder::BuildDataPacket(const DataPacketContex
 #ifdef QUICX_DIAG_RTX
     {
         auto pl = payload_buffer->GetSharedReadableSpan();
-        char head[64] = {0};
         uint32_t dump_len = pl.GetLength() < 16 ? pl.GetLength() : 16;
-        for (uint32_t i = 0; i < dump_len; ++i) {
-            std::snprintf(head + i * 3, sizeof(head) - i * 3, "%02x ", pl.GetStart()[i]);
-        }
         LOG_INFO("[DIAG-RTX] first-send pn=%llu level=%d payload_len=%u chunk=%p head=%s", (unsigned long long)pn,
-            ctx.level, pl.GetLength(), (void*)pl.GetChunk().get(), head);
+            ctx.level, pl.GetLength(), (void*)pl.GetChunk().get(),
+            common::BytesToHex(pl.GetStart(), dump_len, ' ').c_str());
     }
 #endif
 
     // 14. Encode packet to output buffer
-    const uint64_t t2 = common::Metrics::NowUs();
+    const uint64_t t2 = Metrics::NowUs();
     if (!packet->Encode(output_buffer)) {
         result.error_message = "failed to encode packet";
         LOG_ERROR("PacketBuilder::BuildDataPacket: %s", result.error_message.c_str());
         return result;
     }
-    const uint64_t t3 = common::Metrics::NowUs();
+    const uint64_t t3 = Metrics::NowUs();
 
     uint32_t encoded_size = output_buffer->GetDataLength() - pre_size;
     LOG_DEBUG("PacketBuilder::BuildDataPacket: encoded packet size=%u bytes (pre=%u, total=%u)", encoded_size, pre_size,
@@ -480,11 +477,11 @@ PacketBuilder::BuildResult PacketBuilder::BuildDataPacket(const DataPacketContex
     // sample counts stay consistent across phases (a missing observation in
     // one phase would make ratio reasoning unreliable). NowUs() is monotonic
     // steady_clock so we don't have to guard against backward jumps.
-    const uint64_t t4 = common::Metrics::NowUs();
-    common::Metrics::HistogramObserve(common::MetricsStd::DiagBuildPhaseFramesUs, t1 - t0);
-    common::Metrics::HistogramObserve(common::MetricsStd::DiagBuildPhaseSetupUs, t2 - t1);
-    common::Metrics::HistogramObserve(common::MetricsStd::DiagBuildPhaseEncodeUs, t3 - t2);
-    common::Metrics::HistogramObserve(common::MetricsStd::DiagBuildPhaseRecordUs, t4 - t3);
+    const uint64_t t4 = Metrics::NowUs();
+    Metrics::HistogramObserve(common::MetricsStd::DiagBuildPhaseFramesUs, t1 - t0);
+    Metrics::HistogramObserve(common::MetricsStd::DiagBuildPhaseSetupUs, t2 - t1);
+    Metrics::HistogramObserve(common::MetricsStd::DiagBuildPhaseEncodeUs, t3 - t2);
+    Metrics::HistogramObserve(common::MetricsStd::DiagBuildPhaseRecordUs, t4 - t3);
 
     return result;
 }

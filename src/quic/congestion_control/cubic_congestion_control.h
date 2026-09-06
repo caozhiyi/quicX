@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <memory>
 
+#include "quic/congestion_control/cc_config.h"
 #include "quic/congestion_control/if_congestion_control.h"
 #include "quic/congestion_control/if_pacer.h"
 
@@ -26,6 +27,11 @@ public:
 
     uint64_t GetCongestionWindow() const override { return cwnd_bytes_; }
     uint64_t GetBytesInFlight() const override { return bytes_in_flight_; }
+    // RFC 9002 §7: bytes discarded with a packet number space leave
+    // bytes_in_flight without being declared lost.
+    void OnPacketsDiscarded(uint64_t discarded_bytes) override {
+        bytes_in_flight_ = (bytes_in_flight_ > discarded_bytes) ? bytes_in_flight_ - discarded_bytes : 0;
+    }
     uint64_t GetPacingRateBytesPerSec() const override;
     uint64_t NextSendTime(uint64_t now) const override;
 
@@ -43,16 +49,6 @@ private:
     // HyStart helpers
     void ResetHyStart();
     bool CheckHyStartExit(uint64_t latest_rtt, uint64_t now);
-
-    // Constants for CUBIC (in packets domain)
-    static constexpr double kCubicC = 0.4;     // cubic scaling constant
-    static constexpr double kBetaCubic = 0.7;  // multiplicative decrease factor
-
-    // HyStart constants
-    static constexpr double kHyStartLowWindow = 16.0;      // Low cwnd threshold (in packets)
-    static constexpr uint32_t kHyStartMinSamples = 8;      // Min RTT samples needed
-    static constexpr uint32_t kHyStartRttThreshUs = 4000;  // 4ms RTT increase threshold
-    static constexpr uint32_t kHyStartAckDeltaUs = 2000;   // 2ms ACK train threshold
 
     // Config
     CcConfigV2 cfg_{};
@@ -93,7 +89,7 @@ private:
     std::shared_ptr<common::QlogTrace> qlog_trace_;
 };
 
-}  // namespace quic
+}  // namespace quicx
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_CONGESTION_CONTROL_CUBIC_CONGESTION_CONTROL

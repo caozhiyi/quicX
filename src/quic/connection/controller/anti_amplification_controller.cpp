@@ -1,6 +1,6 @@
-#include "quic/connection/controler/anti_amplification_controller.h"
-
 #include "common/log/log.h"
+
+#include "quic/connection/controller/anti_amplification_controller.h"
 
 namespace quicx {
 namespace quic {
@@ -70,8 +70,7 @@ bool AntiAmplificationController::TryCharge(uint64_t bytes) {
         if (bytes > limit || cur > limit - bytes) {
             return false;  // would exceed the 3x amplification budget
         }
-        if (sent_bytes_.compare_exchange_weak(
-                cur, cur + bytes, std::memory_order_acq_rel, std::memory_order_relaxed)) {
+        if (sent_bytes_.compare_exchange_weak(cur, cur + bytes, std::memory_order_acq_rel, std::memory_order_relaxed)) {
             return true;
         }
         // cur refreshed by CAS failure; retry with the latest value.
@@ -120,8 +119,7 @@ uint64_t AntiAmplificationController::GetRemainingBudget() const {
 
 bool AntiAmplificationController::IsNearLimit() const {
     // If validated or no data received, not near limit
-    if (!is_unvalidated_.load(std::memory_order_acquire) ||
-        received_bytes_.load(std::memory_order_relaxed) == 0) {
+    if (!is_unvalidated_.load(std::memory_order_acquire) || received_bytes_.load(std::memory_order_relaxed) == 0) {
         return false;
     }
 

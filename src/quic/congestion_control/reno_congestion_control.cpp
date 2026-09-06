@@ -1,8 +1,8 @@
 #include <algorithm>
-
 #include <quicx/common/metrics.h>
-#include <quicx/common/metrics_std.h>
+
 #include "common/log/log.h"
+#include "common/metrics/metrics_std.h"
 #include "common/qlog/qlog.h"
 
 #include "quic/congestion_control/normal_pacer.h"
@@ -44,7 +44,7 @@ void RenoCongestionControl::OnPacketSent(const SentPacketEvent& ev) {
         ev.bytes, old_bytes_in_flight, bytes_in_flight_, cwnd_bytes_);
 
     // Metrics: Bytes in flight
-    common::Metrics::GaugeSet(common::MetricsStd::BytesInFlight, bytes_in_flight_);
+    Metrics::GaugeSet(common::MetricsStd::BytesInFlight, bytes_in_flight_);
 
     if (pacer_) {
         pacer_->OnPacketSent(ev.sent_time / 1000, static_cast<size_t>(ev.bytes));
@@ -58,7 +58,7 @@ void RenoCongestionControl::OnPacketAcked(const AckEvent& ev) {
     bytes_in_flight_ = (bytes_in_flight_ > ev.bytes_acked) ? bytes_in_flight_ - ev.bytes_acked : 0;
 
     // Metrics: Bytes in flight
-    common::Metrics::GaugeSet(common::MetricsStd::BytesInFlight, bytes_in_flight_);
+    Metrics::GaugeSet(common::MetricsStd::BytesInFlight, bytes_in_flight_);
 
     LOG_DEBUG("RenoCongestionControl::OnPacketAcked: pn=%llu, bytes_acked=%llu, bytes_in_flight: %llu->%llu, cwnd=%llu",
         ev.pn, ev.bytes_acked, old_bytes_in_flight, bytes_in_flight_, cwnd_bytes_);
@@ -103,7 +103,7 @@ void RenoCongestionControl::OnPacketLost(const LossEvent& ev) {
     bytes_in_flight_ = (bytes_in_flight_ > ev.bytes_lost) ? bytes_in_flight_ - ev.bytes_lost : 0;
 
     // Metrics: Bytes in flight
-    common::Metrics::GaugeSet(common::MetricsStd::BytesInFlight, bytes_in_flight_);
+    Metrics::GaugeSet(common::MetricsStd::BytesInFlight, bytes_in_flight_);
 
     LOG_WARN("RenoCongestionControl::OnPacketLost: pn=%llu, bytes_lost=%llu, bytes_in_flight: %llu->%llu, cwnd=%llu",
         ev.pn, ev.bytes_lost, old_bytes_in_flight, bytes_in_flight_, cwnd_bytes_);
@@ -176,7 +176,7 @@ void RenoCongestionControl::IncreaseOnAck(uint64_t bytes_acked) {
     cwnd_bytes_ = std::min<uint64_t>(cwnd_bytes_, cfg_.max_cwnd_bytes);
 
     // Metrics: Congestion window updated
-    common::Metrics::GaugeSet(common::MetricsStd::CongestionWindowBytes, cwnd_bytes_);
+    Metrics::GaugeSet(common::MetricsStd::CongestionWindowBytes, cwnd_bytes_);
 }
 
 void RenoCongestionControl::EnterRecovery(uint64_t now) {
@@ -206,12 +206,12 @@ void RenoCongestionControl::EnterRecovery(uint64_t now) {
         old_cwnd, cwnd_bytes_, old_ssthresh, ssthresh_bytes_, bytes_in_flight_);
 
     // Metrics: Congestion event
-    common::Metrics::CounterInc(common::MetricsStd::CongestionEventsTotal);
-    common::Metrics::GaugeSet(common::MetricsStd::CongestionWindowBytes, cwnd_bytes_);
+    Metrics::CounterInc(common::MetricsStd::CongestionEventsTotal);
+    Metrics::GaugeSet(common::MetricsStd::CongestionWindowBytes, cwnd_bytes_);
 
     // Metrics: Slow start exit
     if (old_cwnd != cwnd_bytes_ && in_slow_start_ != (cwnd_bytes_ < ssthresh_bytes_)) {
-        common::Metrics::CounterInc(common::MetricsStd::SlowStartExits);
+        Metrics::CounterInc(common::MetricsStd::SlowStartExits);
     }
 }
 
@@ -223,7 +223,7 @@ void RenoCongestionControl::UpdatePacingRate() {
     pacer_->OnPacingRateUpdated(pacing_rate);
 
     // Metrics: Pacing rate (already in bytes/sec)
-    common::Metrics::GaugeSet(common::MetricsStd::PacingRateBytesPerSec, pacing_rate);
+    Metrics::GaugeSet(common::MetricsStd::PacingRateBytesPerSec, pacing_rate);
 }
 
 void RenoCongestionControl::SetQlogTrace(std::shared_ptr<common::QlogTrace> trace) {

@@ -1,10 +1,12 @@
 #ifndef QUIC_UDP_POOL_PACKET_ALLOCATOR
 #define QUIC_UDP_POOL_PACKET_ALLOCATOR
 
+
 #include <memory>
 
 #include "common/allocator/pool_block.h"
 #include "common/structure/thread_safe_queue.h"
+
 #include "quic/udp/normal_packet_allocator.h"
 
 namespace quicx {
@@ -13,8 +15,7 @@ namespace quic {
 /*
  pool packet allocator, alloc packet from pool memory
 */
-class PoolPacketAllocator: public NormalPacketAllocator,
-                           public std::enable_shared_from_this<PoolPacketAllocator> {
+class PoolPacketAllocator: public NormalPacketAllocator, public std::enable_shared_from_this<PoolPacketAllocator> {
 public:
     PoolPacketAllocator();
     virtual ~PoolPacketAllocator();
@@ -32,4 +33,4 @@ private:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_UDP_POOL_PACKET_ALLOCATOR

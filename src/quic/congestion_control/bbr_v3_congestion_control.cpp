@@ -1,10 +1,10 @@
 #include <algorithm>
 
 #include "common/qlog/qlog.h"
+
 #include "quic/congestion_control/bbr_v3_congestion_control.h"
 #include "quic/congestion_control/normal_pacer.h"
 #include "quic/congestion_control/util.h"
-
 // References for BBRv3 (teaching subset):
 //   [BBRv3-Draft]  draft-cardwell-iccrg-bbr-congestion-control-02 §4.2,
 //                  evolved by the Google BBR-dev list and IETF 113-115

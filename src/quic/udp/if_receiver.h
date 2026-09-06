@@ -4,7 +4,8 @@
 #include <cstdint>
 #include <string>
 
-#include <quicx/common/if_event_loop.h>
+#include "common/network/if_event_loop.h"
+
 #include "quic/udp/net_packet.h"
 
 namespace quicx {
@@ -26,7 +27,10 @@ public:
     IReceiver() {}
     virtual ~IReceiver() {}
 
-    virtual bool AddReceiver(int32_t socket_fd, std::shared_ptr<IPacketReceiver> receiver) = 0;
+    // Register an externally-owned socket. The handle's family must come from
+    // the fd's creation site (see common/network/socket_handle.h); passing 0
+    // forces a one-time ResolveSocketFamily probe at registration.
+    virtual bool AddReceiver(common::SocketHandle sock, std::shared_ptr<IPacketReceiver> receiver) = 0;
 
     // add a receiver, return the socket fd
     virtual bool AddReceiver(const std::string& ip, uint16_t port, std::shared_ptr<IPacketReceiver> receiver) = 0;
@@ -43,4 +47,4 @@ public:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_UDP_IF_RECEIVER

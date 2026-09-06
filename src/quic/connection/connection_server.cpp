@@ -1,10 +1,13 @@
 #include "common/log/log.h"
 #include "common/qlog/qlog.h"
+#include "common/util/time.h"
 
 #include "quic/connection/connection_frame_processor.h"
 #include "quic/connection/connection_server.h"
 #include "quic/connection/connection_stream_manager.h"
+#include "quic/connection/connection_timer_coordinator.h"
 #include "quic/connection/error.h"
+#include "quic/crypto/tls/type.h"
 #include "quic/frame/handshake_done_frame.h"
 #include "quic/frame/if_frame.h"
 #include "quic/frame/type.h"
@@ -41,25 +44,14 @@ ServerConnection::ServerConnection(std::shared_ptr<TLSCtx> ctx, std::shared_ptr<
     EnterUnvalidatedAddressState();
 }
 
-ServerConnection::~ServerConnection() {
-    // Clean up qlog trace
-    if (qlog_trace_) {
-        // Use connection ID hash as trace identifier
-        std::string trace_id = std::to_string(cid_coordinator_->GetLocalConnectionIDManager()->GetCurrentID().Hash());
-        common::QlogManager::Instance().RemoveTrace(trace_id);
-    }
-}
+// ~ServerConnection is defaulted; qlog trace cleanup runs in ~BaseConnection
+// via GetQlogTraceIdForCleanup.
 
 void ServerConnection::AddRemoteConnectionId(ConnectionID& id) {
     cid_coordinator_->GetRemoteConnectionIDManager()->AddID(id);
 
     // Create qlog trace for this connection (if not already created)
     if (!qlog_trace_ && common::QlogManager::Instance().IsEnabled()) {
-        // Use connection ID hash as trace identifier
-        std::string trace_id = std::to_string(cid_coordinator_->GetLocalConnectionIDManager()->GetCurrentID().Hash());
-        qlog_trace_ = common::QlogManager::Instance().CreateTrace(trace_id, common::VantagePoint::kServer);
-
-        // Log connection_started event
         common::ConnectionStartedData data;
         // Server gets address from received packet
         auto peer_addr = GetPeerAddress();
@@ -80,19 +72,8 @@ void ServerConnection::AddRemoteConnectionId(ConnectionID& id) {
         data.protocol = "QUIC";
         data.ip_version = peer_addr.IsIPv6() ? "ipv6" : "ipv4";
 
-        QLOG_CONNECTION_STARTED(qlog_trace_, data);
-
-        connection_crypto_.SetQlogTrace(qlog_trace_);
-        send_manager_.SetQlogTrace(qlog_trace_);
-        if (stream_manager_) {
-            stream_manager_->SetQlogTrace(qlog_trace_);
-        }
-        if (frame_processor_) {
-            frame_processor_->SetQlogTrace(qlog_trace_);
-        }
-        if (cid_coordinator_) {
-            cid_coordinator_->SetQlogTrace(qlog_trace_);
-        }
+        InstallQlogTrace(std::to_string(cid_coordinator_->GetLocalConnectionIDManager()->GetCurrentID().Hash()),
+            common::VantagePoint::kServer, data);
     }
 }
 
@@ -122,74 +103,87 @@ bool ServerConnection::OnRetryPacket(const std::shared_ptr<IPacket>& packet) {
     return true;
 }
 
-void ServerConnection::WriteCryptoData(std::shared_ptr<IBufferRead> buffer, int32_t err, uint16_t encryption_level) {
-    if (err != 0) {
-        LOG_ERROR("get crypto data failed. err:%d", err);
+void ServerConnection::OnTlsHandshakeComplete() {
+    // DoHandleShake() reports completion every time it re-processes the
+    // client's Finished (a retransmitted CRYPTO frame under loss makes it
+    // return true again). The whole completion path below must run exactly
+    // once — see handshake_completion_emitted_ in the header.
+    if (handshake_completion_emitted_) {
         return;
     }
+    handshake_completion_emitted_ = true;
 
-    // Pass buffer memory to BoringSSL via VisitData, then advance read pointer
-    // to consume the data. This prevents re-processing on subsequent calls.
-    uint32_t total_consumed = 0;
-    bool process_ok = true;
-    buffer->VisitData([&](uint8_t* data, uint32_t len) -> bool {
-        if (!tls_connection_->ProcessCryptoData(data, len, encryption_level)) {
-            LOG_ERROR("process crypto data failed. err:%d", err);
-            process_ok = false;
-            return false;  // stop visiting
+    LOG_DEBUG("handshake done.");
+    // RFC 9000 §19.20 / §4.1.1: "The server MUST send a HANDSHAKE_DONE
+    // frame as soon as the handshake is complete." BaseConnection calls this
+    // hook exactly when DoHandleShake() first reports the BoringSSL state
+    // where the server has just consumed the client's Finished — i.e. the
+    // handshake is complete from the server's point of view — so emitting
+    // the frame here, before any other post-handshake bookkeeping,
+    // satisfies "as soon as".
+    SendHandshakeDoneFrame();
+
+    // RFC 9000 §4.1.2: from here until the peer's first 1-RTT ACK there is
+    // no evidence it ever saw this frame. The frame's delivery handler now
+    // repairs loss through the standard loss-detection signals (see
+    // SendHandshakeDoneFrame); the wider idle timeout keeps the window
+    // open while the peer's own PTO retries land.
+    timer_coordinator_->EnterHandshakeConfirmGrace();
+
+    // Stop PTO probing, drop Initial/Handshake number spaces (RFC 9000
+    // §4.10), qlog key_discarded events — shared with the client's
+    // confirmation path.
+    FinalizeHandshakePacketNumberSpaces();
+
+    state_machine_.OnHandshakeDone();
+    // notify handshake done
+    if (handshake_done_cb_) {
+        handshake_done_cb_(shared_from_this());
+    }
+}
+
+void ServerConnection::SendHandshakeDoneFrame() {
+    // RFC 9000 §19.20: HANDSHAKE_DONE is ack-eliciting and the server is
+    // expected to keep sending it until the client confirms. Historically that
+    // reliability was faked by sniffing duplicate Handshake CRYPTO (the peer's
+    // Finished replay) as a resend trigger; that patch is now replaced by
+    // frame-level delivery tracking (aioquic's _on_handshake_done_delivery
+    // model): the frame carries a handler that SendControl fires when the
+    // packet transporting it is acknowledged or declared lost.
+    //
+    // On kLost the handler re-queues a FRESH frame (which gets its own
+    // handler, so the retry chain never breaks) through OnFrameReady, i.e.
+    // the regular send loop — no bespoke timers, no heuristic triggers. The
+    // loss signals that drive it (packet/time thresholds, PTO) are the
+    // transport's own, so recovery cadence matches the path conditions.
+    //
+    // Duplicate copies are legal and expected (PTO re-queues, coalesced
+    // resends): the client treats HANDSHAKE_DONE idempotently (see
+    // ClientConnection::handshake_done_processed_), and the original sniffing
+    // patch's 10 ms rate-limit becomes unnecessary — acked_ suppresses
+    // re-queues only once a copy has actually gotten through.
+    std::shared_ptr<HandshakeDoneFrame> frame = std::make_shared<HandshakeDoneFrame>();
+    std::weak_ptr<ServerConnection> weak = std::static_pointer_cast<ServerConnection>(this->shared_from_this());
+    frame->SetDeliveryHandler([weak](FrameDeliveryState state) {
+        std::shared_ptr<ServerConnection> self = weak.lock();
+        if (!self) {
+            return;
         }
-        total_consumed += len;
-        return true;  // continue to next segment
+        if (state == FrameDeliveryState::kAcked) {
+            if (!self->handshake_done_acked_) {
+                self->handshake_done_acked_ = true;
+                LOG_DEBUG("Server: HANDSHAKE_DONE acknowledged");
+            }
+            return;
+        }
+        if (self->handshake_done_acked_) {
+            // A stale copy of an already-acknowledged frame was declared lost.
+            return;
+        }
+        LOG_INFO("Server: HANDSHAKE_DONE lost - re-queueing a fresh copy");
+        self->SendHandshakeDoneFrame();
     });
-
-    // Advance read pointer to consume processed data, preventing duplicate
-    // processing on subsequent recv_cb_ invocations
-    if (total_consumed > 0) {
-        buffer->MoveReadPt(total_consumed);
-    }
-
-    if (!process_ok) {
-        return;
-    }
-
-    if (tls_connection_->DoHandleShake()) {
-        LOG_DEBUG("handshake done.");
-        // RFC 9000 §19.20 / §4.1.1: "The server MUST send a HANDSHAKE_DONE
-        // frame as soon as the handshake is complete." DoHandleShake() above
-        // returns true exactly on the BoringSSL state where the server has
-        // just consumed the client's Finished — i.e. the handshake is
-        // complete from the server's point of view — so emitting the frame
-        // here, before any other post-handshake bookkeeping, satisfies "as
-        // soon as".
-        std::shared_ptr<HandshakeDoneFrame> frame = std::make_shared<HandshakeDoneFrame>();
-        OnFrameReady(frame);
-
-        // Mark handshake complete to stop PTO probing
-        send_manager_.GetSendControl().SetHandshakeComplete();
-
-        // RFC 9000 Section 4.10: Server discards Initial and Handshake spaces after sending HANDSHAKE_DONE
-        recv_control_.DiscardPacketNumberSpace(PacketNumberSpace::kInitialNumberSpace);
-        recv_control_.DiscardPacketNumberSpace(PacketNumberSpace::kHandshakeNumberSpace);
-        send_manager_.DiscardPacketNumberSpace(PacketNumberSpace::kInitialNumberSpace);
-        send_manager_.DiscardPacketNumberSpace(PacketNumberSpace::kHandshakeNumberSpace);
-        LOG_INFO("Server: Discarded Initial and Handshake packet number spaces after sending HANDSHAKE_DONE");
-
-        // Log key_discarded events for Initial and Handshake keys
-        if (qlog_trace_) {
-            common::KeyDiscardedData discard_data;
-            discard_data.key_type = "initial";
-            discard_data.trigger = "handshake_done";
-            QLOG_KEY_DISCARDED(qlog_trace_, discard_data);
-            discard_data.key_type = "handshake";
-            QLOG_KEY_DISCARDED(qlog_trace_, discard_data);
-        }
-
-        state_machine_.OnHandshakeDone();
-        // notify handshake done
-        if (handshake_done_cb_) {
-            handshake_done_cb_(shared_from_this());
-        }
-    }
+    OnFrameReady(frame);
 }
 
 void ServerConnection::SSLAlpnSelect(

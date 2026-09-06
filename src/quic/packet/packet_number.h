@@ -1,4 +1,3 @@
-
 #ifndef QUIC_PACKET_PACKET_NUMBER
 #define QUIC_PACKET_PACKET_NUMBER
 
@@ -32,4 +31,4 @@ private:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_PACKET_PACKET_NUMBER

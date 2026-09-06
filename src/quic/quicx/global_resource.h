@@ -3,9 +3,10 @@
 
 #include <memory>
 
-#include <quicx/common/if_event_loop.h>
 #include "common/allocator/pool_block.h"
+#include "common/network/if_event_loop.h"
 #include "common/util/singleton.h"
+
 #include "quic/udp/if_packet_allocator.h"
 
 namespace quicx {
@@ -32,4 +33,4 @@ private:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_QUICX_GLOBAL_RESOURCE

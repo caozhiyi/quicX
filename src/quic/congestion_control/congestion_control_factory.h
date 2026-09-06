@@ -2,6 +2,7 @@
 #define QUIC_CONGESTION_CONTROL_FACTORY
 
 #include <memory>
+
 #include "quic/congestion_control/if_congestion_control.h"
 
 namespace quicx {
@@ -14,4 +15,4 @@ std::unique_ptr<ICongestionControl> CreateCongestionControl(CongestionControlTyp
 }  // namespace quic
 }  // namespace quicx
 
-#endif  // QUIC_CONGESTION_CONTROL_FACTORY_H
+#endif  // QUIC_CONGESTION_CONTROL_FACTORY

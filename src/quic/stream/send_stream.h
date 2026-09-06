@@ -2,13 +2,13 @@
 #define QUIC_STREAM_SEND_STREAM
 
 #include <map>
-#include <string>
-
 #include <quicx/common/if_buffer_read.h>
 #include <quicx/common/if_buffer_write.h>
+#include <quicx/quic/if_quic_send_stream.h>
+#include <string>
+
 #include "common/buffer/multi_block_buffer.h"
 
-#include <quicx/quic/if_quic_send_stream.h>
 #include "quic/stream/if_stream.h"
 #include "quic/stream/state_machine_send.h"
 
@@ -94,4 +94,4 @@ protected:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_STREAM_SEND_STREAM

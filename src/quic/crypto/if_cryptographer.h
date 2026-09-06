@@ -3,10 +3,12 @@
 
 #include <cstdint>
 #include <memory>
-#include "common/buffer/if_buffer.h"
-#include "quic/crypto/type.h"
 
+#include "common/buffer/if_buffer.h"
+
+#include "quic/crypto/type.h"
 // Forward declare BoringSSL cipher type in global namespace to avoid including SSL headers here
+
 struct ssl_cipher_st;
 
 namespace quicx {
@@ -87,4 +89,4 @@ std::shared_ptr<ICryptographer> MakeCryptographer(CryptographerId cipher);
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_CRYPTO_CRYPTOGRAPHER_INTERFACE

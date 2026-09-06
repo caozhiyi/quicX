@@ -1,18 +1,21 @@
-#include "quic/connection/version_negotiator.h"
-
 #include <quicx/common/metrics.h>
-#include <quicx/common/metrics_std.h>
+
+#include "common/metrics/metrics_std.h"
 #include "common/qlog/qlog.h"
+
 #include "quic/common/constants.h"
-#include "quic/connection/error.h"
 #include "quic/common/version.h"
+#include "quic/connection/error.h"
+#include "quic/connection/version_negotiator.h"
 #include "quic/packet/version_negotiation_packet.h"
 
 namespace quicx {
 namespace quic {
 
-VersionNegotiator::VersionNegotiator(bool is_server, ConnectionCrypto& crypto, TransportParam& transport_param)
-    : is_server_(is_server), crypto_(crypto), transport_param_(transport_param) {
+VersionNegotiator::VersionNegotiator(bool is_server, ConnectionCrypto& crypto, TransportParam& transport_param):
+    is_server_(is_server),
+    crypto_(crypto),
+    transport_param_(transport_param) {
     ctx_.is_server = is_server;
     ctx_.quic_version = kQuicVersion2;
 }
@@ -56,7 +59,7 @@ VersionNegotiator::UpgradeResult VersionNegotiator::ApplyCompatibleUpgrade(uint3
     ApplyVersion(new_version);
 
     ctx_.compat_vn_completed = true;
-    common::Metrics::CounterInc(common::MetricsStd::VersionNegotiationTotal);
+    Metrics::CounterInc(common::MetricsStd::VersionNegotiationTotal);
     return UpgradeResult::kUpgraded;
 }
 
@@ -118,7 +121,6 @@ void VersionNegotiator::BuildLocalVersionInformation(TransportParam& tp) const {
             available.push_back(ctx_.original_version);
         }
     }
-
 
     tp.SetVersionInformation(ctx_.quic_version, available);
 }
@@ -271,7 +273,7 @@ bool VersionNegotiator::OnVersionNegotiationPacket(const std::shared_ptr<IPacket
     uint32_t compatible_version = SelectVersion(supported_versions);
     HandleCompatibleVersionFound(compatible_version);
 
-    common::Metrics::CounterInc(common::MetricsStd::VersionNegotiationTotal);
+    Metrics::CounterInc(common::MetricsStd::VersionNegotiationTotal);
     return true;
 }
 

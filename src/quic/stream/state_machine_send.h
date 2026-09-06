@@ -2,6 +2,7 @@
 #define QUIC_STREAM_STATE_MACHINE_SEND
 
 #include <cstdint>
+
 #include "quic/stream/if_state_machine.h"
 
 namespace quicx {
@@ -63,4 +64,4 @@ public:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_STREAM_STATE_MACHINE_SEND

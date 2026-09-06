@@ -1,6 +1,7 @@
-#include "quic/quicx/master.h"
-#include "common/util/random.h"
 #include "common/log/log.h"
+#include "common/util/random.h"
+
+#include "quic/quicx/master.h"
 
 namespace quicx {
 namespace quic {
@@ -18,10 +19,10 @@ void Master::Init() {
 
     LOG_DEBUG("Master::Init: processing %zu pending listeners", pending_listeners_.size());
     for (auto& info : pending_listeners_) {
-        if (info.sock != -1) {
-            LOG_DEBUG("Master::Init: adding socket fd=%d to receiver", info.sock);
+        if (info.sock.fd > 0) {
+            LOG_DEBUG("Master::Init: adding socket fd=%d to receiver", info.sock.fd);
             if (!receiver_->AddReceiver(info.sock, shared_from_this())) {
-                LOG_ERROR("Master::Init: failed to add socket fd=%d to receiver", info.sock);
+                LOG_ERROR("Master::Init: failed to add socket fd=%d to receiver", info.sock.fd);
             }
         } else {
             LOG_DEBUG("Master::Init: adding listener %s:%d to receiver", info.ip.c_str(), info.port);
@@ -40,16 +41,16 @@ void Master::AddWorker(std::shared_ptr<IWorker> worker) {
     worker_map_.emplace(worker->GetWorkerId(), worker);
 }
 
-bool Master::AddListener(int32_t listener_sock) {
+bool Master::AddListener(common::SocketHandle listener_sock) {
     if (!receiver_) {
         LOG_DEBUG(
-            "Master::AddListener: receiver not initialized, adding socket fd=%d to pending_listeners_", listener_sock);
+            "Master::AddListener: receiver not initialized, adding socket fd=%d to pending_listeners_", listener_sock.fd);
         ListenerInfo info;
         info.sock = listener_sock;
         pending_listeners_.push_back(info);
         return true;
     }
-    LOG_DEBUG("Master::AddListener: receiver initialized, adding socket fd=%d directly", listener_sock);
+    LOG_DEBUG("Master::AddListener: receiver initialized, adding socket fd=%d directly", listener_sock.fd);
     return receiver_->AddReceiver(listener_sock, shared_from_this());
 }
 
@@ -58,7 +59,7 @@ bool Master::RemoveListener(int32_t listener_sock) {
     if (!receiver_) {
         // Not armed yet: strip it from the pending list if present.
         for (auto it = pending_listeners_.begin(); it != pending_listeners_.end(); ++it) {
-            if (it->sock == listener_sock) {
+            if (it->sock.fd == listener_sock) {
                 pending_listeners_.erase(it);
                 return true;
             }

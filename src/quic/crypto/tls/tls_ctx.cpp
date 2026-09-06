@@ -1,7 +1,8 @@
-#include "quic/crypto/tls/tls_ctx.h"
+#include <cctype>
+
 #include "common/log/log.h"
 
-#include <cctype>
+#include "quic/crypto/tls/tls_ctx.h"
 
 namespace quicx {
 namespace quic {
@@ -51,13 +52,15 @@ bool TLSCtx::Init(bool enable_early_data, const std::string& cipher_suites) {
         }
         if (cs.find("chacha20") != std::string::npos) {
             bssl::SSL_CTX_set_aes_hw_override_for_testing(ssl_ctx_.get(), false);
-            LOG_INFO("TLS 1.3: ChaCha20 requested -> preferring ChaCha20 "
-                     "(BoringSSL AES-HW override = false)");
+            LOG_INFO(
+                "TLS 1.3: ChaCha20 requested -> preferring ChaCha20 "
+                "(BoringSSL AES-HW override = false)");
         } else {
-            LOG_WARN("TLS 1.3 cipher override '%s' not directly enforceable by "
-                     "this BoringSSL build (only ChaCha20 preference is supported "
-                     "via the AES-HW override); default selection in effect",
-                     cipher_suites.c_str());
+            LOG_WARN(
+                "TLS 1.3 cipher override '%s' not directly enforceable by "
+                "this BoringSSL build (only ChaCha20 preference is supported "
+                "via the AES-HW override); default selection in effect",
+                cipher_suites.c_str());
         }
     }
 

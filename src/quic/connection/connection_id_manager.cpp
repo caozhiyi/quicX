@@ -1,6 +1,7 @@
-#include "quic/connection/connection_id_manager.h"
 #include "common/log/log.h"
+
 #include "quic/connection/connection_id_generator.h"
+#include "quic/connection/connection_id_manager.h"
 
 namespace quicx {
 namespace quic {

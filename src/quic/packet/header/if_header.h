@@ -78,4 +78,4 @@ protected:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_PACKET_HEADER_IF_HEADER

@@ -1,5 +1,4 @@
 #include <set>
-
 #ifdef _WIN32
 #include <ws2tcpip.h>
 #else
@@ -329,8 +328,8 @@ bool TransportParam::Decode(const common::BufferSpan& buffer, bool received_by_s
             return false;
         }
         if (received_by_server && is_server_only_param(static_cast<TransportParamType>(type))) {
-            LOG_ERROR("TransportParam: client sent server-only transport parameter. type:%llu",
-                (unsigned long long)type);
+            LOG_ERROR(
+                "TransportParam: client sent server-only transport parameter. type:%llu", (unsigned long long)type);
             return false;
         }
 
@@ -444,8 +443,7 @@ bool TransportParam::Decode(const common::BufferSpan& buffer, bool received_by_s
                 // demand with its own address-family choice (see
                 // ConnectionBase::HandleTransportParams).
                 if (!ValidatePreferredAddressBinary(preferred_address_)) {
-                    LOG_ERROR("TransportParam: malformed preferred_address binary. len:%zu",
-                        preferred_address_.size());
+                    LOG_ERROR("TransportParam: malformed preferred_address binary. len:%zu", preferred_address_.size());
                     return false;
                 }
                 has_preferred_address_binary_ = true;
@@ -611,8 +609,7 @@ uint32_t TransportParam::EncodeSize() {
     if (has_preferred_address_binary_) {
         // RFC 9000 §18.2: IPv4(4) + port(2) + IPv6(16) + port(2) + cid_len(1) + cid + token(16)
         uint32_t pa_size = 4 + 2 + 16 + 2 + 1 + static_cast<uint32_t>(preferred_address_binary_.cid.size()) + 16;
-        size += common::GetEncodeVarintLength(
-                    static_cast<uint32_t>(TransportParamType::kPreferredAddress)) +
+        size += common::GetEncodeVarintLength(static_cast<uint32_t>(TransportParamType::kPreferredAddress)) +
                 common::GetEncodeVarintLength(pa_size) + pa_size;
     }
     if (active_connection_id_limit_) {

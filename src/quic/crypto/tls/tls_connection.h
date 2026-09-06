@@ -3,9 +3,11 @@
 
 #include <cstdint>
 #include <memory>
+
 #include "quic/crypto/tls/tls_ctx.h"
 #include "quic/crypto/tls/type.h"
 // Forward declare OpenSSL types
+
 typedef struct ssl_session_st SSL_SESSION;
 
 namespace quicx {
@@ -74,4 +76,4 @@ protected:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_CRYPTO_TLS_TLS_CONNECTION

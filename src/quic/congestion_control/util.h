@@ -1,6 +1,7 @@
 #ifndef QUIC_CONGESTION_CONTROL_UTIL
 #define QUIC_CONGESTION_CONTROL_UTIL
 
+
 #include <algorithm>
 #include <cstdint>
 #include <stdexcept>
@@ -83,4 +84,4 @@ inline uint64_t muldiv_safe(uint64_t a, uint64_t num, uint64_t den) {
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_CONGESTION_CONTROL_UTIL

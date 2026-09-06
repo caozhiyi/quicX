@@ -70,4 +70,4 @@ private:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_CONNECTION_CONNECTION_ID_MANAGER

@@ -3,6 +3,7 @@
 
 #include <quicx/quic/if_quic_client.h>
 #include <quicx/quic/type.h>
+
 #include "quic/quicx/master_with_thread.h"
 
 namespace quicx {
@@ -51,4 +52,4 @@ private:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_QUICX_QUIC_CLIENT

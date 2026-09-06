@@ -3,11 +3,12 @@
 
 #include <cstdint>
 
+#include "quic/common/constants.h"
+
 namespace quicx {
 namespace quic {
 
-static const uint16_t kMaxCidLength = 20;
-static const uint16_t kMinCidLength = 4;
+static const uint16_t kMaxCidLength = kMaxConnectionLength;
 
 enum class SendOperation {
     kAllSendDone = 0,           // all data has been sent
@@ -58,4 +59,4 @@ enum class TransportParamType : uint32_t {
 
 }  // namespace quic
 }  // namespace quicx
-#endif
+#endif  // QUIC_CONNECTION_TYPE

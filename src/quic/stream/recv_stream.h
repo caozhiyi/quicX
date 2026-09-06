@@ -3,12 +3,12 @@
 
 #include <functional>
 #include <map>
+#include <quicx/quic/if_quic_recv_stream.h>
 #include <string>
 #include <unordered_map>
 
 #include "common/buffer/multi_block_buffer.h"
 
-#include <quicx/quic/if_quic_recv_stream.h>
 #include "quic/stream/if_frame_visitor.h"
 #include "quic/stream/if_stream.h"
 #include "quic/stream/state_machine_recv.h"
@@ -89,4 +89,4 @@ protected:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_STREAM_RECV_STREAM

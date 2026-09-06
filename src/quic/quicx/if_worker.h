@@ -60,7 +60,7 @@ protected:
     std::weak_ptr<IConnectionIDNotify> connection_id_notify_;
 };
 
-}  // namespace quic
+}  // namespace quicx
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_QUICX_IF_WORKER

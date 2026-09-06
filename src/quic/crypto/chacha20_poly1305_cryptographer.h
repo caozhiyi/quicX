@@ -23,4 +23,4 @@ protected:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_CRYPTO_CHACHA20_POLY1305_CRYPTOGRAPHER

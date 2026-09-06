@@ -2,7 +2,9 @@
 #define QUIC_PACKET_HEADER_HEADER_FLAG
 
 #include <memory>
+
 #include "common/buffer/if_buffer.h"
+
 #include "quic/packet/header/type.h"
 #include "quic/packet/type.h"
 
@@ -81,4 +83,4 @@ protected:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_PACKET_HEADER_HEADER_FLAG

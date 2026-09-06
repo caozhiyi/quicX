@@ -7,16 +7,19 @@
 #include <unordered_map>
 #include <vector>
 
-#include <quicx/common/if_timer_scheduler.h>
+#include "common/timer/if_timer_scheduler.h"
 
+#include "quic/config.h"
 #include "quic/congestion_control/if_congestion_control.h"
-#include "quic/connection/controler/rtt_calculator.h"
+#include "quic/connection/controller/rtt_calculator.h"
 #include "quic/connection/transport_param.h"
 #include "quic/packet/if_packet.h"
 #include "quic/packet/type.h"
 
 namespace quicx {
 namespace quic {
+
+class AckFrame;
 
 // Stream data info in a packet for ACK tracking.
 //
@@ -90,7 +93,7 @@ public:
     }
 
     uint32_t GetRtt() { return rtt_calculator_.GetSmoothedRtt(); }
-    uint32_t GetPTO(uint32_t max_ack_delay) { return rtt_calculator_.GetPT0Interval(max_ack_delay); }
+    uint32_t GetPTO(uint32_t max_ack_delay) { return rtt_calculator_.GetPTOInterval(max_ack_delay); }
     RttCalculator& GetRttCalculator() { return rtt_calculator_; }
 
     /**
@@ -121,6 +124,10 @@ public:
     // send_control_test.cpp G2 group).
     uint64_t GetCcBytesInFlightForTest() const { return congestion_control_->GetBytesInFlight(); }
     uint64_t GetCcCongestionWindowForTest() const { return congestion_control_->GetCongestionWindow(); }
+    // Test instrumentation: how many entries a packet number space still
+    // tracks. Used to prove the retransmit path does not leave stale entries
+    // behind (see RemoveStaleUnackedEntry).
+    size_t GetUnackedPacketCountForTest(PacketNumberSpace ns) const { return unacked_packets_[ns].size(); }
     void OnPacketSend(uint64_t now, const std::shared_ptr<IPacket>& packet, uint32_t pkt_len);
     void OnPacketSend(uint64_t now, const std::shared_ptr<IPacket>& packet, uint32_t pkt_len,
         const std::vector<StreamDataInfo>& stream_data);
@@ -140,6 +147,35 @@ public:
         std::vector<StreamDataInfo> stream_data;
     };
     std::list<LostPacketEntry>& GetLostPacket() { return lost_packets_; }
+
+    // Drop the unacked entry registered under |stale_pn|, if it still belongs to
+    // |packet|.
+    //
+    // The retransmit path reuses ONE IPacket object and renumbers it in place
+    // (BaseConnection::TrySendRetransmit). Whatever entry was registered under
+    // the old PN must go, otherwise it is orphaned: once the object carries a
+    // new PN, the entry's key no longer matches packet->GetPacketNumber(), so
+    // neither the per-packet timer's find() nor OnPacketAck's range walk can
+    // address it again, yet it keeps occupying the table with its timer armed.
+    //
+    // Three consequences, all observed while debugging handshakeloss:
+    //   1. OnPTOTimer() probes unacked_packets_[ns].begin() only. The stale
+    //      entry always sorts first (smallest key) and is permanently
+    //      is_lost, so after the very first PTO the timer lands on it forever
+    //      and silently stops finding anything to retransmit.
+    //   2. OnPacketAck's `pkt_num--` range walk can descend into the stale key
+    //      and fire OnPacketAcked / stream_data_ack_cb_ a second time for bytes
+    //      that were already accounted for as lost.
+    //   3. The table grows by one dead entry per retransmission until the
+    //      packet number space is discarded.
+    //
+    // MUST be called BEFORE the object is renumbered: afterwards the stale key
+    // is no longer derivable from the object (its PN has moved on), and the
+    // only way to find the entry would be an O(unacked) scan by pointer.
+    // Passing |packet| purely as a guard: if the entry's object is not this one
+    // we leave it alone rather than delete a live entry that merely shares the
+    // packet number.
+    void RemoveStaleUnackedEntry(PacketNumberSpace ns, uint64_t stale_pn, const std::shared_ptr<IPacket>& packet);
     uint64_t GetNextSendTime(uint64_t now) { return congestion_control_->NextSendTime(now); }
 
     void UpdateConfig(const TransportParam& tp);
@@ -171,6 +207,11 @@ public:
 
     // Mark handshake as complete (disables handshake probe timer)
     void SetHandshakeComplete() { handshake_complete_ = true; }
+
+    // When the peer has sent undecryptable 1-RTT packets, its Finished was
+    // lost.  Skip Initial packets during PTO so the probe targets Handshake
+    // level instead, which elicits an ACK exposing the missing Finished.
+    void SetSkipInitialForPTO(bool skip) { skip_initial_for_pto_ = skip; }
 
     // RFC 9002 §6.2.1: While the handshake is unconfirmed, the peer's
     // max_ack_delay transport parameter has not yet been reliably delivered,
@@ -215,13 +256,9 @@ public:
     void ResetInitialPacketNumber();
 
 private:
-    // RFC 9002 Section 6.1.1: Loss detection constants
-    static constexpr uint32_t kPacketThreshold = 3;   // Packets before declaring loss
-    static constexpr uint32_t kTimeThresholdNum = 9;  // Time threshold = 9/8 * RTT
-    static constexpr uint32_t kTimeThresholdDen = 8;
-
     // RFC 9002 Section 6.1: Detect lost packets based on packet/time threshold
     void DetectLostPackets(uint64_t now, PacketNumberSpace ns, uint64_t largest_acked);
+
     enum class EcnState { kUnknown, kValidated, kFailed };
     std::list<LostPacketEntry> lost_packets_;
     struct PacketTimerInfo {
@@ -257,11 +294,19 @@ private:
     };
     std::unordered_map<uint64_t, PacketTimerInfo> unacked_packets_[PacketNumberSpace::kNumberSpaceCount];
 
+    // Frame-level delivery tracking (aioquic QuicDeliveryState model). Fires
+    // the optional per-frame handler on every frame of the packet for the
+    // given outcome. ACK-eliciting packets only: ACK-only packets never enter
+    // unacked_packets_ (see OnPacketSend's early return), so frames riding in
+    // them cannot be tracked — SetDeliveryHandler's contract forbids that.
+    void FireFrameDelivery(PacketTimerInfo& info, FrameDeliveryState state);
+
     StreamDataAckCallback stream_data_ack_cb_;
     PacketLostCallback packet_lost_cb_;
     ProbeNeededCallback probe_needed_cb_;
     ApplicationProbeCallback application_probe_cb_;
     bool handshake_complete_ = false;
+    bool skip_initial_for_pto_ = false;
 
     uint64_t pkt_num_largest_sent_[PacketNumberSpace::kNumberSpaceCount] = {0};
     uint64_t pkt_num_largest_acked_[PacketNumberSpace::kNumberSpaceCount] = {0};
@@ -299,6 +344,85 @@ private:
     // packet), and it reuses the existing timer node.
     void ArmPtoTimer(uint64_t delay_ms);
 
+    // --- OnPacketSend helpers, in call order ---
+
+    // Congestion-control accounting for one outgoing ack-eliciting packet
+    // (bytes_in_flight) plus the last-ack-eliciting timestamp that drives
+    // the PTO timer. ACK-only packets never reach here (early return in
+    // OnPacketSend).
+    void TrackPacketInCongestionControl(uint64_t now, const std::shared_ptr<IPacket>& packet, uint32_t pkt_len);
+
+    // Emit the qlog packet_sent event and accumulate into the in-progress
+    // datagram (see BeginSendDatagram). No-op without a qlog trace.
+    void EmitQlogPacketSent(const std::shared_ptr<IPacket>& packet, uint32_t pkt_len);
+
+    // Build the per-packet retransmit-timeout callback: declares the packet
+    // lost exactly once (guarded against DetectLostPackets racing it), fires
+    // frame delivery, queues the retransmission and reports the loss to CC.
+    std::function<void()> MakeRetransmitTimeoutHandler(
+        const std::shared_ptr<IPacket>& packet, uint32_t pkt_len, PacketNumberSpace ns);
+
+    // Register one outgoing ack-eliciting packet for loss detection: arms
+    // its retransmit timer, inserts it into unacked_packets_ and (re)arms
+    // the connection-level PTO timer.
+    void TrackPacketForRetransmission(const std::shared_ptr<IPacket>& packet, uint32_t pkt_len, PacketNumberSpace ns,
+        const std::vector<StreamDataInfo>& stream_data);
+
+    // --- OnPacketAck helpers, in call order ---
+
+    // Outcome of AckOnePacket. The largest-acked path needs to distinguish
+    // "acked while still tracked" (→ also feed the CC round-trip sample and
+    // the ACK-aggregation metric) from "acked after already being declared
+    // lost" (→ CC was already told at loss time, do not double-report).
+    enum class AckOneResult { kNotFound, kAckedLive, kAlreadyLost };
+
+    // Per-path LOG_DEBUG verbosity for AckOnePacket, preserving the three
+    // ACK-range walks' original logging behaviour: the additional-ranges
+    // walk is silent (kQuiet), the largest-acked walk logs per-stream
+    // notifications (kPerStream), and the first-range walk also logs the
+    // found/missed packets (kPerStreamWithMissLog).
+    enum class StreamAckLogLevel { kQuiet, kPerStream, kPerStreamWithMissLog };
+
+    // Shared per-packet ACK epilogue used by all three range walks of
+    // OnPacketAck (largest-acked / first range / additional ranges): cancel
+    // the retransmit timer, report to congestion control (unless the packet
+    // was already declared lost), notify per-stream data ACK callbacks, fire
+    // frame-level delivery and remove the entry from unacked_packets_.
+    // |ecn_ce| is only true on the largest-acked path (ECN validation
+    // result); |stream_log| preserves the per-path LOG_DEBUG noise.
+    AckOneResult AckOnePacket(
+        PacketNumberSpace ns, uint64_t pkt_num, uint64_t now, uint64_t ack_delay, bool ecn_ce, StreamAckLogLevel stream_log);
+
+    // Emit the qlog packets_acked event (ACK ranges + scaled ack delay).
+    // No-op without a qlog trace.
+    void EmitQlogPacketsAcked(const std::shared_ptr<AckFrame>& ack_frame);
+
+    // Largest-acked handling: advance the largest-acked high-water mark,
+    // update the RTT estimate, validate ECN counters, then run the common
+    // per-packet epilogue plus the CC round-trip sample.
+    void AckLargestAckedPacket(
+        uint64_t now, PacketNumberSpace ns, const std::shared_ptr<IFrame>& frame, const std::shared_ptr<AckFrame>& ack_frame);
+
+    // RTT estimate update from the largest-acked packet, plus the RTT /
+    // ack-delay / ack-range-count metrics gauges. |ack_range_count| is the
+    // frame's range count (1 + additional ranges), passed in so this stays
+    // independent of the AckFrame type.
+    void UpdateRttOnAck(uint64_t pkt_num, uint64_t send_time, uint64_t now, uint64_t scaled_ack_delay,
+        size_t ack_range_count);
+
+    // RFC 9000 §13.4 ECN validation on an AckEcnFrame: counters must be
+    // non-decreasing. Returns whether this ACK reports CE (congestion).
+    bool ValidateEcnCounters(PacketNumberSpace ns, const std::shared_ptr<IFrame>& frame);
+
+    // Walk the first ACK range and the additional ranges, running the common
+    // per-packet epilogue (AckOnePacket) on every tracked PN.
+    void AckRangePackets(uint64_t now, PacketNumberSpace ns, const std::shared_ptr<AckFrame>& ack_frame);
+
+    // Post-ACK PTO management: handshake confirmation on the first 1-RTT
+    // ACK, PTO backoff reset, and re-arm / leave-cancelled decision based
+    // on whether ack-eliciting packets remain in flight (RFC 9002 §6.2).
+    void UpdatePtoAfterAck(PacketNumberSpace ns);
+
     // Qlog trace for instrumentation
     std::shared_ptr<common::QlogTrace> qlog_trace_;
 
@@ -321,4 +445,4 @@ private:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_CONNECTION_CONTROLER_SEND_CONTROL

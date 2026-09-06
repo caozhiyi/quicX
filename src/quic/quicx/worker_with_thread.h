@@ -3,9 +3,10 @@
 
 #include <future>
 
-#include <quicx/common/if_event_loop.h>
+#include "common/network/if_event_loop.h"
 #include "common/structure/thread_safe_block_queue.h"
 #include "common/thread/thread.h"
+
 #include "quic/quicx/if_worker.h"
 
 namespace quicx {
@@ -51,4 +52,4 @@ protected:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_QUICX_WORKER_WITH_THREAD

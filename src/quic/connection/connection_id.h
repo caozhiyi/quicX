@@ -1,8 +1,12 @@
 #ifndef QUIC_CONNECTION_CONNECTION_ID
 #define QUIC_CONNECTION_CONNECTION_ID
 
+
 #include <cstdint>
 #include <cstring>
+#include <string>
+
+#include "common/util/hex.h"
 
 #include "quic/connection/type.h"
 
@@ -29,6 +33,9 @@ public:
     uint64_t GetSequenceNumber() const;
     void SetSequenceNumber(uint64_t sequence_number) { sequence_number_ = sequence_number; }
 
+    // Compact lowercase hex of the id bytes (e.g. for qlog / log output).
+    std::string ToHexString() const { return common::BytesToHex(id_, length_); }
+
     bool operator==(const ConnectionID& other) const;
     bool operator!=(const ConnectionID& other) const;
 
@@ -44,4 +51,4 @@ private:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_CONNECTION_CONNECTION_ID
