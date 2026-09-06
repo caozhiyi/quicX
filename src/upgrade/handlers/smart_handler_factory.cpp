@@ -1,7 +1,8 @@
-#include "upgrade/handlers/smart_handler_factory.h"
 #include "common/log/log.h"
+
 #include "upgrade/handlers/http_smart_handler.h"
 #include "upgrade/handlers/https_smart_handler.h"
+#include "upgrade/handlers/smart_handler_factory.h"
 
 namespace quicx {
 namespace upgrade {
@@ -9,8 +10,8 @@ namespace upgrade {
 std::shared_ptr<ISmartHandler> SmartHandlerFactory::CreateHandler(
     const UpgradeSettings& settings, std::shared_ptr<common::IEventLoop> event_loop) {
     // Treat partial HTTPS settings as HTTP
-    const bool has_file_pair = !settings.cert_file.empty() && !settings.key_file.empty();
-    const bool has_pem_pair = (settings.cert_pem != nullptr) && (settings.key_pem != nullptr);
+    const bool has_file_pair = !settings.cert_file_.empty() && !settings.key_file_.empty();
+    const bool has_pem_pair = (settings.cert_pem_ != nullptr) && (settings.key_pem_ != nullptr);
     const bool has_https_credentials = has_file_pair || has_pem_pair;
 
     if (has_https_credentials) {
@@ -36,8 +37,8 @@ std::shared_ptr<ISmartHandler> SmartHandlerFactory::CreateHandler(
             return std::make_shared<HttpSmartHandler>(settings, event_loop);
 
         case HandlerKind::kHttps: {
-            const bool has_file_pair = !settings.cert_file.empty() && !settings.key_file.empty();
-            const bool has_pem_pair = (settings.cert_pem != nullptr) && (settings.key_pem != nullptr);
+            const bool has_file_pair = !settings.cert_file_.empty() && !settings.key_file_.empty();
+            const bool has_pem_pair = (settings.cert_pem_ != nullptr) && (settings.key_pem_ != nullptr);
             if (!has_file_pair && !has_pem_pair) {
                 LOG_ERROR("HTTPS handler requested but no certificate/key configured");
                 return nullptr;

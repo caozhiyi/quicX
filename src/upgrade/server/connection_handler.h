@@ -1,8 +1,10 @@
 #ifndef UPGRADE_SERVER_CONNECTION_HANDLER
 #define UPGRADE_SERVER_CONNECTION_HANDLER
 
-#include <quicx/common/if_event_loop.h>
 #include <memory>
+
+#include "common/network/if_event_loop.h"
+
 #include "upgrade/handlers/if_smart_handler.h"
 
 namespace quicx {
@@ -20,6 +22,10 @@ public:
     virtual void OnWrite(uint32_t fd) override;
     virtual void OnError(uint32_t fd) override;
     virtual void OnClose(uint32_t fd) override;
+
+    // Tear down every client connection this listener has accepted. Used by
+    // the server's shutdown path so no client fd survives its event loop.
+    void CloseAllConnections();
 
 private:
     std::shared_ptr<ISmartHandler> handler_;

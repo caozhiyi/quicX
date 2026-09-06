@@ -1,6 +1,7 @@
-#include "upgrade/core/version_negotiator.h"
 #include <algorithm>
+
 #include "upgrade/core/protocol_detector.h"
+#include "upgrade/core/version_negotiator.h"
 
 namespace quicx {
 namespace upgrade {
@@ -42,7 +43,7 @@ Protocol VersionNegotiator::SelectBestProtocol(const ConnectionContext& context,
     }
 
     // Prefer upgrading HTTP/1.1 or HTTP/2 to HTTP/3 if enabled
-    if (settings.enable_http3 &&
+    if (settings.enable_http3_ &&
         (context.detected_protocol == Protocol::HTTP1_1 || context.detected_protocol == Protocol::HTTP2)) {
         return Protocol::HTTP3;
     }
@@ -102,8 +103,8 @@ std::vector<uint8_t> VersionNegotiator::GenerateHTTP1UpgradeData(const UpgradeSe
     // Prefer responding 200 OK with Alt-Svc to advertise h3 endpoint.
     // Example minimal response with Alt-Svc: h3=":<port>"; ma=86400
 
-    std::string body = "h3 available on :" + std::to_string(settings.h3_port) + "\n";
-    std::string alt_svc = "h3=\":" + std::to_string(settings.h3_port) + "\"; ma=86400";
+    std::string body = "h3 available on :" + std::to_string(settings.h3_port_) + "\n";
+    std::string alt_svc = "h3=\":" + std::to_string(settings.h3_port_) + "\"; ma=86400";
 
     std::string response =
         "HTTP/1.1 200 OK\r\n"
@@ -186,8 +187,8 @@ std::vector<uint8_t> VersionNegotiator::GenerateHTTP2UpgradeData(const UpgradeSe
     append_frame_header(out, /*len*/ 0, /*type SETTINGS*/ 0x04, /*flags ACK*/ 0x01, /*stream*/ 0);
 
     // Build response body and headers
-    const std::string body = "h3 available on :" + std::to_string(settings.h3_port) + "\n";
-    const std::string alt_svc_value = "h3=\":" + std::to_string(settings.h3_port) + "\"; ma=86400";
+    const std::string body = "h3 available on :" + std::to_string(settings.h3_port_) + "\n";
+    const std::string alt_svc_value = "h3=\":" + std::to_string(settings.h3_port_) + "\"; ma=86400";
     const std::string content_length_value = std::to_string(body.size());
 
     // 3) HEADERS frame (END_HEADERS=0x04 | END_STREAM=0x00 -- body follows in DATA)

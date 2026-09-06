@@ -1,8 +1,9 @@
 #ifndef UPGRADE_HANDLERS_SMART_HANDLER_FACTORY
 #define UPGRADE_HANDLERS_SMART_HANDLER_FACTORY
 
-#include <quicx/upgrade/type.h>
 #include <memory>
+#include <quicx/upgrade/type.h>
+
 #include "upgrade/handlers/if_smart_handler.h"
 
 namespace quicx {
@@ -33,4 +34,4 @@ public:
 }  // namespace upgrade
 }  // namespace quicx
 
-#endif  // UPGRADE_HANDLERS_SMART_HANDLER_FACTORY_H
+#endif  // UPGRADE_HANDLERS_SMART_HANDLER_FACTORY

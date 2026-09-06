@@ -3,7 +3,7 @@
 
 #include <string>
 
-#include <quicx/common/if_event_loop.h>
+#include "common/network/if_event_loop.h"
 
 namespace quicx {
 namespace upgrade {
@@ -18,9 +18,13 @@ public:
 
     // Handle connect event
     virtual void OnConnect(uint32_t fd) = 0;
+
+    // Close every client connection owned by this handler (server shutdown).
+    // Default no-op so lightweight test doubles do not have to implement it.
+    virtual void CloseAllConnections() {}
 };
 
 }  // namespace upgrade
 }  // namespace quicx
 
-#endif  // UPGRADE_HANDLERS_IF_SMART_HANDLER_H
+#endif  // UPGRADE_HANDLERS_IF_SMART_HANDLER

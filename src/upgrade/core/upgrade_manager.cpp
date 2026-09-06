@@ -1,5 +1,6 @@
-#include "upgrade/core/upgrade_manager.h"
 #include "common/log/log.h"
+
+#include "upgrade/core/upgrade_manager.h"
 #include "upgrade/core/version_negotiator.h"
 
 namespace quicx {
