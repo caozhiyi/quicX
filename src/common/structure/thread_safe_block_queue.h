@@ -84,4 +84,4 @@ private:
 }  // namespace common
 }  // namespace quicx
 
-#endif
+#endif  // COMMON_STRUCTURE_THREAD_SAFE_BLOCK_QUEUE

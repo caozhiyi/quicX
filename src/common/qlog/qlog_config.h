@@ -1,17 +1,15 @@
-
 #ifndef COMMON_QLOG_QLOG_CONFIG
 #define COMMON_QLOG_QLOG_CONFIG
 
 #include <cstdint>
+#include <quicx/common/type.h>
 #include <string>
 #include <vector>
-
-#include <quicx/common/type.h>
 
 namespace quicx {
 namespace common {
 
-// Alias types from common/include/type.h
+// Alias types from the public header <quicx/common/type.h>
 using QlogFileFormat = quicx::QlogFileFormat;
 using QlogConfig = quicx::QlogConfig;
 using VantagePoint = quicx::VantagePoint;
@@ -49,4 +47,4 @@ struct QlogConfiguration {
 }  // namespace common
 }  // namespace quicx
 
-#endif
+#endif  // COMMON_QLOG_QLOG_CONFIG

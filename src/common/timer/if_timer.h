@@ -30,4 +30,4 @@ public:
 }  // namespace common
 }  // namespace quicx
 
-#endif
+#endif  // COMMON_TIMER_TIMER_INTERFACE

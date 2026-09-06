@@ -114,8 +114,8 @@ public:
     [[nodiscard]] virtual Timer AddTimer(std::weak_ptr<void> owner, std::function<void()> cb, uint32_t delay_ms) = 0;
 
     /// Same as AddTimer but re-arms itself after every firing until cancelled.
-    [[nodiscard]] virtual Timer AddRepeatTimer(std::weak_ptr<void> owner, std::function<void()> cb,
-        uint32_t interval_ms) = 0;
+    [[nodiscard]] virtual Timer AddRepeatTimer(
+        std::weak_ptr<void> owner, std::function<void()> cb, uint32_t interval_ms) = 0;
 
     /**
      * @brief Fire-and-forget: run `cb` once after `delay_ms`, with no way to

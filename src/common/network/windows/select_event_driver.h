@@ -3,6 +3,7 @@
 #ifndef COMMON_NETWORK_WINDOWS_SELECT_EVENT_DRIVER
 #define COMMON_NETWORK_WINDOWS_SELECT_EVENT_DRIVER
 
+#include <atomic>
 #include <unordered_map>
 #include <vector>
 #include "common/network/if_event_driver.h"
@@ -10,7 +11,10 @@
 namespace quicx {
 namespace common {
 
-// Select-based event driver implementation for Windows (for debugging)
+// Select-based event driver implementation for Windows (the only Windows
+// driver). IOCP is completion-based and fundamentally incompatible with the
+// readiness-pull model of IEventDriver/UdpReceiver; see docs on the Windows
+// I/O strategy before attempting anything fancier.
 class SelectEventDriver: public IEventDriver {
 public:
     SelectEventDriver();
@@ -48,7 +52,11 @@ private:
     int32_t wakeup_fd_[2];                                // Pipe for wakeup
     int max_events_ = 1024;
     bool initialized_ = false;
-    static bool ws_initialized_;
+    // Process-wide winsock refcount shared by all SelectEventDriver
+    // instances. WSAStartup/WSACleanup are process-global; a plain static
+    // bool made the FIRST destroyed driver tear winsock down under any
+    // still-live driver (e.g. in-process client + server tests).
+    static std::atomic<int> ws_refcount_;
 };
 
 }  // namespace common

@@ -1,5 +1,6 @@
-#include "common/log/stdout_logger.h"
 #include <iostream>
+
+#include "common/log/stdout_logger.h"
 
 namespace quicx {
 namespace common {

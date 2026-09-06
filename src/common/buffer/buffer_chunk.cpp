@@ -33,10 +33,8 @@ BufferChunk::BufferChunk(BufferChunk&& other) noexcept {
     pool_ = std::move(other.pool_);
     data_ = other.data_;
     length_ = other.length_;
-    write_floor_offset_.store(other.write_floor_offset_.load(std::memory_order_relaxed),
-        std::memory_order_relaxed);
-    freeze_count_.store(other.freeze_count_.load(std::memory_order_relaxed),
-        std::memory_order_relaxed);
+    write_floor_offset_.store(other.write_floor_offset_.load(std::memory_order_relaxed), std::memory_order_relaxed);
+    freeze_count_.store(other.freeze_count_.load(std::memory_order_relaxed), std::memory_order_relaxed);
 
     other.data_ = nullptr;
     other.length_ = 0;
@@ -53,10 +51,8 @@ BufferChunk& BufferChunk::operator=(BufferChunk&& other) noexcept {
         pool_ = std::move(other.pool_);
         data_ = other.data_;
         length_ = other.length_;
-        write_floor_offset_.store(other.write_floor_offset_.load(std::memory_order_relaxed),
-            std::memory_order_relaxed);
-        freeze_count_.store(other.freeze_count_.load(std::memory_order_relaxed),
-            std::memory_order_relaxed);
+        write_floor_offset_.store(other.write_floor_offset_.load(std::memory_order_relaxed), std::memory_order_relaxed);
+        freeze_count_.store(other.freeze_count_.load(std::memory_order_relaxed), std::memory_order_relaxed);
 
         other.data_ = nullptr;
         other.length_ = 0;

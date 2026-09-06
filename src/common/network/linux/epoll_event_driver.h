@@ -63,4 +63,4 @@ private:
 }  // namespace quicx
 
 #endif  // COMMON_NETWORK_LINUX_EPOLL_EVENT_DRIVER
-#endif  // __linux__
+#endif  // COMMON_NETWORK_LINUX_EPOLL_EVENT_DRIVER

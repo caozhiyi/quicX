@@ -1,23 +1,27 @@
-#include <quicx/common/if_timer_scheduler.h>
-
+#include "common/timer/if_timer_scheduler.h"
 #include "common/timer/timer_core.h"
 #include "common/util/time.h"
 
 namespace quicx {
 namespace common {
 
-// Implementation of the public Timer handle declared in
-// include/quicx/common/if_timer_scheduler.h. It is kept out of line so the
-// public header never needs the definition of TimerCore.
+// Implementation of the Timer handle declared in
+// common/timer/if_timer_scheduler.h. It is kept out of line so the
+// header never needs the definition of TimerCore.
 
-Timer::Timer(std::shared_ptr<TimerCore> core, uint32_t index, uint32_t gen) noexcept
-    : core_(std::move(core)), index_(index), gen_(gen) {}
+Timer::Timer(std::shared_ptr<TimerCore> core, uint32_t index, uint32_t gen) noexcept:
+    core_(std::move(core)),
+    index_(index),
+    gen_(gen) {}
 
 Timer::~Timer() {
     Cancel();
 }
 
-Timer::Timer(Timer&& other) noexcept: core_(other.core_), index_(other.index_), gen_(other.gen_) {
+Timer::Timer(Timer&& other) noexcept:
+    core_(other.core_),
+    index_(other.index_),
+    gen_(other.gen_) {
     other.core_.reset();
 }
 

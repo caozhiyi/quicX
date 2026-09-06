@@ -4,8 +4,8 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
-
 #include <quicx/common/if_buffer_read.h>
+
 #include "common/buffer/buffer_span.h"
 
 namespace quicx {
@@ -81,4 +81,4 @@ private:
 }  // namespace common
 }  // namespace quicx
 
-#endif
+#endif  // COMMON_BUFFER_BUFFER_READER

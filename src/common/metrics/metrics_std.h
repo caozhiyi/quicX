@@ -221,4 +221,4 @@ void InitializeStandardMetrics();
 }  // namespace common
 }  // namespace quicx
 
-#endif  // COMMON_METRICS_METRICS_STD_H
+#endif  // COMMON_METRICS_METRICS_STD

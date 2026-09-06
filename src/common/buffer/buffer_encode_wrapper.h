@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <memory>
+
 #include "common/buffer/buffer_span.h"
 #include "common/buffer/if_buffer.h"
 #include "common/decode/decode.h"
@@ -68,4 +69,4 @@ bool BufferEncodeWrapper::EncodeVarint(T value) {
 }  // namespace common
 }  // namespace quicx
 
-#endif
+#endif  // COMMON_BUFFER_BUFFER_ENCODE_WRAPPER

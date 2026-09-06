@@ -1,7 +1,8 @@
-#include "common/allocator/normal_allocator.h"
 #include <cstdlib>
 #include <cstring>  //for memset
 #include <new>
+
+#include "common/allocator/normal_allocator.h"
 
 namespace quicx {
 namespace common {

@@ -1,12 +1,9 @@
-// Use of this source code is governed by a BSD 3-Clause License
-// that can be found in the LICENSE file.
-
-#include "common/qlog/writer/async_writer.h"
-#include "common/log/log.h"
-#include "common/util/time.h"
-
 #include <algorithm>
 #include <filesystem>
+
+#include "common/log/log.h"
+#include "common/qlog/writer/async_writer.h"
+#include "common/util/time.h"
 
 namespace quicx {
 namespace common {
@@ -28,9 +25,9 @@ void AsyncWriter::Start() {
 
     // Create output directory
     try {
-        std::filesystem::create_directories(config_.output_dir);
+        std::filesystem::create_directories(config_.output_dir_);
     } catch (const std::exception& e) {
-        LOG_ERROR("Failed to create qlog output directory: %s, error: %s", config_.output_dir.c_str(), e.what());
+        LOG_ERROR("Failed to create qlog output directory: %s, error: %s", config_.output_dir_.c_str(), e.what());
         running_ = false;
         return;
     }
@@ -38,7 +35,7 @@ void AsyncWriter::Start() {
     // Start writer thread
     writer_thread_ = std::thread(&AsyncWriter::WriterLoop, this);
 
-    LOG_INFO("qlog AsyncWriter started, output_dir=%s", config_.output_dir.c_str());
+    LOG_INFO("qlog AsyncWriter started, output_dir=%s", config_.output_dir_.c_str());
 }
 
 void AsyncWriter::Stop() {
@@ -99,7 +96,7 @@ void AsyncWriter::WriterLoop() {
         bool should_flush = false;
 
         if (!batch.empty()) {
-            if ((now - last_flush_time) >= config_.flush_interval_ms) {
+            if ((now - last_flush_time) >= config_.flush_interval_ms_) {
                 should_flush = true;
             }
 
@@ -159,7 +156,7 @@ void AsyncWriter::FlushBatch(std::vector<WriteTask>& batch) {
     }
 
     // Flush file buffers
-    if (config_.batch_write) {
+    if (config_.batch_write_) {
         for (auto& pair : file_streams_) {
             if (pair.second && pair.second->is_open()) {
                 pair.second->flush();
@@ -231,7 +228,7 @@ std::string AsyncWriter::GenerateFilename(const std::string& connection_id) {
     // Connection ID prefix (up to 8 characters)
     std::string cid_prefix = connection_id.substr(0, std::min<size_t>(8, connection_id.size()));
 
-    std::string filename = config_.output_dir + "/" + timestamp + "_" + cid_prefix + ".sqlog";
+    std::string filename = config_.output_dir_ + "/" + timestamp + "_" + cid_prefix + ".sqlog";
     return filename;
 }
 
@@ -252,7 +249,7 @@ void AsyncWriter::UpdateConfig(const QlogConfig& config) {
 
 void AsyncWriter::SetOutputDirectory(const std::string& dir) {
     std::lock_guard<std::mutex> lock(config_mutex_);
-    config_.output_dir = dir;
+    config_.output_dir_ = dir;
 
     // Create new directory
     try {

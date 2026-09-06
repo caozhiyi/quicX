@@ -1,10 +1,10 @@
 #ifndef COMMON_LOG_BASE_LOGGER
 #define COMMON_LOG_BASE_LOGGER
 
-#include <stdarg.h>
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <stdarg.h>
 
 #include "common/log/log.h"
 #include "common/log/log_stream.h"
@@ -93,4 +93,4 @@ protected:
 }  // namespace common
 }  // namespace quicx
 
-#endif
+#endif  // COMMON_LOG_BASE_LOGGER

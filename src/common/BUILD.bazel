@@ -24,7 +24,7 @@ licenses(["notice"])  # MIT-style per project LICENSE
 # requiring per-target prefix rewrites.
 # ---------------------------------------------------------------------------
 
-# Platform-agnostic source files. Platform-specific code (epoll/kqueue/iocp,
+# Platform-agnostic source files. Platform-specific code (epoll/kqueue/select,
 # Win32 vs POSIX helpers) is appended via select() below.
 _COMMON_SRCS = glob(
     [
@@ -53,23 +53,18 @@ cc_library(
         "@platforms//os:macos": [
             "network/macos/io_handle.cpp",
             "network/macos/kqueue_event_driver.cpp",
-            "os/posix/convert.cpp",
         ],
         "@platforms//os:linux": [
             "network/linux/epoll_event_driver.cpp",
             "network/linux/io_handle.cpp",
-            "os/posix/convert.cpp",
         ],
         "@platforms//os:windows": [
             "network/windows/io_handle.cpp",
-            "network/windows/iocp_event_driver.cpp",
             "network/windows/select_event_driver.cpp",
-            "os/win/convert.cpp",
         ],
         "//conditions:default": [
             "network/linux/epoll_event_driver.cpp",
             "network/linux/io_handle.cpp",
-            "os/posix/convert.cpp",
         ],
     }) + ["//src/quic:quic_srcs"],
     hdrs = glob(["**/*.h"]),
@@ -83,7 +78,11 @@ cc_library(
     # source files use `common/...` and `quic/...` paths consistently.
     includes = [".."],
     copts = select({
-        "@platforms//os:windows": [],
+        # Winsock fd_set defaults to FD_SETSIZE=64 entries and FD_SET does not
+        # bounds-check, so select-based monitoring silently corrupts memory
+        # beyond 64 sockets. Raise it project-wide (CMake mirrors this via
+        # -DFD_SETSIZE=1024) so every TU sees the same fd_set size.
+        "@platforms//os:windows": ["/DFD_SETSIZE=1024"],
         "//conditions:default": [
             "-std=c++17",
             "-pthread",

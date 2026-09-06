@@ -1,5 +1,5 @@
 #ifdef __linux__
-#include "common/network/io_handle.h"
+
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <ifaddrs.h>
@@ -13,22 +13,19 @@
 #include <unistd.h>  // for close
 #include <atomic>
 #include <cstring>
+
 #include "common/log/log.h"
-#include "common/network/socket_family_cache.h"
+#include "common/network/io_handle.h"
 
 namespace quicx {
 namespace common {
 
-namespace {}  // namespace
-
-// Resolve the address family of `sockfd`. Cache hit is the common case
-// (we created the fd and recorded its family). For caller-provided fds
-// (e.g. TCP fds in the upgrade path, test fixtures) we fall back to
-// SO_DOMAIN, which is Linux-specific but reliable.
+// Resolve the address family of `sockfd` by probing the kernel. Only used
+// for fds we did not create ourselves (externally-injected fds, TCP fds in
+// the upgrade path, test fixtures) — every fd from UdpSocket()/UdpSocket4()
+// has its family carried alongside it in SocketHandle / UdpSocketResult.
+// SO_DOMAIN is Linux-specific but reliable.
 int32_t ResolveSocketFamily(int32_t sockfd) {
-    int32_t fam = GetSocketFamily(sockfd);
-    if (fam != 0) return fam;
-
     int domain = 0;
     socklen_t domain_len = sizeof(domain);
     if (getsockopt(sockfd, SOL_SOCKET, SO_DOMAIN, &domain, &domain_len) == 0) {
@@ -48,14 +45,12 @@ UdpSocketResult UdpSocket() {
     if (sock != -1) {
         int off = 0;
         setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY, &off, sizeof(off));
-        RememberSocketFamily(sock, AF_INET6);
         SetUdpSocketBuffer(sock, kDefaultUdpBufferSize);
         return {sock, 0, AF_INET6};
     }
     // Fallback to IPv4-only if IPv6 not available.
     sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (sock != -1) {
-        RememberSocketFamily(sock, AF_INET);
         SetUdpSocketBuffer(sock, kDefaultUdpBufferSize);
         return {sock, 0, AF_INET};
     }
@@ -68,7 +63,6 @@ UdpSocketResult UdpSocket4() {
     // routing issues in certain network environments (e.g., Docker bridge networks).
     int32_t sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (sock != -1) {
-        RememberSocketFamily(sock, AF_INET);
         SetUdpSocketBuffer(sock, kDefaultUdpBufferSize);
         return {sock, 0, AF_INET};
     }
@@ -76,7 +70,6 @@ UdpSocketResult UdpSocket4() {
 }
 
 SysCallInt32Result Close(int32_t sockfd) {
-    ForgetSocketFamily(sockfd);
     const int32_t rc = close(sockfd);
     return {rc, rc != -1 ? 0 : errno};
 }
@@ -176,10 +169,14 @@ SysCallInt32Result Writev(int32_t sockfd, Iovec* vec, uint32_t vec_len) {
     return {rc, rc != -1 ? 0 : errno};
 }
 
-SysCallInt32Result SendTo(int32_t sockfd, const char* msg, uint32_t len, uint16_t flag, const Address& addr) {
-    // O(1) cache hit on the hot path; falls back to a single SO_DOMAIN
-    // syscall for fds we don't own (e.g. test fixtures).
-    const int32_t domain = ResolveSocketFamily(sockfd);
+SysCallInt32Result SendTo(const SocketHandle& sock, const char* msg, uint32_t len, uint16_t flag, const Address& addr) {
+    // The handle carries the family from creation time (free, no syscall).
+    // Only fds whose family was never recorded pay the ResolveSocketFamily
+    // fallback (one SO_DOMAIN syscall, e.g. test fixtures).
+    int32_t domain = sock.family;
+    if (domain != AF_INET6 && domain != AF_INET) {
+        domain = ResolveSocketFamily(sock.fd);
+    }
 
     // PERF (P1): consult Address-side cache, indexed by socket family. The
     // same Address typically talks to one peer for its lifetime, so the
@@ -187,7 +184,7 @@ SysCallInt32Result SendTo(int32_t sockfd, const char* msg, uint32_t len, uint16_
     const int cache_family = (domain == AF_INET6) ? AF_INET6 : AF_INET;
     socklen_t cached_len = 0;
     if (const struct sockaddr* cached = addr.GetCachedSockaddr(cache_family, cached_len)) {
-        const int32_t rc = sendto(sockfd, msg, len, flag, cached, cached_len);
+        const int32_t rc = sendto(sock.fd, msg, len, flag, cached, cached_len);
         return {rc, rc != -1 ? 0 : errno};
     }
 
@@ -199,7 +196,7 @@ SysCallInt32Result SendTo(int32_t sockfd, const char* msg, uint32_t len, uint16_
         addr_in.sin_port = htons(addr.GetPort());
         inet_pton(AF_INET, addr.GetIp().c_str(), &addr_in.sin_addr);
         addr.StoreCachedSockaddr(AF_INET, (struct sockaddr*)&addr_in, sizeof(addr_in));
-        const int32_t rc = sendto(sockfd, msg, len, flag, (sockaddr*)&addr_in, sizeof(addr_in));
+        const int32_t rc = sendto(sock.fd, msg, len, flag, (sockaddr*)&addr_in, sizeof(addr_in));
         return {rc, rc != -1 ? 0 : errno};
     }
 
@@ -216,7 +213,7 @@ SysCallInt32Result SendTo(int32_t sockfd, const char* msg, uint32_t len, uint16_
         inet_pton(AF_INET6, mapped.c_str(), &addr_in6.sin6_addr);
     }
     addr.StoreCachedSockaddr(AF_INET6, (struct sockaddr*)&addr_in6, sizeof(addr_in6));
-    const int32_t rc = sendto(sockfd, msg, len, flag, (sockaddr*)&addr_in6, sizeof(addr_in6));
+    const int32_t rc = sendto(sock.fd, msg, len, flag, (sockaddr*)&addr_in6, sizeof(addr_in6));
     return {rc, rc != -1 ? 0 : errno};
 }
 
@@ -238,7 +235,7 @@ SysCallInt32Result SendmMsg(int32_t sockfd, MMsghdr* msgvec, uint32_t vlen, uint
 #endif
 
 SysCallInt32Result SendMsgGso(
-    int32_t sockfd, const char* payload, uint32_t total_len, uint16_t segment_size, const Address& addr) {
+    const SocketHandle& sock, const char* payload, uint32_t total_len, uint16_t segment_size, const Address& addr) {
     if (payload == nullptr || total_len == 0 || segment_size == 0) {
         return {-1, EINVAL};
     }
@@ -246,7 +243,10 @@ SysCallInt32Result SendMsgGso(
     // Reuse the same address-family resolution + sockaddr cache as the
     // single-packet sendto() path so a GSO send doesn't pay the
     // inet_pton/family-detection cost on every hot-path call.
-    const int32_t domain = ResolveSocketFamily(sockfd);
+    int32_t domain = sock.family;
+    if (domain != AF_INET6 && domain != AF_INET) {
+        domain = ResolveSocketFamily(sock.fd);
+    }
     const int cache_family = (domain == AF_INET6) ? AF_INET6 : AF_INET;
 
     // Stack scratch used only on cache miss; on the steady-state hot path
@@ -313,7 +313,7 @@ SysCallInt32Result SendMsgGso(
     uint16_t seg = segment_size;
     memcpy(CMSG_DATA(cm), &seg, sizeof(seg));
 
-    const int32_t rc = sendmsg(sockfd, &msg, 0);
+    const int32_t rc = sendmsg(sock.fd, &msg, 0);
     return {rc, rc != -1 ? 0 : errno};
 }
 

@@ -1,6 +1,3 @@
-// Use of this source code is governed by a BSD 3-Clause License
-// that can be found in the LICENSE file.
-
 #ifndef COMMON_LOG_LOG_CONTEXT
 #define COMMON_LOG_LOG_CONTEXT
 
@@ -50,4 +47,4 @@ private:
 }  // namespace common
 }  // namespace quicx
 
-#endif
+#endif  // COMMON_LOG_LOG_CONTEXT

@@ -118,4 +118,4 @@ private:
 }  // namespace common
 }  // namespace quicx
 
-#endif
+#endif  // COMMON_BUFFER_SINGLE_BLOCK_BUFFER

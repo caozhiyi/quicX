@@ -433,4 +433,4 @@ void allocatorWrap::PoolFree(T* m, uint32_t len) {
 }  // namespace common
 }  // namespace quicx
 
-#endif
+#endif  // COMMON_ALLOCATOR_IF_ALLOCATOR

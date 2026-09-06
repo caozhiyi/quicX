@@ -1,16 +1,8 @@
-#ifdef _WIN32
-// Windows headers must be included in the correct order
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#include <winsock2.h>
-#include <ws2tcpip.h>
-
-#define htobe64(x) htonll(x)
-#define htole64(x) (x)
-#define be64toh(x) ntohll(x)
-#define le64toh(x) (x)
+#ifdef __linux__
+#include <arpa/inet.h>
+#include <endian.h>
 #endif
-
+#include <cstring>
 #ifdef __APPLE__
 #include <libkern/OSByteOrder.h>
 
@@ -23,13 +15,18 @@
 #define htole64(x) OSSwapHostToLittleInt64(x)
 #define le64toh(x) OSSwapLittleToHostInt64(x)
 #endif
+#ifdef _WIN32
+// Windows headers must be included in the correct order
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
 
-#ifdef __linux__
-#include <arpa/inet.h>
-#include <endian.h>
+#define htobe64(x) htonll(x)
+#define htole64(x) (x)
+#define be64toh(x) ntohll(x)
+#define le64toh(x) (x)
 #endif
-
-#include <cstring>
 
 #include "common/decode/decode.h"
 #include "common/log/log.h"

@@ -1,6 +1,3 @@
-// Use of this source code is governed by a BSD 3-Clause License
-// that can be found in the LICENSE file.
-
 #include <algorithm>
 
 #include "common/log/log.h"
@@ -22,7 +19,7 @@ QlogTrace::QlogTrace(const std::string& connection_id, VantagePoint vantage_poin
     // `time_us` (e.g. unit-test fixtures using `time_us = 100`) while
     // `start_time_us_` was already set to wall-clock-now.
     start_time_us_(0),
-    use_relative_time_(config.time_format == "relative"),
+    use_relative_time_(config.time_format_ == "relative"),
     event_count_(0),
     writer_(nullptr),
     // Always set; the single-thread check in WriteEvent() is the part that is
@@ -31,7 +28,7 @@ QlogTrace::QlogTrace(const std::string& connection_id, VantagePoint vantage_poin
     owner_thread_id_(std::this_thread::get_id()),
     header_written_(false) {
     // create serializer
-    if (config_.format == QlogFileFormat::kSequential) {
+    if (config_.format_ == QlogFileFormat::kSequential) {
         serializer_ = std::make_unique<JsonSeqSerializer>();
     } else {
         // future can extend other format
@@ -117,15 +114,15 @@ void QlogTrace::SetConfiguration(const QlogConfiguration& config) {
 
 bool QlogTrace::ShouldLogEvent(const std::string& event_name) {
     // white list filter
-    if (!config_.event_whitelist.empty()) {
-        return std::find(config_.event_whitelist.begin(), config_.event_whitelist.end(), event_name) !=
-               config_.event_whitelist.end();
+    if (!config_.event_whitelist_.empty()) {
+        return std::find(config_.event_whitelist_.begin(), config_.event_whitelist_.end(), event_name) !=
+               config_.event_whitelist_.end();
     }
 
     // black list filter
-    if (!config_.event_blacklist.empty()) {
-        return std::find(config_.event_blacklist.begin(), config_.event_blacklist.end(), event_name) ==
-               config_.event_blacklist.end();
+    if (!config_.event_blacklist_.empty()) {
+        return std::find(config_.event_blacklist_.begin(), config_.event_blacklist_.end(), event_name) ==
+               config_.event_blacklist_.end();
     }
 
     return true;

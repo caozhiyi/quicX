@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <memory>
+
 #include "common/structure/linked_list_solt.h"
 
 namespace quicx {
@@ -69,4 +70,4 @@ private:
 }  // namespace common
 }  // namespace quicx
 
-#endif
+#endif  // COMMON_STRUCTURE_LINKED_LIST

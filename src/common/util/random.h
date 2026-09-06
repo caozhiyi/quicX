@@ -47,4 +47,4 @@ private:
 }  // namespace common
 }  // namespace quicx
 
-#endif
+#endif  // COMMON_UTIL_RANDOM

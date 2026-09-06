@@ -62,4 +62,4 @@ private:
 }  // namespace common
 }  // namespace quicx
 
-#endif
+#endif  // COMMON_LOG_FILE_LOGGER

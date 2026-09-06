@@ -312,8 +312,8 @@ Timer EventLoop::AddRepeatTimer(std::weak_ptr<void> owner, std::function<void()>
         return Timer();
     }
     uint32_t gen = 0;
-    uint32_t index =
-        timer_core_->Arm(std::move(cb), std::move(owner), /*has_owner=*/true, interval_ms, interval_ms, UTCTimeMsec(), gen);
+    uint32_t index = timer_core_->Arm(
+        std::move(cb), std::move(owner), /*has_owner=*/true, interval_ms, interval_ms, UTCTimeMsec(), gen);
     if (index == TimerCore::kNoEntry) {
         LOG_ERROR("EventLoop::AddRepeatTimer: timer slab exhausted");
         return Timer();

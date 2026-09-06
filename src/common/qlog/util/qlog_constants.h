@@ -1,6 +1,3 @@
-// Use of this source code is governed by a BSD 3-Clause License
-// that can be found in the LICENSE file.
-
 #ifndef COMMON_QLOG_UTIL_QLOG_CONSTANTS
 #define COMMON_QLOG_UTIL_QLOG_CONSTANTS
 
@@ -86,4 +83,4 @@ constexpr char kJsonSeqRecordSeparator = '\x1E';
 }  // namespace common
 }  // namespace quicx
 
-#endif
+#endif  // COMMON_QLOG_UTIL_QLOG_CONSTANTS

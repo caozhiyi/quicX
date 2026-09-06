@@ -1,5 +1,6 @@
-#include "common/util/random.h"
 #include <random>
+
+#include "common/util/random.h"
 
 namespace quicx {
 namespace common {

@@ -46,4 +46,4 @@ bool ParsePathWithQuery(
 }  // namespace common
 }  // namespace quicx
 
-#endif
+#endif  // COMMON_HTTP_URL

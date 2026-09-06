@@ -1,10 +1,27 @@
-#include "common/util/time.h"
 #include <chrono>
+#include <ctime>
 #include <thread>
-#include "common/os/convert.h"
+
+#include "common/util/time.h"
 
 namespace quicx {
 namespace common {
+
+namespace {
+
+// localtime_r vs localtime_s: the only platform divergence in this module,
+// inlined here rather than kept in a separate os/{posix,win} tree for one
+// two-line function (same in-place-#ifdef pattern as address.cpp /
+// if_event_driver.cpp).
+void Localtime(const time_t* time, tm* out) {
+#ifdef _WIN32
+    ::localtime_s(out, time);
+#else
+    ::localtime_r(time, out);
+#endif
+}
+
+}  // namespace
 
 uint64_t UTCTimeSec() {
     return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch())
@@ -36,7 +53,7 @@ void GetFormatTime(char* buf, uint32_t& len, FormatTimeUnit unit) {
     }
 
     tm time;
-    Localtime((uint64_t*)&now_time_t, (void*)&time);
+    Localtime(&now_time_t, &time);
     switch (unit) {
         case FormatTimeUnit::kMillisecondFormat:
             len = snprintf(buf, len, "%04d-%02d-%02d:%02d:%02d:%02d:%03d", 1900 + time.tm_year, 1 + time.tm_mon,

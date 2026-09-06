@@ -23,4 +23,4 @@ protected:
 }  // namespace common
 }  // namespace quicx
 
-#endif
+#endif  // COMMON_STRUCTURE_LINKED_LIST_SOLT

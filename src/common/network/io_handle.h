@@ -2,7 +2,10 @@
 #define QUIC_COMMON_NETWORK_IO_HANDLE
 
 #include <cstdint>
+
+#include "common/config.h"
 #include "common/network/address.h"
+#include "common/network/socket_handle.h"
 #include "common/util/os_return.h"
 
 namespace quicx {
@@ -56,10 +59,14 @@ struct UdpSocketResult {
 // the platform does not support IPv6 and we fell back to a v4-only socket.
 UdpSocketResult UdpSocket();
 
-// Resolve a UDP socket's address family (AF_INET / AF_INET6). Returns 0
-// (AF_UNSPEC) if the family cannot be determined. Cheap on fds we
-// created (O(1) cache hit); falls back to one SO_DOMAIN/getsockname
-// syscall otherwise.
+// Resolve a UDP socket's address family (AF_INET / AF_INET6) by probing the
+// kernel (SO_DOMAIN on Linux, getsockname elsewhere). Returns 0 (AF_UNSPEC)
+// — or a best-effort AF_INET — if the family cannot be determined.
+//
+// This is the fallback path for fds whose family was not carried alongside
+// them (SocketHandle::family == 0: externally-injected fds, TCP fds in the
+// upgrade path, test fixtures). Every fd created by UdpSocket()/UdpSocket4()
+// returns its family in UdpSocketResult::family_ and should never need this.
 int32_t ResolveSocketFamily(int32_t sockfd);
 
 // Create an IPv4-only UDP socket (AF_INET). `family_` is always AF_INET.
@@ -82,7 +89,12 @@ SysCallInt32Result Listen(int32_t sockfd, int32_t backlog);
 
 SysCallInt32Result Write(int32_t sockfd, const char* data, uint32_t len);
 SysCallInt32Result Writev(int32_t sockfd, Iovec* vec, uint32_t vec_len);
-SysCallInt32Result SendTo(int32_t sockfd, const char* msg, uint32_t len, uint16_t flag, const Address& addr);
+
+// Send one datagram on `sock`. The handle's family selects which cached
+// sockaddr slot (AF_INET / AF_INET6) of `addr` to use; when the family is
+// unknown (0) we fall back to ResolveSocketFamily() — one syscall, only for
+// fds we did not create ourselves.
+SysCallInt32Result SendTo(const SocketHandle& sock, const char* msg, uint32_t len, uint16_t flag, const Address& addr);
 SysCallInt32Result SendMsg(int32_t sockfd, const Msghdr* msg, int16_t flag);
 SysCallInt32Result SendmMsg(int32_t sockfd, MMsghdr* msgvec, uint32_t vlen, uint16_t flag);
 
@@ -116,7 +128,7 @@ SysCallInt32Result SendmMsg(int32_t sockfd, MMsghdr* msgvec, uint32_t vlen, uint
 //
 // Not implemented (returns EIO) on macOS — caller must check error_code_.
 SysCallInt32Result SendMsgGso(
-    int32_t sockfd, const char* payload, uint32_t total_len, uint16_t segment_size, const Address& addr);
+    const SocketHandle& sock, const char* payload, uint32_t total_len, uint16_t segment_size, const Address& addr);
 
 SysCallInt32Result Recv(int32_t sockfd, char* data, uint32_t len, uint16_t flag);
 SysCallInt32Result Readv(int32_t sockfd, Iovec* vec, uint32_t vec_len);
@@ -125,18 +137,6 @@ SysCallInt32Result RecvMsg(int32_t sockfd, Msghdr* msg, int16_t flag);
 SysCallInt32Result RecvmMsg(int32_t sockfd, MMsghdr* msgvec, uint32_t vlen, uint16_t flag, uint32_t time_out);
 
 SysCallInt32Result SetSockOpt(int32_t sockfd, int level, int optname, const void* optval, uint32_t optlen);
-
-// Default UDP socket buffer size requested for every QUIC UDP socket.
-// 4 MiB is the "good middle ground" used by Chromium/QUICHE example servers
-// and is plenty for hundreds of concurrent QUIC connections at LAN/loopback
-// rates. quic-go documents up to 7.5 MB for very high-bandwidth WAN paths;
-// applications may call SetUdpSocketBuffer() again with a larger value.
-//
-// NOTE: Linux clamps this to `min(2*requested, net.core.{r,w}mem_max)`. So
-// on a stock Linux box (rmem_max=212992 by default) the kernel will silently
-// truncate to ~208 KiB and SetUdpSocketBuffer() will print a one-time
-// warning suggesting `sysctl -w net.core.rmem_max=...`.
-constexpr int32_t kDefaultUdpBufferSize = 4 * 1024 * 1024;  // 4 MiB
 
 // Try to enlarge a UDP socket's SO_RCVBUF and SO_SNDBUF to `size_bytes`.
 // Reads back the actual values and emits a one-time LOG_WARN if either
@@ -221,4 +221,4 @@ SysCallInt32Result RecvFromBatch(int32_t sockfd, RecvBatchEntry* entries, uint32
 }  // namespace common
 }  // namespace quicx
 
-#endif
+#endif  // QUIC_COMMON_NETWORK_IO_HANDLE

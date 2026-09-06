@@ -141,4 +141,4 @@ private:
 }  // namespace common
 }  // namespace quicx
 
-#endif
+#endif  // COMMON_BUFFER_MULTI_BLOCK_BUFFER

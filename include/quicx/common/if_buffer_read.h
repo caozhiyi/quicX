@@ -65,4 +65,4 @@ public:
 
 }  // namespace quicx
 
-#endif
+#endif  // COMMON_BUFFER_IF_BUFFER_READ

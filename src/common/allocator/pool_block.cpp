@@ -1,16 +1,15 @@
 #include <atomic>
 #include <cstdlib>
+#include <quicx/common/metrics.h>
 #include <thread>
 
-#include <quicx/common/metrics.h>
-#include <quicx/common/metrics_std.h>
 #include "common/allocator/pool_block.h"
+#include "common/config.h"
 #include "common/log/log.h"
+#include "common/metrics/metrics_std.h"
 
 namespace quicx {
 namespace common {
-
-static const uint16_t kMaxBlockNum = 20;
 
 BlockMemoryPool::BlockMemoryPool(uint32_t large_sz, uint32_t add_num):
     number_large_add_nodes_(add_num),
@@ -42,9 +41,8 @@ void* BlockMemoryPool::PoolLargeMalloc() {
     // ownership metadata stable even for pools whose creator forgot
     // SetOwnerThread().
     std::thread::id expected = std::thread::id();
-    owner_tid_.compare_exchange_strong(expected, std::this_thread::get_id(),
-                                       std::memory_order_relaxed,
-                                       std::memory_order_relaxed);
+    owner_tid_.compare_exchange_strong(
+        expected, std::this_thread::get_id(), std::memory_order_relaxed, std::memory_order_relaxed);
 
     // Reclaim foreign-thread frees before we may need to expand. Any thread
     // may malloc from a pool whose buffers it holds (e.g. a worker thread
@@ -63,9 +61,9 @@ void* BlockMemoryPool::PoolLargeMalloc() {
     }
 
     // Metrics: Memory allocated
-    common::Metrics::GaugeInc(common::MetricsStd::MemPoolAllocatedBlocks);
-    common::Metrics::GaugeDec(common::MetricsStd::MemPoolFreeBlocks);
-    common::Metrics::CounterInc(common::MetricsStd::MemPoolAllocations);
+    Metrics::GaugeInc(common::MetricsStd::MemPoolAllocatedBlocks);
+    Metrics::GaugeDec(common::MetricsStd::MemPoolFreeBlocks);
+    Metrics::CounterInc(common::MetricsStd::MemPoolAllocations);
 
     return ret;
 }
@@ -88,9 +86,9 @@ void BlockMemoryPool::PoolLargeFree(void*& m) {
         m = nullptr;
 
         // Metrics: Memory deallocated
-        common::Metrics::GaugeDec(common::MetricsStd::MemPoolAllocatedBlocks);
-        common::Metrics::GaugeInc(common::MetricsStd::MemPoolFreeBlocks);
-        common::Metrics::CounterInc(common::MetricsStd::MemPoolDeallocations);
+        Metrics::GaugeDec(common::MetricsStd::MemPoolAllocatedBlocks);
+        Metrics::GaugeInc(common::MetricsStd::MemPoolFreeBlocks);
+        Metrics::CounterInc(common::MetricsStd::MemPoolDeallocations);
         return;
     }
 
@@ -105,14 +103,13 @@ void BlockMemoryPool::PoolLargeFree(void*& m) {
     void* head = handback_head_.load(std::memory_order_relaxed);
     do {
         *reinterpret_cast<void**>(m) = head;
-    } while (!handback_head_.compare_exchange_weak(
-        head, m, std::memory_order_release, std::memory_order_relaxed));
+    } while (!handback_head_.compare_exchange_weak(head, m, std::memory_order_release, std::memory_order_relaxed));
     m = nullptr;
 
     // Metrics: Memory deallocated (gauges are atomic, safe from any thread).
-    common::Metrics::GaugeDec(common::MetricsStd::MemPoolAllocatedBlocks);
-    common::Metrics::GaugeInc(common::MetricsStd::MemPoolFreeBlocks);
-    common::Metrics::CounterInc(common::MetricsStd::MemPoolDeallocations);
+    Metrics::GaugeDec(common::MetricsStd::MemPoolAllocatedBlocks);
+    Metrics::GaugeInc(common::MetricsStd::MemPoolFreeBlocks);
+    Metrics::CounterInc(common::MetricsStd::MemPoolDeallocations);
 }
 
 uint32_t BlockMemoryPool::GetSize() {
@@ -128,9 +125,7 @@ void BlockMemoryPool::SetOwnerThread(std::thread::id owner) {
     // Record the first owner only; a later call from a different thread must
     // never steal ownership of a pool another thread is already using.
     std::thread::id expected = std::thread::id();
-    owner_tid_.compare_exchange_strong(expected, owner,
-                                       std::memory_order_release,
-                                       std::memory_order_relaxed);
+    owner_tid_.compare_exchange_strong(expected, owner, std::memory_order_release, std::memory_order_relaxed);
 }
 
 void BlockMemoryPool::DrainHandback() {
@@ -183,7 +178,7 @@ void BlockMemoryPool::Expansion(uint32_t num) {
     }
 
     // Metrics: Pool expanded
-    common::Metrics::GaugeInc(common::MetricsStd::MemPoolFreeBlocks, num);
+    Metrics::GaugeInc(common::MetricsStd::MemPoolFreeBlocks, num);
 }
 
 std::shared_ptr<common::BlockMemoryPool> MakeBlockMemoryPoolPtr(uint32_t large_sz, uint32_t add_num) {

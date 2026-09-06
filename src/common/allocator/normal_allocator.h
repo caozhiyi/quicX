@@ -23,4 +23,4 @@ std::shared_ptr<NormalAllocator> MakeNormalAllocatorPtr();
 }  // namespace common
 }  // namespace quicx
 
-#endif
+#endif  // COMMON_ALLOCATOR_NORMAL_ALLOCATOR

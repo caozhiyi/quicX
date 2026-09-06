@@ -1,6 +1,3 @@
-// Use of this source code is governed by a BSD 3-Clause License
-// that can be found in the LICENSE file.
-
 #ifndef COMMON_QLOG_UTIL_QUIC_FRAMES
 #define COMMON_QLOG_UTIL_QUIC_FRAMES
 
@@ -11,6 +8,8 @@
 #include <string>
 
 #include "common/qlog/util/qlog_types.h"
+#include "common/util/hex.h"
+
 #include "quic/frame/ack_frame.h"
 #include "quic/frame/connection_close_frame.h"
 #include "quic/frame/crypto_frame.h"
@@ -34,21 +33,9 @@
 namespace quicx {
 namespace common {
 
-/**
- * @brief Convert raw bytes to lowercase hex string.
- *
- * Used to serialize CIDs, tokens and stateless reset tokens for qlog.
- */
-inline std::string BytesToHex(const uint8_t* data, size_t len) {
-    static const char kHex[] = "0123456789abcdef";
-    std::string out;
-    out.reserve(len * 2);
-    for (size_t i = 0; i < len; ++i) {
-        out.push_back(kHex[(data[i] >> 4) & 0xF]);
-        out.push_back(kHex[data[i] & 0xF]);
-    }
-    return out;
-}
+// Byte-to-hex rendering for qlog fields (CIDs, tokens, stateless reset
+// tokens) is provided by common::BytesToHex in common/util/hex.h — the same
+// implementation the log paths use.
 
 /**
  * @brief Reconstruct ACK ranges from RFC 9000 §19.3 wire-format encoding.
@@ -292,4 +279,4 @@ inline std::string FrameToJson(const std::shared_ptr<quic::IFrame>& frame) {
 }  // namespace common
 }  // namespace quicx
 
-#endif
+#endif  // COMMON_QLOG_UTIL_QUIC_FRAMES

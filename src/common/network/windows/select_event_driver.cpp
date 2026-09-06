@@ -4,10 +4,18 @@
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
-#include <winsock2.h>
-#include <ws2tcpip.h>
+// Winsock's default FD_SETSIZE is 64: fd_set is a plain SOCKET array and
+// FD_SET does NOT bounds-check, so monitoring >64 sockets silently corrupts
+// the stack. The build defines this project-wide (CMake -DFD_SETSIZE / Bazel
+// copts); this #ifndef is a safety net for builds that miss the global
+// define and must stay in sync with it.
+#ifndef FD_SETSIZE
+#define FD_SETSIZE 1024
+#endif
 #include <mswsock.h>
 #include <windows.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
 
 #include "common/log/log.h"
 #include "common/network/io_handle.h"
@@ -16,32 +24,37 @@
 namespace quicx {
 namespace common {
 
-bool SelectEventDriver::ws_initialized_ = false;
+std::atomic<int> SelectEventDriver::ws_refcount_(0);
 
 SelectEventDriver::SelectEventDriver() {
     wakeup_fd_[0] = -1;
     wakeup_fd_[1] = -1;
 
-    if (!ws_initialized_) {
+    // WSAStartup/WSACleanup are process-global; keep our own refcount so
+    // only the LAST destroyed driver tears winsock down. (The old static
+    // bool skipped WSAStartup for the 2nd+ driver but let the 1st one's
+    // destructor call WSACleanup while the others were still using sockets.)
+    if (ws_refcount_.fetch_add(1) == 0) {
         WSADATA wsa_data;
         if (WSAStartup(MAKEWORD(2, 2), &wsa_data) != 0) {
             LOG_ERROR("WSAStartup failed! error : %d", WSAGetLastError());
+            ws_refcount_.fetch_sub(1);
         }
-        ws_initialized_ = true;
     }
 }
 
 SelectEventDriver::~SelectEventDriver() {
-    if (wakeup_fd_[0] != 0) {
-        closesocket(static_cast<int>(wakeup_fd_[0]));
+    // Wakeup sockets are initialized to -1 (not 0); the old "!= 0" check
+    // always held and closed socket (-1) — harmless but never validated.
+    if (wakeup_fd_[0] != -1) {
+        closesocket(static_cast<SOCKET>(wakeup_fd_[0]));
     }
-    if (wakeup_fd_[1] != 0) {
-        closesocket(static_cast<int>(wakeup_fd_[1]));
+    if (wakeup_fd_[1] != -1) {
+        closesocket(static_cast<SOCKET>(wakeup_fd_[1]));
     }
 
-    if (ws_initialized_) {
+    if (ws_refcount_.fetch_sub(1) == 1) {
         WSACleanup();
-        ws_initialized_ = false;
     }
 }
 

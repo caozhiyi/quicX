@@ -3,14 +3,14 @@
 
 #include <cstdint>
 #include <vector>
+
 #include "common/allocator/if_allocator.h"
+#include "common/config.h"
 
 namespace quicx {
 namespace common {
 
-static const uint32_t kDefaultMaxBytes = 256;
 static const uint32_t kDefaultNumberOfFreeLists = kDefaultMaxBytes / kAlign;
-static const uint32_t kDefaultNumberAddNodes = 20;
 
 /**
  * @brief Slab-style pool allocator for small objects (<= kDefaultMaxBytes).
@@ -66,4 +66,4 @@ std::shared_ptr<IAllocator> MakePoolAllocatorPtr();
 }  // namespace common
 }  // namespace quicx
 
-#endif
+#endif  // COMMON_ALLOCATOR_POOL_ALLOCATOR
