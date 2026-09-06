@@ -29,7 +29,6 @@ flowchart TD
     end
 
     subgraph SEND[UdpSender::SendBatch]
-        FI["any_fault_enabled_ != 0?"]:::sender
         Pre["Precondition 检查<br/>(同 fd / 同 family /<br/>所有 Address 已缓存 sockaddr)"]:::sender
         GSO["GSO 候选段扫描<br/>找到 [0,gso_run) 同地址同长度前缀<br/>≥2 段 → 走 sendmsg+UDP_SEGMENT"]:::sender
         MM["剩余尾段 → sendmmsg(2)"]:::sender
@@ -71,7 +70,7 @@ flowchart TD
 **四张关键关系**：
 
 - **QUIC 层（黄）只决定"该发什么"**——Worker 在 `ProcessSend` 里逐 connection 调 `TrySend()` 把 NetPacket 推入 `thread_local tx_batch`，然后**整批一次 `SendBatch`**（`worker.cpp:131` 的 while 循环 + `:146` 的 `sender_->SendBatch`），不再逐包陷内核。
-- **UdpSender 层（绿）做四件事**：①fault injection 短路；②precondition 检查；③GSO 前缀扫描；④sendmmsg 尾段处理；任何一步出问题都**全批降级**到逐包 `Send()`，不做"半批 sendmmsg + 半批 sendto"——后者会反转 FIFO。
+- **UdpSender 层（绿）做三件事**：①precondition 检查；②GSO 前缀扫描；③sendmmsg 尾段处理；任何一步出问题都**全批降级**到逐包 `Send()`，不做"半批 sendmmsg + 半批 sendto"——后者会反转 FIFO。
 - **common::* syscall 抽象层（蓝）封掉所有 `#ifdef`**——Linux 走真 `sendmmsg(2)` / `sendmsg+UDP_SEGMENT cmsg` / `recvmmsg(2)`；macOS/Windows 走 `sendmsg` / `recvmsg` 循环；上层只看到一个统一函数。
 - **接收侧（黄→蓝→黄）一次 drain**：从 N 次 `recvfrom` 改为单次 `recvmmsg` 直接拿 64 个，让 ack-eliciting 包能在一次 wakeup 内堆够 `kAckThreshold=10` 个，触发**ACK 聚合**——这是 loopback 上把吞吐从 22k pkts/s 拉到 ~36 MB/s 的关键单点优化。
 
@@ -118,7 +117,7 @@ Linux 4.18+ 的 UDP Generic Segmentation Offload：
 UDP_GSO (sendmsg+UDP_SEGMENT)        段≥2 同地址同长度
    ↓ 不支持 / 异构包
 sendmmsg(2)                          所有 Address 已缓存 sockaddr 且同 fd
-   ↓ cache miss / 混 fd / fault inject
+   ↓ cache miss / 混 fd
 逐包 Send() → sendto(2)              永远可用
 ```
 
@@ -128,33 +127,13 @@ sendmmsg(2)                          所有 Address 已缓存 sockaddr 且同 fd
 
 ## 3. UdpSender：发送侧的精细工程
 
-### 3.1 fault injection 三层组合（drop → rate → delay）
-
-`udp_sender.h:33-114` + `cpp:241-294`：
-
-| 类型 | 实现 | 作用域 | 默认 |
-| :--- | :--- | :--- | :--- |
-| `SetDropPerMillion` | thread_local mt19937 + uniform_int | per-call | 0（关闭） |
-| `SetRateLimitBps` | 全局 TokenBucket（mutex 守护）+ tail-drop | 进程 | 0（关闭） |
-| `SetEgressDelayMs` | DelayQueue 后台 worker（FIFO 重发） | 进程 | 0（关闭） |
-
-**组合顺序固定**：drop → rate → delay。理由：
-
-- drop 在最前面，因为它**模拟物理层丢包**（不消耗发送端资源），rate-limit / delay 不应对一个"已经丢了"的包做工；
-- rate 用 tail-drop 而不是 backpressure，因为模拟"1Mbps 链路饱和后丢尾包"——若 backpressure 会改变上层 pacing 行为；
-- delay 必须最后，因为它把包**移交给后台 worker**，后续的 metrics 在 worker emit 时才计数（避免 `Drain()` 双计）。
-
-**生产侧零成本设计**：`any_fault_enabled_` 是一个原子总开关，三个 setter 任意被改时重算它。`Send()` 热路径**先读这一个 atomic**（`udp_sender.cpp:326`），off 时短路掉所有 per-knob 检查、RNG、token bucket mutex；on 时才走完整三层。这让生产代码留着 fault injection 的开销 ≈ 一条 relaxed atomic load（< 1ns）。
-
-> **为什么不用 `#ifdef NDEBUG` 把 fault injection 编译掉？** 因为 interop 测试要在 release build 上验证 1Mbps + 5%loss + 5ms 这种场景；编译时关闭就没法用 production 的 perf 配置去复现。
-
-### 3.2 sockaddr cache：把 inet_pton 摊到首包
+### 3.1 sockaddr cache：把 inet_pton 摊到首包
 
 每个 `common::Address` 内部缓存了对应 `sockaddr_in` / `sockaddr_in6`（`io_handle.cpp:263-286` 的 `GetCachedSockaddr` / `StoreCachedSockaddr`）。第一次 `SendTo` 走 `inet_pton` 解析填充 + 缓存；之后所有 sendmmsg / GSO 直接拿缓存的 `const struct sockaddr*` 塞 `msg_name_`，**零字符串解析**。
 
 这就是为什么 `SendBatch` 把 "所有包的 Address 都已缓存 sockaddr" 列为 fast-path 前置条件之一（`udp_sender.cpp:526-546`）：缓存 miss 直接退到逐包 `Send()`，由 Send 里的 `SendTo` 顺手填好缓存——下一轮 `SendBatch` 就能走 fast-path。这是**自愈式 warm-up**：新连接第一轮慢，第二轮起全速。
 
-### 3.3 GSO 永久禁用标志的并发设计
+### 3.2 GSO 永久禁用标志的并发设计
 
 ```cpp
 namespace { std::atomic<bool> g_gso_unsupported{false}; }
@@ -166,7 +145,7 @@ namespace { std::atomic<bool> g_gso_unsupported{false}; }
 
 > **替代方案为什么否决**：用 mutex 保护 + double-check，会让 GSO 路径每次都付一次原子 RMW（虽然 uncontended）；用 thread_local 标志，会让"启动时一个 worker 探测失败"无法通知其他 worker，整个集群多花 N 次失败探测。**全局 atomic + relaxed** 是最优解。
 
-### 3.4 sendmmsg 短写处理：丢而不缓存
+### 3.3 sendmmsg 短写处理：丢而不缓存
 
 `udp_sender.cpp:764-773`：当 `sendmmsg` 返回 `sent < mm_count` 时（kernel 发送队列满 / EINTR），**剩余包直接丢弃**，不跨 round 缓存。
 
@@ -354,18 +333,17 @@ if (!loop->IsInLoopThread()) {
 
 ---
 
-## 9. 不变量清单（10 条）
+## 9. 不变量清单（9 条）
 
 1. **`SendBatch` 任何 precondition fail 都全批降级**，不允许"半批 sendmmsg + 半批 sendto"。FIFO 必须保持。
 2. **GSO 段在 sendmmsg 段之前**——这是唯一允许的"部分批化"，因为它不破坏 FIFO。
 3. **GSO 段必须同 destination Address + 同 length**（最后一段允许更短）；任何不匹配则该段不可合入 GSO 前缀。
 4. **`g_gso_unsupported` 一旦置 true，进程内永不再探测 GSO**；relaxed atomic + 双线程 race 损失 ≤ 1 次失败 syscall。
-5. **`any_fault_enabled_ == 0` 是生产恒定状态**；fault injection 静态成员只在 test setup/teardown 翻转。
-6. **`recv_batch` 缓冲区长度必须用 `GetWritableSpan().GetLength()`，绝不写死 `kMaxV4PacketSize`**——pool 回收 + floor pinned 时可写区会缩水。
-7. **`kMaxRecvBatch=64` 是 perf 上限**（防 ack-feedback 饥饿），**`kMaxBatch=256` 是 syscall 接口硬上限**（栈预算 + UIO_MAXIOV）。
-8. **每个 fd 只对应一个 IPacketReceiver**；多 connection 复用通过上层 connection-ID 路由，而非 SO_REUSEPORT。
-9. **fd 所有权二元化**：调用方传入 = 调用方关；UdpReceiver 创建 = UdpReceiver 关。`owned_fds_` 是这条规则的具体证据。
-10. **所有 fd 注册 / 移除操作必须在 EventLoop 线程**；跨线程一律 `RunInLoop` + `weak_from_this`。
+5. **`recv_batch` 缓冲区长度必须用 `GetWritableSpan().GetLength()`，绝不写死 `kMaxV4PacketSize`**——pool 回收 + floor pinned 时可写区会缩水。
+6. **`kMaxRecvBatch=64` 是 perf 上限**（防 ack-feedback 饥饿），**`kMaxBatch=256` 是 syscall 接口硬上限**（栈预算 + UIO_MAXIOV）。
+7. **每个 fd 只对应一个 IPacketReceiver**；多 connection 复用通过上层 connection-ID 路由，而非 SO_REUSEPORT。
+8. **fd 所有权二元化**：调用方传入 = 调用方关；UdpReceiver 创建 = UdpReceiver 关。`owned_fds_` 是这条规则的具体证据。
+9. **所有 fd 注册 / 移除操作必须在 EventLoop 线程**；跨线程一律 `RunInLoop` + `weak_from_this`。
 
 ---
 

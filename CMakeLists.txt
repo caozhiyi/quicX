@@ -45,6 +45,14 @@ if(WIN32)
     # On Windows, explicitly set include paths to avoid system OpenSSL
     include_directories(SYSTEM ${boringssl_SOURCE_DIR}/include)
     add_definitions(-DOPENSSL_NO_SHARED)
+
+    # Winsock's fd_set defaults to FD_SETSIZE=64 entries and FD_SET does not
+    # bounds-check, so select-based monitoring silently corrupts memory beyond
+    # 64 sockets (one UDP socket per connection 4-tuple hits this fast).
+    # Project-wide define so every TU sees the same fd_set size; Bazel's
+    # windows copts mirror this, and select_event_driver.cpp has an #ifndef
+    # fallback that must stay in sync.
+    add_definitions(-DFD_SETSIZE=1024)
     
     # MSVC-specific compiler flags
     if(MSVC)
@@ -228,14 +236,18 @@ endif()
 # regardless of how MSVC/clang-cl detection resolves at configure time.
 function(quicx_suppress_example_test_unused_warnings)
     # MSVC (cl.exe) and clang-cl both accept the /wd#### spelling, while GCC and
-    # plain Clang/AppleClang need the -Wno-* spelling. Use generator expressions
-    # keyed on the compiler id / frontend variant so the wrong flag can never
-    # reach MSVC's `cl` (which would fail with D8021). CXX_COMPILER_FRONTEND_VARIANT
+    # plain Clang/AppleClang need the -Wno-* spelling. The wrong flag must never
+    # reach MSVC's `cl` (which would fail with D8021). CMAKE_CXX_COMPILER_FRONTEND_VARIANT
     # is "MSVC" for clang-cl, so it is routed to the /wd branch correctly.
-    add_compile_options(
-        "$<$<OR:$<CXX_COMPILER_ID:MSVC>,$<STREQUAL:$<CXX_COMPILER_FRONTEND_VARIANT>,MSVC>>:/wd4101;/wd4189;/wd4505>"
-        "$<$<AND:$<NOT:$<CXX_COMPILER_ID:MSVC>>,$<NOT:$<STREQUAL:$<CXX_COMPILER_FRONTEND_VARIANT>,MSVC>>>:-Wno-unused-variable;-Wno-unused-but-set-variable;-Wno-unused-function>"
-    )
+    # NOTE: use configure-time variables instead of $<CXX_COMPILER_FRONTEND_VARIANT>
+    # generator expressions: that genex needs CMake >= 3.15, which the interop
+    # docker builder's cmake may not satisfy. Compiler identity variables are set
+    # during compiler detection, before any project logic runs, so this is equivalent.
+    if(MSVC OR CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+        add_compile_options(/wd4101 /wd4189 /wd4505)
+    else()
+        add_compile_options(-Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function)
+    endif()
 endfunction()
 
 # Build examples
@@ -253,13 +265,13 @@ if(ENABLE_TESTING)
 endif()
 
 # Benchmarks
-option(ENABLE_BENCHMARKS "Enable building benchmarks" OFF)
+option(ENABLE_BENCHMARKS "Enable building benchmarks" ON)
 if(ENABLE_BENCHMARKS)
     add_subdirectory(test/benchmarks)
 endif()
 
 # Fuzzing targets (libFuzzer)
-option(ENABLE_FUZZING "Enable building fuzz targets" OFF)
+option(ENABLE_FUZZING "Enable building fuzz targets" ON)
 if(ENABLE_FUZZING)
     add_subdirectory(test/fuzz)
 endif()
@@ -283,7 +295,7 @@ if(ENABLE_INTEROP)
 endif()
 
 # Performance / baseline tests (CPU hotspots, memory baselines, protocol micro-benchmarks)
-option(ENABLE_PERF_TESTS "Enable building perf (test/perf) targets" OFF)
+option(ENABLE_PERF_TESTS "Enable building perf (test/perf) targets" ON)
 if(ENABLE_PERF_TESTS)
     add_subdirectory(test/perf)
 endif()

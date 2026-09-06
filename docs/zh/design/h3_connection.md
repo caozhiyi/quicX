@@ -335,7 +335,7 @@ return quic_connection_->MakeStreamAsync(
 
 ## 8. metrics 对应表
 
-H3 连接相关计数（`include/quicx/common/metrics_std.h:50-58, 107-110`）：
+H3 连接相关计数（`src/common/metrics/metrics_std.h:50-58, 107-110`）：
 
 | 指标 | 类型 | emit 点 | 诊断意义 |
 | :--- | :--- | :--- | :--- |

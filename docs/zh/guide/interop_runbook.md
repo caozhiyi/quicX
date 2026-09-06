@@ -183,6 +183,8 @@ python3 interop_runner.py --matrix --implementations all \
 
 定义见 `test/interop/testcases.py`，与官方 quic-interop-runner 对齐。
 
+> 本仓库 runner 覆盖上表 14 个核心场景。上游 runner 的完整矩阵另有 10 个扩展场景（`longrtt`、`multiplexing`、`blackhole`、`ecn`、`amplificationlimit`、`handshakeloss`、`transferloss`、`handshakecorruption`、`transfercorruption`、`ipv6`）与 2 个性能测算场景（`goodput`、`crosstraffic`），但不包含 `multiconnect` / `versionnegotiation`。最新对外基线（24 场景 × 17 对端，综合有效通过率 91.22%）见 [`reports/interop_status.md`](../reports/interop_status.md)。
+
 | 场景 | 描述 |
 |------|------|
 | `handshake` | 基础握手，下载 1KB |
@@ -213,7 +215,7 @@ python3 interop_runner.py --matrix --implementations all \
 
 ## 7. 已接入的第三方实现
 
-见 `test/interop/implementations.json`。
+见 `test/interop/implementations.json`（共 18 项：quicX 本地实现 + 17 个第三方对端）。
 
 | 实现 | 镜像 | 角色 |
 |------|------|------|
@@ -229,6 +231,12 @@ python3 interop_runner.py --matrix --implementations all \
 | lsquic | `litespeedtech/lsquic-qir:latest` | both |
 | msquic | `ghcr.io/microsoft/msquic/qns:main` | both |
 | s2n-quic | `ghcr.io/aws/s2n-quic/s2n-quic-qns:latest` | both |
+| go-x-net | `us-central1-docker.pkg.dev/golang-interop-testing/quic/go-x-net:latest` | both |
+| kwik | `peterdoornbosch/kwik_n_flupke-interop` | both |
+| xquic | `ghcr.io/alibaba/xquic/xquic-interop:latest` | both |
+| nginx | `ghcr.io/nginx/nginx-quic-qns:latest` | server |
+| haproxy | `haproxytech/haproxy-qns:latest` | server |
+| chrome | `martenseemann/chrome-quic-interop-runner` | client |
 
 ---
 

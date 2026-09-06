@@ -76,7 +76,7 @@ FrameProcessor::HandleFrames(...)    ← src/quic/connection/connection_frame_pr
 
 ### 2.1 谁在监听 fd
 
-EventLoop 在某个线程上跑，UDP socket 的 fd 通过 [`UdpReceiver::AddReceiver`](../../src/quic/udp/udp_receiver.cpp) 注册到 EventLoop 的 IO multiplexer。Linux 用 epoll、macOS 用 kqueue、Windows 用 select/IOCP，统一封装在 [`src/common/network/if_event_driver.h`](../../src/common/network/if_event_driver.h)。
+EventLoop 在某个线程上跑，UDP socket 的 fd 通过 [`UdpReceiver::AddReceiver`](../../src/quic/udp/udp_receiver.cpp) 注册到 EventLoop 的 IO multiplexer。Linux 用 epoll、macOS 用 kqueue、Windows 用 select（IOCP 是完成式模型，与 `IEventDriver`/`UdpReceiver` 的就绪拉取模型不兼容，曾有过的 `IOCPEventDriver` 模拟实现已删除），统一封装在 [`src/common/network/if_event_driver.h`](../../src/common/network/if_event_driver.h)。
 
 注册时挂的 handler 是 `UdpReceiver` 自身（它实现了 `IFdHandler` 接口），所以可读事件触发时由 `UdpReceiver::OnRead(fd)` 处理。
 

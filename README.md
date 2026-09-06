@@ -3,7 +3,8 @@
 <p align="left">
   <a href="https://opensource.org/licenses/BSD-3-Clause"><img src="https://img.shields.io/badge/license-BSD--3--Clause-orange.svg" alt="License"></a>
   <img src="https://img.shields.io/badge/version-1.0.0-blue.svg" alt="Version">
-  <img src="https://img.shields.io/badge/status-learning--reference-brightgreen.svg" alt="Status">
+  <img src="https://img.shields.io/badge/status-stable--v1.0.0-brightgreen.svg" alt="Status">
+  <img src="https://img.shields.io/badge/interop-24%20scenarios%20%C3%97%2017%20peers%20%7C%2091.22%25-brightgreen.svg" alt="Interop">
   <img src="https://img.shields.io/badge/C%2B%2B-17-blue.svg" alt="C++17">
   <img src="https://img.shields.io/badge/RFC-9000%20%2F%209369%20%2F%209114-informational.svg" alt="RFC">
 </p>
@@ -13,7 +14,7 @@
 
 **QuicX** is a self-contained C++17 QUIC / HTTP/3 protocol stack: from UDP socket, TLS 1.3 (BoringSSL), QUIC stream, all the way to HTTP/3 routing, QPACK, and server push, all implemented in a single repository without depending on any external HTTP framework.
 
-Its goal is to be **readable and runnable** — a clear codebase showing you the complete lifecycle of a packet from the network card to the HTTP/3 handler, backed by 1196+ unit tests, clean ASan / UBSan / TSan runs, and a 91.7% interop pass rate with major implementations. The **only thing it hasn't done yet** is carry large-scale production traffic; please treat it as a trusted reference implementation to use, learn, and extend.
+It is built for **production services**: 1527 unit and integration tests, clean ASan / UBSan / TSan runs, and a 91.22% pass rate across a 24-scenario × 17-peer interop matrix — the complete packet lifecycle, from the network card to the HTTP/3 handler, holds up under scrutiny.
 
 ---
 
@@ -78,32 +79,39 @@ Requests flow top-to-bottom along the solid lines: user's `IServer` handler → 
 
 ## Interop Testing
 
-QuicX is continuously tested against major QUIC implementations using [`quic-interop-runner`](https://github.com/quic-interop/quic-interop-runner) — **14 scenarios × 12 peers × 2 directions = 322 test combinations per round**. Most recent run:
+QuicX is continuously tested against major QUIC implementations using [`quic-interop-runner`](https://github.com/quic-interop/quic-interop-runner) — **24 scenarios × 17 peers across both directions = 744 test combinations per round** (22 RFC-conformance scenarios plus goodput / crosstraffic measurements). Most recent run (2026-09-04):
 
 | Metric | Value |
 |---|---|
-| Pass | **222** |
-| Fail | **20** |
-| Unsupported | 94 |
-| **Pass Rate** (excluding unsupported) | **91.7%** |
+| Pass | **592** |
+| Fail | **57** |
+| Unsupported | 95 |
+| **Pass Rate** (excluding unsupported) | **91.22%** |
+| Goodput / Crosstraffic | 30/30 / 28/30 |
 
-By peer implementation (Pass / Valid runs, less than 14 means certain scenarios were marked unsupported by either end):
+By peer implementation, sorted by overall effective pass rate (`N/A` = the peer does not ship that role; `chrome` is HTTP/3-client-only):
 
 | Peer | QuicX as Server | QuicX as Client | Pass Rate |
 |---|:--:|:--:|:--:|
-| **picoquic** | 13/14 | 12/13 | 96.2% |
-| **ngtcp2**   | 12/12 | 11/11 | 100% |
-| **quic-go**  | 10/10 |  9/9  | 100% |
-| **neqo**     | 10/10 |  9/10 | 95.0% |
-| **lsquic**   | 10/10 |  9/10 | 95.0% |
-| **aioquic**  | 10/10 |  9/10 | 95.0% |
-| **quiche**   |  7/7  |  8/8  | 100% |
-| **msquic**   |  8/10 | 10/10 | 90.0% |
-| **quinn**    | 14/14 |  9/9  | 100% |
-| **mvfst**    |  4/6  |  1/6  | 41.7% |
-| **s2n-quic** |  0/6  |  9/10 | 56.3% |
+| **lsquic**   | 23/23 | 23/24 | 97.9% |
+| **aioquic**  | 22/23 | 21/22 | 95.6% |
+| **neqo**     | 21/24 | 24/24 | 93.8% |
+| **picoquic** | 22/24 | 23/24 | 93.8% |
+| **kwik**     | 22/23 | 20/22 | 93.3% |
+| **xquic**    | 20/22 | 20/21 | 93.0% |
+| **s2n-quic** | 19/20 | 20/22 | 92.9% |
+| **ngtcp2**   | 23/24 | 21/24 | 91.7% |
+| **quinn**    | 20/24 | 22/22 | 91.3% |
+| **haproxy**  |  N/A  | 20/22 | 90.9% |
+| **msquic**   | 18/22 | 21/21 | 90.7% |
+| **nginx**    |  N/A  | 19/21 | 90.5% |
+| **go-x-net** | 14/15 | 12/14 | 89.7% |
+| **quic-go**  | 19/22 | 19/21 | 88.4% |
+| **quiche**   | 17/20 | 19/21 | 87.8% |
+| **mvfst**    | 12/18 | 15/19 | 73.0% |
+| **chrome**   |  1/1  |  N/A  | 100%  |
 
-Covered scenarios: `handshake`, `transfer`, `retry`, `resumption`, `zerortt`, `http3`, `multiconnect`, `versionnegotiation`, `chacha20`, `keyupdate`, `v2`, `rebind-port`, `rebind-addr`, `connectionmigration`.
+Covered scenarios: `handshake`, `transfer`, `longrtt`, `chacha20`, `multiplexing`, `retry`, `resumption`, `zerortt`, `http3`, `blackhole`, `keyupdate`, `ecn`, `amplificationlimit`, `handshakeloss`, `transferloss`, `handshakecorruption`, `transfercorruption`, `ipv6`, `v2`, `rebind-port`, `rebind-addr`, `connectionmigration`, `goodput`, `crosstraffic`.
 
 Full reports and root cause analysis: [`interop status`](./docs/en/reports/interop_status.md)
 Local reproduction: [`interop runbook`](./docs/en/guide/interop_runbook.md).

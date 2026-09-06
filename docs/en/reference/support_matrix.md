@@ -1,6 +1,6 @@
 # QuicX Support Matrix
 
-> Applies to **v0.1.x**. This document is the source of truth for "what works,
+> Applies to **v1.0.x**. This document is the source of truth for "what works,
 > what is partial, and what is intentionally not implemented" in the current
 > release line. It is updated on every minor release.
 >
@@ -263,10 +263,11 @@ Summary for **v0.1.0**:
 ## Known limitations summary (read this before adopting)
 
 1. **No Multipath / DATAGRAM / ACK Frequency** — applications needing these
-   should not adopt v0.1.x.
+   should wait for a future release.
 2. **Cross-platform CI is missing** — Windows and macOS are developer-tested
    but not continuously verified.
-3. **Public API may change** in any `0.x` minor release.
+3. **Public API** is frozen as of `1.0.0` and follows SemVer; ABI stability
+   is not promised — see [`api_stability.md`](./api_stability.md).
 4. **No SLA on security response time** beyond the best-effort targets in
    [`SECURITY.md`](../../../SECURITY.md).
 5. **mTLS, Trailers, connection pooling** have working code but limited
@@ -276,8 +277,7 @@ Summary for **v0.1.0**:
 
 ## Roadmap pointers
 
-- v0.2.0 — Linux/macOS/Windows CI; DATAGRAM frames (planned)
-- v0.3.0 — Multipath QUIC investigation; ACK Frequency
-- v1.0.0 — API freeze, SemVer guarantees take effect
-
-See [`maturity_roadmap.md`](../../internal/maturity_roadmap.md) for the longer-term view.
+- **v1.0.0 (released)** — API freeze, SemVer in effect; 24-scenario × 17-peer
+  interop matrix at a 91.22% pass rate.
+- For what's next, see [`../../../CHANGELOG.md`](../../../CHANGELOG.md) and
+  [`interop_status.md`](../reports/interop_status.md).

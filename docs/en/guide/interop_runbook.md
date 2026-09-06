@@ -186,6 +186,15 @@ python3 interop_runner.py --matrix --implementations all \
 Defined in `test/interop/testcases.py`, aligned with the upstream
 quic-interop-runner.
 
+> The in-repo runner covers the 14 core scenarios above. The upstream runner's
+> full matrix additionally defines 10 extended scenarios (`longrtt`,
+> `multiplexing`, `blackhole`, `ecn`, `amplificationlimit`, `handshakeloss`,
+> `transferloss`, `handshakecorruption`, `transfercorruption`, `ipv6`) and two
+> performance measurements (`goodput`, `crosstraffic`), but does not include
+> `multiconnect` / `versionnegotiation`. The latest external baseline
+> (24 scenarios × 17 peers, 91.22% overall effective pass rate) is tracked in
+> [`reports/interop_status.md`](../reports/interop_status.md).
+
 | Scenario | Description |
 |----------|-------------|
 | `handshake` | Basic handshake, downloads 1 KB |
@@ -216,7 +225,8 @@ quic-interop-runner.
 
 ## 7. Integrated peers
 
-See `test/interop/implementations.json`.
+See `test/interop/implementations.json` (18 entries: the local quicX
+implementation plus 17 third-party peers).
 
 | Implementation | Image | Roles |
 |----------------|-------|-------|
@@ -232,6 +242,12 @@ See `test/interop/implementations.json`.
 | lsquic   | `litespeedtech/lsquic-qir:latest` | both |
 | msquic   | `ghcr.io/microsoft/msquic/qns:main` | both |
 | s2n-quic | `ghcr.io/aws/s2n-quic/s2n-quic-qns:latest` | both |
+| go-x-net | `us-central1-docker.pkg.dev/golang-interop-testing/quic/go-x-net:latest` | both |
+| kwik     | `peterdoornbosch/kwik_n_flupke-interop` | both |
+| xquic    | `ghcr.io/alibaba/xquic/xquic-interop:latest` | both |
+| nginx    | `ghcr.io/nginx/nginx-quic-qns:latest` | server |
+| haproxy  | `haproxytech/haproxy-qns:latest` | server |
+| chrome   | `martenseemann/chrome-quic-interop-runner` | client |
 
 ---
 

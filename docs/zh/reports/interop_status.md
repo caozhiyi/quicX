@@ -5,303 +5,447 @@
 
 | 项 | 值 |
 |---|---|
-| **报告日期** | 2026-08-09 |
-| **运行模式** | ns-3 网络仿真器（quic-network-simulator 拓扑） |
-| **被测对端数** | 11 个第三方实现 + quicX 自测 |
-| **被测场景数** | 14 个 IETF interop 场景 |
-| **总用例数** | 322（PASS 216 / FAIL 16 / UNSUPPORTED 94） |
-| **有效通过率** | **93.1%**（216 / 232，剔除 UNSUPPORTED） |
-
-> 说明：`quicx → mvfst` 客户端方向已根据最新验证（2026-08-09）更新：handshake / transfer / resumption / zerortt / keyupdate / rebind-addr / rebind-port 现已通过，仅 `http3` 失败。其余单元格仍为 ns-3 基线结果。
+| **运行模式** | 上游 quic-interop-runner 全场景矩阵（quic-network-simulator / ns-3 拓扑） |
+| **被测对端数** | 17 个第三方实现（14 双向 + nginx / haproxy 仅 Server + chrome 仅 Client） |
+| **被测场景数** | 24 个（22 个协议功能场景 + 2 个性能测算场景） |
+| **总用例数** | 744（PASS 592 / FAIL 57 / UNSUPPORTED 95） |
+| **综合有效通过率** | **91.22%**（592 / 649，剔除 UNSUPPORTED） |
+| **协议功能合规通过率** | **90.66%**（534 / 589；Client 模式 292/312 = 93.59%，Server 模式 246/277 = 88.81%） |
+| **性能测算通过率** | **96.67%**（58 / 60） |
 
 ---
 
-## TL;DR
+## 总体情况
 
-- ✅ 在 ns-3 真实链路下，quicX 与 11 个主流实现互通整体表现良好，**有效通过率 93.1%**；
-- ✅ `chacha20`、`keyupdate`、`rebind-port`、`rebind-addr`、`multiconnect` 场景达到 100%；
-- ✅ `quicx → mvfst` 提升至 8/9（仅 `http3` 失败）；handshake、transfer、resumption、zerortt、keyupdate、rebind-addr、rebind-port 全部通过；
-- ⚠️ 仍需 quicX 自身跟进的真实问题：`quicx → aioquic` 的 `retry` 超时（1 起）、`quicx → picoquic | lsquic` 的 `connectionmigration` 超时（2 起）；
-- 🔵 其余失败（mvfst Client / s2n-quic Client / msquic VN&v2）均为第三方镜像兼容性问题，跟随上游解决。
+- ✅ 24 场景 × 17 对端全矩阵（744 用例）下，quicX **综合有效通过率 91.22%**；
+- ✅ **10 个场景 100% 通过**：`handshake`、`transfer`、`longrtt`、`chacha20`、`multiplexing`、`ecn`、`transferloss`、`ipv6`、`goodput`（30/30 满分，平均 8.76 Mbps，最高带宽利用率 94.7%）以及 Server 模式的 `transfercorruption`；
+- ✅ `crosstraffic`（与 TCP Cubic 竞争）28/30 达标（93.3%），双向均衡，仅 mvfst (Client) 与 xquic (Server) 未达阈值；
 
 ---
 
 ## 1. 测试概述
 
-- **执行命令**
-  ```bash
-  python3 interop_runner.py --matrix --implementations all --use-local-bin
-  ```
-- **运行环境**：Linux 宿主，Docker + Compose v2.24+，**ns-3 仿真器模式**（`docker-compose.yml`，leftnet 193.167.0.0/24 ↔ sim ↔ rightnet 193.167.100.0/24，容器具备 `NET_ADMIN`+`NET_RAW` 能力）。quicX 使用本地构建的 `build/bin/interop_{server,client}`。
-- **测试范围**：14 场景 × 23 个有效对端组合（quicX ↔ 11 个第三方实现双向 + quicX ↔ quicX 自测）。
-- **运行时长**：约 55 分钟。
+- **数据来源**：上游 [quic-interop-runner](https://github.com/quic-interop/quic-interop-runner) 全场景矩阵一轮完整运行（含 2026-09-04 crosstraffic 补充验证轮）。
+- **运行环境**：Linux 宿主，Docker + ns-3 网络仿真（leftnet ↔ sim ↔ rightnet），quicX 使用本地构建的 `interop_{server,client}`。
+- **测试范围**：24 场景 × (16 个 Server 对端 + 15 个 Client 对端) = **744 个组合**，无 quicX ↔ quicX 自测项。
+- **与前基线差异**：上轮（2026-08-09）为 14 场景 × 11 对端（322 用例，有效通过率 93.1%）。本轮新增 `longrtt` / `multiplexing` / `blackhole` / `ecn` / `amplificationlimit` / `handshakeloss` / `transferloss` / `handshakecorruption` / `transfercorruption` / `ipv6` / `goodput` / `crosstraffic` 共 12 个场景，以及 `kwik` / `xquic` / `go-x-net` / `nginx` / `haproxy` / `chrome` 共 6 个对端；上游矩阵不包含 `multiconnect` / `versionnegotiation`。两轮口径不同，通过率不直接可比。
 
 ## 2. 图例
 
 | 标记 | 含义 |
 |:----:|------|
-| ✅ | PASSED — 客户端退出码 0 且文件 byte-by-byte 一致 |
-| ❌ | FAILED — 进程异常 / 文件校验失败 / 超时 |
-| `-` | UNSUPPORTED — 任一方声明不支持，或镜像在当前 sim 网络下无法启动 |
-
-每个场景包含两张方向矩阵：
-
-- **quicX 作为 Server**：第三方实现作为 Client 连接 quicX 的结果。
-- **quicX 作为 Client**：quicX 作为 Client 连接第三方实现服务端的结果。
-
-`self` 列为 quicX ↔ quicX 自测结果。
-
----
+| ✅ | SUCCEEDED — 测试通过 / 速率达标 |
+| ❌ | FAILED — 测试失败 / 吞吐未达阈值 |
+| ➖ | UNSUPPORTED — 对端或场景不支持 |
+| — | N/A — 未进行该组合测试（对端未部署该角色） |
 
 ## 3. 总体结果
 
-> 口径说明：runner 实际执行 322 个独立用例（self 计一次）。第 5、6 节按"双向计数"展开（self 在 Server / Client 两行各计一次），故合计比独立口径多 14 条 self 重复。
-
 | 指标 | 数值 |
 |------|-------|
-| 总用例数 | **322** |
-| ✅ Passed | **216** |
-| ❌ Failed | **16** |
-| `-` Unsupported | **94** |
-| **有效通过率（剔除 Unsupported）** | **216 / 232 ≈ 93.1%** |
-| 含 Unsupported 通过率 | 216 / 322 ≈ 67.1% |
+| 总用例数 | **744** |
+| ✅ 成功 | **592** |
+| ❌ 失败 | **57** |
+| ➖ 不支持 | **95** |
+| **综合有效通过率（剔除 Unsupported）** | **592 / 649 ≈ 91.22%** |
+| 协议功能合规通过率 | 534 / 589 ≈ 90.66%（Client 模式 292/312 = 93.59%；Server 模式 246/277 = 88.81%） |
+| 性能测算通过率 | 58 / 60 ≈ 96.67%（Goodput 30/30；CrossTraffic 28/30） |
+| 含 Unsupported 通过率 | 592 / 744 ≈ 79.6% |
+
+## 4. 按场景维度通过率
+
+| 测试场景 | 场景简称 | Client 模式通过率 | Server 模式通过率 | 综合有效通过率 | 描述 |
+| :--- | :---: | :---: | :---: | :---: | :--- |
+| **handshake** | `H` | 16/16 (100.0%) | 14/14 (100.0%) | **30/30 (100.0%)** | Handshake completes successfully. |
+| **transfer** | `DC` | 16/16 (100.0%) | 14/14 (100.0%) | **30/30 (100.0%)** | Stream data is being sent and received correctly. Connection close completes with a zero error code. |
+| **longrtt** | `LR` | 16/16 (100.0%) | 14/14 (100.0%) | **30/30 (100.0%)** | Handshake completes when RTT is long. |
+| **chacha20** | `C20` | 14/14 (100.0%) | 10/10 (100.0%) | **24/24 (100.0%)** | Handshake completes using ChaCha20. |
+| **multiplexing** | `M` | 16/16 (100.0%) | 14/14 (100.0%) | **30/30 (100.0%)** | Thousands of files are transferred over a single connection, and server increased stream limits to accomodate client requests. |
+| **retry** | `S` | 13/14 (92.9%) | 12/12 (100.0%) | **25/26 (96.2%)** | Server sends a Retry, and a subsequent connection using the Retry token completes successfully. |
+| **resumption** | `R` | 14/15 (93.3%) | 12/12 (100.0%) | **26/27 (96.3%)** | Connection is established using TLS Session Resumption. |
+| **zerortt** | `Z` | 13/14 (92.9%) | 10/12 (83.3%) | **23/26 (88.5%)** | 0-RTT data is being sent and acted on. |
+| **http3** | `3` | 13/14 (92.9%) | 13/13 (100.0%) | **26/27 (96.3%)** | An H3 transaction succeeded. |
+| **blackhole** | `B` | 15/16 (93.8%) | 14/14 (100.0%) | **29/30 (96.7%)** | Transfer succeeds despite underlying network blacking out for a few seconds. |
+| **keyupdate** | `U` | 16/16 (100.0%) | 9/10 (90.0%) | **25/26 (96.2%)** | One of the two endpoints updates keys and the peer responds correctly. |
+| **ecn** | `E` | 6/6 (100.0%) | 6/6 (100.0%) | **12/12 (100.0%)** | Handshake completes successfully. |
+| **amplificationlimit** | `A` | 14/16 (87.5%) | 14/14 (100.0%) | **28/30 (93.3%)** | The server obeys the 3x amplification limit. |
+| **handshakeloss** | `L1` | 15/15 (100.0%) | 9/13 (69.2%) | **24/28 (85.7%)** | Handshake completes under extreme packet loss. |
+| **transferloss** | `L2` | 16/16 (100.0%) | 14/14 (100.0%) | **30/30 (100.0%)** | Transfer completes under moderate packet loss. |
+| **handshakecorruption** | `C1` | 15/15 (100.0%) | 9/13 (69.2%) | **24/28 (85.7%)** | Handshake completes under extreme packet corruption. |
+| **transfercorruption** | `C2` | 15/16 (93.8%) | 14/14 (100.0%) | **29/30 (96.7%)** | Transfer completes under moderate packet corruption. |
+| **ipv6** | `6` | 16/16 (100.0%) | 14/14 (100.0%) | **30/30 (100.0%)** | A transfer across an IPv6-only network succeeded. |
+| **v2** | `V2` | 8/8 (100.0%) | 7/8 (87.5%) | **15/16 (93.8%)** | Server should select QUIC v2 in compatible version negotiation. |
+| **rebind-port** | `BP` | 9/16 (56.2%) | 10/14 (71.4%) | **19/30 (63.3%)** | Transfer completes under frequent port rebindings on the client side. |
+| **rebind-addr** | `BA` | 9/16 (56.2%) | 10/14 (71.4%) | **19/30 (63.3%)** | Transfer completes under frequent IP address and port rebindings on the client side. |
+| **connectionmigration** | `CM` | 3/5 (60.0%) | 3/14 (21.4%) | **6/19 (31.6%)** | A transfer succeeded during which the client performed an active migration. |
+| **goodput** | `G` | 16/16 (100.0%) | 14/14 (100.0%) | **30/30 (100.0%)** | Measures connection goodput over a 10Mbps link. |
+| **crosstraffic** | `C` | 15/16 (93.8%) | 13/14 (92.9%) | **28/30 (93.3%)** | Measures goodput over a 10Mbps link when competing with a TCP (cubic) connection. |
 
 ---
 
-## 4. 连通性矩阵（按场景）
+## 5. 对端实现互通率排行榜
 
-### 4.1 handshake
+| 排名 | 对端实现 | Client 模式 (发起) | Server 模式 (响应) | 协议功能通过率 | 综合有效通过率 | 状态 |
+| :---: | :--- | :---: | :---: | :---: | :---: | :---: |
+| 1 | **lsquic** | 23/24 (95.8%) | 23/23 (100.0%) | **42/43 (97.7%)** | 46/47 (97.9%) | 🌟 优秀 |
+| 2 | **aioquic** | 21/22 (95.5%) | 22/23 (95.7%) | **39/41 (95.1%)** | 43/45 (95.6%) | 🌟 优秀 |
+| 3 | **xquic** | 20/21 (95.2%) | 20/22 (90.9%) | **37/39 (94.9%)** | 40/43 (93.0%) | 🌟 优秀 |
+| 4 | **neqo** | 24/24 (100.0%) | 21/24 (87.5%) | **41/44 (93.2%)** | 45/48 (93.8%) | 🌟 优秀 |
+| 5 | **picoquic** | 23/24 (95.8%) | 22/24 (91.7%) | **41/44 (93.2%)** | 45/48 (93.8%) | 🌟 优秀 |
+| 6 | **kwik** | 20/22 (90.9%) | 22/23 (95.7%) | **38/41 (92.7%)** | 42/45 (93.3%) | 🌟 优秀 |
+| 7 | **s2n-quic** | 20/22 (90.9%) | 19/20 (95.0%) | **35/38 (92.1%)** | 39/42 (92.9%) | 🌟 优秀 |
+| 8 | **ngtcp2** | 21/24 (87.5%) | 23/24 (95.8%) | **40/44 (90.9%)** | 44/48 (91.7%) | 🌟 优秀 |
+| 9 | **quinn** | 22/22 (100.0%) | 20/24 (83.3%) | **38/42 (90.5%)** | 42/46 (91.3%) | 🌟 优秀 |
+| 10 | **haproxy** | 20/22 (90.9%) | N/A | **18/20 (90.0%)** | 20/22 (90.9%) | 🌟 优秀 |
+| 11 | **msquic** | 21/21 (100.0%) | 18/22 (81.8%) | **35/39 (89.7%)** | 39/43 (90.7%) | 👍 良好 |
+| 12 | **nginx** | 19/21 (90.5%) | N/A | **17/19 (89.5%)** | 19/21 (90.5%) | 👍 良好 |
+| 13 | **go-x-net** | 12/14 (85.7%) | 14/15 (93.3%) | **22/25 (88.0%)** | 26/29 (89.7%) | 👍 良好 |
+| 14 | **quic-go** | 19/21 (90.5%) | 19/22 (86.4%) | **34/39 (87.2%)** | 38/43 (88.4%) | 👍 良好 |
+| 15 | **quiche** | 19/21 (90.5%) | 17/20 (85.0%) | **32/37 (86.5%)** | 36/41 (87.8%) | 👍 良好 |
+| 16 | **mvfst** | 15/19 (78.9%) | 12/18 (66.7%) | **24/33 (72.7%)** | 27/37 (73.0%) | ⚠️ 待提升 |
+| 17 | **chrome** | N/A | 1/1 (100.0%) | **1/1 (100.0%)** | 1/1 (100.0%) | 🌟 优秀 |
 
-| quicX 角色 \ 对端 | self | quiche | ngtcp2 | quic-go | mvfst | quinn | aioquic | picoquic | neqo | lsquic | msquic | s2n-quic |
-|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| Server (quicX↔\*)   | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| Client (\*↔quicX)   | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-
-### 4.2 transfer
-
-| quicX 角色 \ 对端 | self | quiche | ngtcp2 | quic-go | mvfst | quinn | aioquic | picoquic | neqo | lsquic | msquic | s2n-quic |
-|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| Server (quicX↔\*)   | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| Client (\*↔quicX)   | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-
-### 4.3 retry
-
-| quicX 角色 \ 对端 | self | quiche | ngtcp2 | quic-go | mvfst | quinn | aioquic | picoquic | neqo | lsquic | msquic | s2n-quic |
-|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| Server (quicX↔\*)   | ✅ | ✅ | ✅ | ✅ |  -  | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| Client (\*↔quicX)   | ✅ | ✅ | ✅ | ✅ |  -  | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ |
-
-### 4.4 resumption
-
-| quicX 角色 \ 对端 | self | quiche | ngtcp2 | quic-go | mvfst | quinn | aioquic | picoquic | neqo | lsquic | msquic | s2n-quic |
-|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| Server (quicX↔\*)   | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| Client (\*↔quicX)   | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-
-### 4.5 zerortt
-
-| quicX 角色 \ 对端 | self | quiche | ngtcp2 | quic-go | mvfst | quinn | aioquic | picoquic | neqo | lsquic | msquic | s2n-quic |
-|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| Server (quicX↔\*)   | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |  -  |
-| Client (\*↔quicX)   | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
-
-### 4.6 http3
-
-| quicX 角色 \ 对端 | self | quiche | ngtcp2 | quic-go | mvfst | quinn | aioquic | picoquic | neqo | lsquic | msquic | s2n-quic |
-|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| Server (quicX↔\*)   | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |  -  | ❌ |
-| Client (\*↔quicX)   | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ |  -  | ✅ |
-
-### 4.7 multiconnect
-
-| quicX 角色 \ 对端 | self | quiche | ngtcp2 | quic-go | mvfst | quinn | aioquic | picoquic | neqo | lsquic | msquic | s2n-quic |
-|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| Server (quicX↔\*)   | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| Client (\*↔quicX)   | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-
-### 4.8 versionnegotiation
-
-| quicX 角色 \ 对端 | self | quiche | ngtcp2 | quic-go | mvfst | quinn | aioquic | picoquic | neqo | lsquic | msquic | s2n-quic |
-|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| Server (quicX↔\*)   | ✅ |  -  | ✅ | ✅ |  -  | ✅ |  -  | ✅ |  -  |  -  | ❌ |  -  |
-| Client (\*↔quicX)   | ✅ |  -  | ✅ | ✅ |  -  |  -  |  -  | ✅ |  -  |  -  | ✅ | ✅ |
-
-### 4.9 chacha20
-
-| quicX 角色 \ 对端 | self | quiche | ngtcp2 | quic-go | mvfst | quinn | aioquic | picoquic | neqo | lsquic | msquic | s2n-quic |
-|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| Server (quicX↔\*)   | ✅ |  -  | ✅ | ✅ |  -  | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |  -  |
-| Client (\*↔quicX)   | ✅ | ✅ | ✅ | ✅ |  -  | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-
-### 4.10 keyupdate
-
-| quicX 角色 \ 对端 | self | quiche | ngtcp2 | quic-go | mvfst | quinn | aioquic | picoquic | neqo | lsquic | msquic | s2n-quic |
-|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| Server (quicX↔\*)   | ✅ |  -  | ✅ | ✅ |  -  | ✅ | ✅ | ✅ | ✅ |  -  | ✅ |  -  |
-| Client (\*↔quicX)   | ✅ |  -  | ✅ |  -  | ✅ | ✅ | ✅ | ✅ |  -  |  -  | ✅ |  -  |
-
-### 4.11 v2
-
-| quicX 角色 \ 对端 | self | quiche | ngtcp2 | quic-go | mvfst | quinn | aioquic | picoquic | neqo | lsquic | msquic | s2n-quic |
-|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| Server (quicX↔\*)   | ✅ |  -  | ✅ |  -  |  -  | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |  -  |
-| Client (\*↔quicX)   | ✅ |  -  | ✅ |  -  |  -  |  -  | ✅ | ✅ | ✅ | ✅ | ✅ |  -  |
-
-### 4.12 rebind-port
-
-| quicX 角色 \ 对端 | self | quiche | ngtcp2 | quic-go | mvfst | quinn | aioquic | picoquic | neqo | lsquic | msquic | s2n-quic |
-|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| Server (quicX↔\*)   | ✅ |  -  |  -  |  -  |  -  | ✅ |  -  | ✅ |  -  |  -  |  -  |  -  |
-| Client (\*↔quicX)   | ✅ |  -  |  -  |  -  | ✅ |  -  |  -  | ✅ |  -  |  -  |  -  |  -  |
-
-### 4.13 rebind-addr
-
-| quicX 角色 \ 对端 | self | quiche | ngtcp2 | quic-go | mvfst | quinn | aioquic | picoquic | neqo | lsquic | msquic | s2n-quic |
-|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| Server (quicX↔\*)   | ✅ |  -  |  -  |  -  |  -  | ✅ |  -  |  -  |  -  |  -  |  -  |  -  |
-| Client (\*↔quicX)   | ✅ |  -  |  -  |  -  | ✅ |  -  |  -  |  -  |  -  |  -  |  -  |  -  |
-
-### 4.14 connectionmigration
-
-| quicX 角色 \ 对端 | self | quiche | ngtcp2 | quic-go | mvfst | quinn | aioquic | picoquic | neqo | lsquic | msquic | s2n-quic |
-|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| Server (quicX↔\*)   | ✅ |  -  | ✅ |  -  |  -  | ✅ |  -  | ✅ |  -  | ✅ |  -  |  -  |
-| Client (\*↔quicX)   | ✅ |  -  |  -  |  -  |  -  |  -  |  -  | ❌ | ❌ | ❌ |  -  | ✅ |
-
-> 注：`rebind-*` / `connectionmigration` 大量 `-` 是因为部分第三方实现镜像未在 IETF interop 矩阵里声明支持该场景（runner 直接标 UNSUPPORTED），属于官方矩阵常态。
+> 注：排行榜中 Client 模式指 quicX 作为 Client 连接对端 Server，Server 模式指对端作为 Client 连接 quicX Server。"协议功能通过率"不含 goodput / crosstraffic 两个性能场景。
 
 ---
 
-## 5. 按场景汇总
+## 6. 按互通场景分类的详细矩阵
 
-| 场景 | ✅ 通过 | ❌ 失败 | `-` 不支持 | 有效通过率 |
-|------|:----:|:----:|:------:|:----:|
-| handshake             | 23 | 1 | 0 | 23/24 ≈ 95.8% |
-| transfer              | 23 | 1 | 0 | 23/24 ≈ 95.8% |
-| retry                 | 20 | 2 | 2 | 20/22 ≈ 90.9% |
-| resumption            | 22 | 2 | 0 | 22/24 ≈ 91.7% |
-| zerortt               | 21 | 2 | 1 | 21/23 ≈ 91.3% |
-| http3                 | 20 | 2 | 2 | 20/22 ≈ 90.9% |
-| multiconnect          | 23 | 1 | 0 | 23/24 ≈ 95.8% |
-| versionnegotiation    | 11 | 1 | 12 | 11/12 ≈ 91.7% |
-| chacha20              | 20 | 0 | 4 | 20/20 = 100% |
-| keyupdate             | 15 | 0 | 9 | 15/15 = 100% |
-| v2                    | 14 | 1 | 9 | 14/15 ≈ 93.3% |
-| rebind-port           | 6 | 0 | 18 | 6/6 = 100% |
-| rebind-addr           | 4 | 0 | 20 | 4/4 = 100% |
-| connectionmigration   | 7 | 3 | 14 | 7/10 = 70.0% |
-| **合计（双向计数）**  | **230** | **16** | **90** | **230/246 ≈ 93.5%** |
+## 按互通场景分类的详细矩阵表格
 
-> 注：双向合计 230 比第 3 节"独立用例 Passed 216"多 14，因为 self 自测在 Server / Client 两行各计一次；剔除 14 条 self 重复后两套口径等价。
+### 🔹 handshake (`H`)
 
----
+> **说明**: Handshake completes successfully.
 
-## 6. 按对端实现汇总（quicX 视角）
+| 角色 \ 对端实现 | ngtcp2 | go-x-net | quic-go | s2n-quic | quiche | neqo | lsquic | kwik | mvfst | aioquic | msquic | picoquic | xquic | nginx | haproxy | quinn | chrome |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **quicX as Client** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — |
+| **quicX as Server** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | ✅ | ➖ |
 
-> 数据格式：`a / b（含 c 不支持，d 失败）`，表示 14 个场景中 `b` 个有效执行（PASS+FAIL），其中 `a` PASS、`d` FAIL；`c` 个被任一端标为 UNSUPPORTED。
 
-| 对端实现 | quicX 作 Server（X→quicx） | quicX 作 Client（quicx→X） | 总通过 / 总有效 |
-|---|:---:|:---:|:---:|
-| **self** (quicx↔quicx) | 14/14（全 PASS） | 14/14（全 PASS） | 14 / 14 |
-| **quiche**             | 7 / 7（含 7 不支持，全 PASS） | 8 / 8（含 6 不支持，全 PASS） | 15 / 15 |
-| **ngtcp2**             | 12 / 12（含 2 不支持，全 PASS） | 11 / 11（含 3 不支持，全 PASS） | 23 / 23 |
-| **quic-go**            | 10 / 10（含 4 不支持，全 PASS） | 9 / 9（含 5 不支持，全 PASS） | 19 / 19 |
-| **mvfst**              | 4 / 6（含 8 不支持，2 失败） | 8 / 9（含 5 不支持，1 失败） | **12 / 15** |
-| **quinn**              | 14 / 14（全 PASS） | 9 / 9（含 5 不支持，全 PASS） | 23 / 23 |
-| **aioquic**            | 10 / 10（含 4 不支持，全 PASS） | 9 / 10（含 4 不支持，1 失败）| 19 / 20 |
-| **picoquic**           | 13 / 13（含 1 不支持，全 PASS） | 12 / 13（含 1 不支持，1 失败）| 25 / 26 |
-| **neqo**               | 10 / 10（含 4 不支持，全 PASS） | 9 / 10（含 4 不支持，1 失败）| 19 / 20 |
-| **lsquic**             | 10 / 10（含 4 不支持，全 PASS） | 9 / 10（含 4 不支持，1 失败）| 19 / 20 |
-| **msquic**             | 8 / 10（含 4 不支持，2 失败） | 10 / 10（含 4 不支持，全 PASS） | 18 / 20 |
-| **s2n-quic**           | 0 / 6（含 8 不支持，**6 失败**）| 9 / 10（含 4 不支持，1 失败）| **9 / 16** |
-| **合计** | 111 / 122 | 117 / 123 | **228 / 245 ≈ 93.1%** |
 
-### 几个观察
+### 🔹 transfer (`DC`)
 
-- **完全互通的 5 个对端**（quicX ↔ X 双向无失败）：`self`、`quiche`、`ngtcp2`、`quic-go`、`quinn`。这五者代表 quicX 已实现稳定的核心兼容面。
-- **接近完全互通**（仅 1 起 quicx→X 方向失败）：`aioquic`、`picoquic`、`neqo`、`lsquic`，失败均集中在 `retry` 或 `connectionmigration` 场景。
-- **mvfst** 客户端方向已提升至 8/9（仅 `http3` 失败）；服务端方向（resumption、zerortt）仍有失败。
-- **s2n-quic 作为 Server** 存在结构性问题（6 起）：镜像启动后立即 exit 1，倾向于第三方镜像 / 版本侧问题。
+> **说明**: Stream data is being sent and received correctly. Connection close completes with a zero error code.
 
----
+| 角色 \ 对端实现 | ngtcp2 | go-x-net | quic-go | s2n-quic | quiche | neqo | lsquic | kwik | mvfst | aioquic | msquic | picoquic | xquic | nginx | haproxy | quinn | chrome |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **quicX as Client** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — |
+| **quicX as Server** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | ✅ | ➖ |
 
-## 7. 失败用例清单（共 16 条）
 
-按"问题归属"分类列出。下方各分组合计 = 1 + 4 + 5 + 6 = **16**。
 
-### A. quicX → mvfst（quicX 自身需关注，1 条）
+### 🔹 longrtt (`LR`)
 
-> 最新验证后，quicX 客户端方向仅 `http3` 仍失败；handshake / transfer / resumption / zerortt 现已通过（此前为收到 190 字节 → `Size mismatch`）。
+> **说明**: Handshake completes when RTT is long.
 
-| # | 场景 | 配对 | 现象 |
-|---|---|---|---|
-| A1 | http3 | quicx → mvfst | Client exited with code 1（H3 协议层超时） |
+| 角色 \ 对端实现 | ngtcp2 | go-x-net | quic-go | s2n-quic | quiche | neqo | lsquic | kwik | mvfst | aioquic | msquic | picoquic | xquic | nginx | haproxy | quinn | chrome |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **quicX as Client** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — |
+| **quicX as Server** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | ✅ | ➖ |
 
-### B. quicX → 其他实现（迁移 / 特殊场景，4 条）
 
-| # | 场景 | 配对 | 耗时 | 现象 |
-|---|---|---|---|---|
-| B1 | retry                | quicx → aioquic   | 40.58 s | Client exited with code 1（超时） |
-| B2 | connectionmigration  | quicx → picoquic  | 40.87 s | Client exited with code 1（迁移路径异常） |
-| B3 | connectionmigration  | quicx → neqo      | 5.07 s  | Server failed to start（neqo 镜像不响应迁移） |
-| B4 | connectionmigration  | quicx → lsquic    | 40.91 s | Client exited with code 1（迁移路径异常） |
 
-### C. mvfst → quicX（mvfst 客户端能力问题，5 条）
+### 🔹 chacha20 (`C20`)
 
-> mvfst Client 在多数场景下 7-8 s 快速退出，与 mvfst 镜像内部 fizz/fbthrift 编译选项可能有关，属上游侧长期偏弱。
+> **说明**: Handshake completes using ChaCha20.
 
-| # | 场景 | 配对 | 耗时 | 现象 |
-|---|---|---|---|---|
-| C1 | handshake   | mvfst → quicx | —    | Client exit 1 |
-| C2 | transfer    | mvfst → quicx | —    | Client exit 1 |
-| C3 | resumption  | mvfst → quicx | 7.53 s | File not downloaded: 1KB.bin |
-| C4 | zerortt     | mvfst → quicx | 7.61 s | File not downloaded: 1KB.bin |
-| C5 | http3       | mvfst → quicx | —    | Client exit 1 |
+| 角色 \ 对端实现 | ngtcp2 | go-x-net | quic-go | s2n-quic | quiche | neqo | lsquic | kwik | mvfst | aioquic | msquic | picoquic | xquic | nginx | haproxy | quinn | chrome |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **quicX as Client** | ✅ | ➖ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ➖ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — |
+| **quicX as Server** | ✅ | ➖ | ✅ | ➖ | ➖ | ✅ | ✅ | ✅ | ➖ | ✅ | ✅ | ✅ | ✅ | — | — | ✅ | ➖ |
 
-### D. 第三方 Server / Client 镜像问题（6 条）
 
-#### D-a：s2n-quic Client → quicX Server（5 条）
 
-> 全部 7 s 左右快速失败，s2n-quic 客户端镜像与 quicX 服务端不兼容，非 quicX 主问题。
+### 🔹 multiplexing (`M`)
 
-| # | 场景 | 配对 | 耗时 | 现象 |
-|---|---|---|---|---|
-| D1 | handshake     | s2n-quic → quicx | 7.59 s | Client exited with code 1 |
-| D2 | transfer      | s2n-quic → quicx | 7.73 s | Client exited with code 1 |
-| D3 | retry         | s2n-quic → quicx | 7.65 s | Client exited with code 1 |
-| D4 | resumption    | s2n-quic → quicx | 7.69 s | First connection failed (exit 1) |
-| D5 | multiconnect  | s2n-quic → quicx | 7.96 s | Only 0/5 connections succeeded |
+> **说明**: Thousands of files are transferred over a single connection, and server increased stream limits to accomodate client requests.
 
-#### D-b：msquic Client 在 VN / v2 场景不下载文件（1 条）
+| 角色 \ 对端实现 | ngtcp2 | go-x-net | quic-go | s2n-quic | quiche | neqo | lsquic | kwik | mvfst | aioquic | msquic | picoquic | xquic | nginx | haproxy | quinn | chrome |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **quicX as Client** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — |
+| **quicX as Server** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | ✅ | ➖ |
 
-| # | 场景 | 配对 | 耗时 | 现象 |
-|---|---|---|---|---|
-| D6 | versionnegotiation | msquic → quicx | 13.07 s | File not downloaded: 1KB.bin（msquic 客户端仅做 VN 探测，不传文件） |
 
----
 
-## 8. 待跟进问题（按优先级）
+### 🔹 retry (`S`)
 
-### P0 — quicX 自身需修复（共 3 起）
+> **说明**: Server sends a Retry, and a subsequent connection using the Retry token completes successfully.
 
-1. **`quicx → mvfst` 的 `http3`**（A1）— H3 协议层超时，quicX 客户端方向 mvfst 唯一剩余失败项。
-2. **`quicx → picoquic | lsquic` 的 `connectionmigration` 40 s 超时**（B2、B4）— ns-3 sim 模式暴露的真实迁移问题。
-3. **`quicx → aioquic` 的 `retry` 40 s 超时**（B1）— 回归点，需定位 retry token 解码路径。
+| 角色 \ 对端实现 | ngtcp2 | go-x-net | quic-go | s2n-quic | quiche | neqo | lsquic | kwik | mvfst | aioquic | msquic | picoquic | xquic | nginx | haproxy | quinn | chrome |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **quicX as Client** | ✅ | ➖ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ➖ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — |
+| **quicX as Server** | ✅ | ➖ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ➖ | ✅ | ✅ | ✅ | ✅ | — | — | ✅ | ➖ |
 
-### P1 — 第三方镜像 / 环境侧（共 13 起）
 
-4. **mvfst Client**（C1–C5，5 起）/ **s2n-quic Client**（D1–D5，5 起）镜像兼容性 — 与官方 interop runner 历史结果趋势一致。
-5. **msquic Client** 在 `versionnegotiation` / `v2` 不下载文件（D6）— 属 msquic 镜像固有行为。
 
----
+### 🔹 resumption (`R`)
 
-## 9. 复现命令
+> **说明**: Connection is established using TLS Session Resumption.
 
-```bash
-# ns-3 全矩阵（推荐作为对外口径）
-cd test/interop
-python3 interop_runner.py --matrix --implementations all --use-local-bin \
-    --output markdown --output-file logs/latest_matrix_sim.md
-```
+| 角色 \ 对端实现 | ngtcp2 | go-x-net | quic-go | s2n-quic | quiche | neqo | lsquic | kwik | mvfst | aioquic | msquic | picoquic | xquic | nginx | haproxy | quinn | chrome |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **quicX as Client** | ✅ | ➖ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — |
+| **quicX as Server** | ✅ | ➖ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ➖ | ✅ | ✅ | ✅ | ✅ | — | — | ✅ | ➖ |
 
-> 如果 ns-3 sim 因环境受限（少数 macOS / 内核裁剪）拉不起，可临时用 `--no-sim` 桥接模式做快速基线。但 `--no-sim` 下 `rebind-*`、`connectionmigration` 不具备真实链路语义，**不能作为对外发布数据**。使用前请确保 `test/interop/setup_noop.sh` 有执行权限（`chmod +x test/interop/setup_noop.sh`）。
+
+
+### 🔹 zerortt (`Z`)
+
+> **说明**: 0-RTT data is being sent and acted on.
+
+| 角色 \ 对端实现 | ngtcp2 | go-x-net | quic-go | s2n-quic | quiche | neqo | lsquic | kwik | mvfst | aioquic | msquic | picoquic | xquic | nginx | haproxy | quinn | chrome |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **quicX as Client** | ✅ | ➖ | ❌ | ➖ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — |
+| **quicX as Server** | ✅ | ➖ | ✅ | ➖ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ | ✅ | — | — | ✅ | ➖ |
+
+
+
+### 🔹 http3 (`3`)
+
+> **说明**: An H3 transaction succeeded.
+
+| 角色 \ 对端实现 | ngtcp2 | go-x-net | quic-go | s2n-quic | quiche | neqo | lsquic | kwik | mvfst | aioquic | msquic | picoquic | xquic | nginx | haproxy | quinn | chrome |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **quicX as Client** | ✅ | ➖ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ➖ | ✅ | ✅ | ✅ | ✅ | ✅ | — |
+| **quicX as Server** | ✅ | ➖ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ➖ | ✅ | ✅ | — | — | ✅ | ✅ |
+
+
+
+### 🔹 blackhole (`B`)
+
+> **说明**: Transfer succeeds despite underlying network blacking out for a few seconds.
+
+| 角色 \ 对端实现 | ngtcp2 | go-x-net | quic-go | s2n-quic | quiche | neqo | lsquic | kwik | mvfst | aioquic | msquic | picoquic | xquic | nginx | haproxy | quinn | chrome |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **quicX as Client** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | — |
+| **quicX as Server** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | ✅ | ➖ |
+
+
+
+### 🔹 keyupdate (`U`)
+
+> **说明**: One of the two endpoints updates keys and the peer responds correctly.
+
+| 角色 \ 对端实现 | ngtcp2 | go-x-net | quic-go | s2n-quic | quiche | neqo | lsquic | kwik | mvfst | aioquic | msquic | picoquic | xquic | nginx | haproxy | quinn | chrome |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **quicX as Client** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — |
+| **quicX as Server** | ✅ | ✅ | ✅ | ➖ | ➖ | ✅ | ➖ | ✅ | ➖ | ✅ | ✅ | ❌ | ✅ | — | — | ✅ | ➖ |
+
+
+
+### 🔹 ecn (`E`)
+
+> **说明**: Handshake completes successfully.
+
+| 角色 \ 对端实现 | ngtcp2 | go-x-net | quic-go | s2n-quic | quiche | neqo | lsquic | kwik | mvfst | aioquic | msquic | picoquic | xquic | nginx | haproxy | quinn | chrome |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **quicX as Client** | ✅ | ➖ | ➖ | ✅ | ➖ | ✅ | ✅ | ➖ | ➖ | ➖ | ➖ | ✅ | ➖ | ➖ | ➖ | ✅ | — |
+| **quicX as Server** | ✅ | ➖ | ➖ | ✅ | ➖ | ✅ | ✅ | ➖ | ➖ | ➖ | ➖ | ✅ | ➖ | — | — | ✅ | ➖ |
+
+
+
+### 🔹 amplificationlimit (`A`)
+
+> **说明**: The server obeys the 3x amplification limit.
+
+| 角色 \ 对端实现 | ngtcp2 | go-x-net | quic-go | s2n-quic | quiche | neqo | lsquic | kwik | mvfst | aioquic | msquic | picoquic | xquic | nginx | haproxy | quinn | chrome |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **quicX as Client** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | — |
+| **quicX as Server** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | ✅ | ➖ |
+
+
+
+### 🔹 handshakeloss (`L1`)
+
+> **说明**: Handshake completes under extreme packet loss.
+
+| 角色 \ 对端实现 | ngtcp2 | go-x-net | quic-go | s2n-quic | quiche | neqo | lsquic | kwik | mvfst | aioquic | msquic | picoquic | xquic | nginx | haproxy | quinn | chrome |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **quicX as Client** | ✅ | ➖ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — |
+| **quicX as Server** | ❌ | ➖ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | — | — | ❌ | ➖ |
+
+
+
+### 🔹 transferloss (`L2`)
+
+> **说明**: Transfer completes under moderate packet loss.
+
+| 角色 \ 对端实现 | ngtcp2 | go-x-net | quic-go | s2n-quic | quiche | neqo | lsquic | kwik | mvfst | aioquic | msquic | picoquic | xquic | nginx | haproxy | quinn | chrome |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **quicX as Client** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — |
+| **quicX as Server** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | ✅ | ➖ |
+
+
+
+### 🔹 handshakecorruption (`C1`)
+
+> **说明**: Handshake completes under extreme packet corruption.
+
+| 角色 \ 对端实现 | ngtcp2 | go-x-net | quic-go | s2n-quic | quiche | neqo | lsquic | kwik | mvfst | aioquic | msquic | picoquic | xquic | nginx | haproxy | quinn | chrome |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **quicX as Client** | ✅ | ➖ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — |
+| **quicX as Server** | ✅ | ➖ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ | — | — | ❌ | ➖ |
+
+
+
+### 🔹 transfercorruption (`C2`)
+
+> **说明**: Transfer completes under moderate packet corruption.
+
+| 角色 \ 对端实现 | ngtcp2 | go-x-net | quic-go | s2n-quic | quiche | neqo | lsquic | kwik | mvfst | aioquic | msquic | picoquic | xquic | nginx | haproxy | quinn | chrome |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **quicX as Client** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — |
+| **quicX as Server** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | ✅ | ➖ |
+
+
+
+### 🔹 ipv6 (`6`)
+
+> **说明**: A transfer across an IPv6-only network succeeded.
+
+| 角色 \ 对端实现 | ngtcp2 | go-x-net | quic-go | s2n-quic | quiche | neqo | lsquic | kwik | mvfst | aioquic | msquic | picoquic | xquic | nginx | haproxy | quinn | chrome |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **quicX as Client** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — |
+| **quicX as Server** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | ✅ | ➖ |
+
+
+
+### 🔹 v2 (`V2`)
+
+> **说明**: Server should select QUIC v2 in compatible version negotiation.
+
+| 角色 \ 对端实现 | ngtcp2 | go-x-net | quic-go | s2n-quic | quiche | neqo | lsquic | kwik | mvfst | aioquic | msquic | picoquic | xquic | nginx | haproxy | quinn | chrome |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **quicX as Client** | ✅ | ➖ | ➖ | ➖ | ➖ | ✅ | ✅ | ✅ | ➖ | ✅ | ✅ | ✅ | ➖ | ➖ | ✅ | ➖ | — |
+| **quicX as Server** | ✅ | ➖ | ➖ | ➖ | ➖ | ✅ | ✅ | ✅ | ➖ | ✅ | ✅ | ✅ | ➖ | — | — | ❌ | ➖ |
+
+
+
+### 🔹 rebind-port (`BP`)
+
+> **说明**: Transfer completes under frequent port rebindings on the client side.
+
+| 角色 \ 对端实现 | ngtcp2 | go-x-net | quic-go | s2n-quic | quiche | neqo | lsquic | kwik | mvfst | aioquic | msquic | picoquic | xquic | nginx | haproxy | quinn | chrome |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **quicX as Client** | ❌ | ❌ | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | — |
+| **quicX as Server** | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ | ✅ | — | — | ✅ | ➖ |
+
+
+
+### 🔹 rebind-addr (`BA`)
+
+> **说明**: Transfer completes under frequent IP address and port rebindings on the client side.
+
+| 角色 \ 对端实现 | ngtcp2 | go-x-net | quic-go | s2n-quic | quiche | neqo | lsquic | kwik | mvfst | aioquic | msquic | picoquic | xquic | nginx | haproxy | quinn | chrome |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **quicX as Client** | ❌ | ❌ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | — |
+| **quicX as Server** | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ | ✅ | — | — | ✅ | ➖ |
+
+
+
+### 🔹 connectionmigration (`CM`)
+
+> **说明**: A transfer succeeded during which the client performed an active migration.
+
+| 角色 \ 对端实现 | ngtcp2 | go-x-net | quic-go | s2n-quic | quiche | neqo | lsquic | kwik | mvfst | aioquic | msquic | picoquic | xquic | nginx | haproxy | quinn | chrome |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **quicX as Client** | ❌ | ➖ | ➖ | ❌ | ➖ | ✅ | ✅ | ➖ | ➖ | ➖ | ➖ | ✅ | ➖ | ➖ | ➖ | ➖ | — |
+| **quicX as Server** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | — | — | ❌ | ➖ |
+
+
+
+### 🔹 goodput (`G`)
+
+> **说明**: Measures connection goodput over a 10Mbps link.
+
+| 角色 \ 对端实现 | ngtcp2 | go-x-net | quic-go | s2n-quic | quiche | neqo | lsquic | kwik | mvfst | aioquic | msquic | picoquic | xquic | nginx | haproxy | quinn | chrome |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **quicX as Client** | ✅<br><sub>9.22 Mbps</sub> | ✅<br><sub>7.99 Mbps</sub> | ✅<br><sub>9.42 Mbps</sub> | ✅<br><sub>9.21 Mbps</sub> | ✅<br><sub>9.33 Mbps</sub> | ✅<br><sub>8.35 Mbps</sub> | ✅<br><sub>9.47 Mbps</sub> | ✅<br><sub>8.77 Mbps</sub> | ✅<br><sub>9.24 Mbps</sub> | ✅<br><sub>8.60 Mbps</sub> | ✅<br><sub>8.51 Mbps</sub> | ✅<br><sub>9.14 Mbps</sub> | ✅<br><sub>9.22 Mbps</sub> | ✅<br><sub>9.40 Mbps</sub> | ✅<br><sub>9.06 Mbps</sub> | ✅<br><sub>8.70 Mbps</sub> | — |
+| **quicX as Server** | ✅<br><sub>9.28 Mbps</sub> | ✅<br><sub>9.38 Mbps</sub> | ✅<br><sub>8.20 Mbps</sub> | ✅<br><sub>8.62 Mbps</sub> | ✅<br><sub>7.96 Mbps</sub> | ✅<br><sub>8.59 Mbps</sub> | ✅<br><sub>9.05 Mbps</sub> | ✅<br><sub>6.74 Mbps</sub> | ✅<br><sub>6.73 Mbps</sub> | ✅<br><sub>9.29 Mbps</sub> | ✅<br><sub>8.58 Mbps</sub> | ✅<br><sub>9.26 Mbps</sub> | ✅<br><sub>9.26 Mbps</sub> | — | — | ✅<br><sub>8.17 Mbps</sub> | ➖ |
+
+
+#### 📊 实测吞吐速率排行榜 (10 Mbps 链路测试，平均速率: **8.76 Mbps**)
+
+| 排名 | 对端实现 | 测试角色 | 状态 | 详细速率 (含波动) | 实测吞吐 (Mbps) | 带宽利用率 |
+| :---: | :--- | :---: | :---: | :---: | :---: | :---: |
+| 1 | **lsquic** | quicX as Client | ✅ | 9471 (± 8) kbps | **9.47 Mbps** | `94.7%` |
+| 2 | **quic-go** | quicX as Client | ✅ | 9420 (± 12) kbps | **9.42 Mbps** | `94.2%` |
+| 3 | **nginx** | quicX as Client | ✅ | 9403 (± 7) kbps | **9.40 Mbps** | `94.0%` |
+| 4 | **go-x-net** | quicX as Server | ✅ | 9384 (± 14) kbps | **9.38 Mbps** | `93.8%` |
+| 5 | **quiche** | quicX as Client | ✅ | 9330 (± 18) kbps | **9.33 Mbps** | `93.3%` |
+| 6 | **aioquic** | quicX as Server | ✅ | 9293 (± 73) kbps | **9.29 Mbps** | `92.9%` |
+| 7 | **ngtcp2** | quicX as Server | ✅ | 9276 (± 89) kbps | **9.28 Mbps** | `92.8%` |
+| 8 | **picoquic** | quicX as Server | ✅ | 9256 (± 123) kbps | **9.26 Mbps** | `92.6%` |
+| 9 | **xquic** | quicX as Server | ✅ | 9255 (± 54) kbps | **9.26 Mbps** | `92.5%` |
+| 10 | **mvfst** | quicX as Client | ✅ | 9239 (± 40) kbps | **9.24 Mbps** | `92.4%` |
+| 11 | **ngtcp2** | quicX as Client | ✅ | 9225 (± 101) kbps | **9.22 Mbps** | `92.2%` |
+| 12 | **xquic** | quicX as Client | ✅ | 9224 (± 54) kbps | **9.22 Mbps** | `92.2%` |
+| 13 | **s2n-quic** | quicX as Client | ✅ | 9206 (± 45) kbps | **9.21 Mbps** | `92.1%` |
+| 14 | **picoquic** | quicX as Client | ✅ | 9145 (± 26) kbps | **9.14 Mbps** | `91.5%` |
+| 15 | **haproxy** | quicX as Client | ✅ | 9059 (± 9) kbps | **9.06 Mbps** | `90.6%` |
+| 16 | **lsquic** | quicX as Server | ✅ | 9050 (± 159) kbps | **9.05 Mbps** | `90.5%` |
+| 17 | **kwik** | quicX as Client | ✅ | 8772 (± 260) kbps | **8.77 Mbps** | `87.7%` |
+| 18 | **quinn** | quicX as Client | ✅ | 8700 (± 4) kbps | **8.70 Mbps** | `87.0%` |
+| 19 | **s2n-quic** | quicX as Server | ✅ | 8622 (± 210) kbps | **8.62 Mbps** | `86.2%` |
+| 20 | **aioquic** | quicX as Client | ✅ | 8601 (± 25) kbps | **8.60 Mbps** | `86.0%` |
+| 21 | **neqo** | quicX as Server | ✅ | 8590 (± 335) kbps | **8.59 Mbps** | `85.9%` |
+| 22 | **msquic** | quicX as Server | ✅ | 8583 (± 369) kbps | **8.58 Mbps** | `85.8%` |
+| 23 | **msquic** | quicX as Client | ✅ | 8506 (± 34) kbps | **8.51 Mbps** | `85.1%` |
+| 24 | **neqo** | quicX as Client | ✅ | 8345 (± 21) kbps | **8.35 Mbps** | `83.5%` |
+| 25 | **quic-go** | quicX as Server | ✅ | 8201 (± 240) kbps | **8.20 Mbps** | `82.0%` |
+| 26 | **quinn** | quicX as Server | ✅ | 8170 (± 185) kbps | **8.17 Mbps** | `81.7%` |
+| 27 | **go-x-net** | quicX as Client | ✅ | 7988 (± 23) kbps | **7.99 Mbps** | `79.9%` |
+| 28 | **quiche** | quicX as Server | ✅ | 7964 (± 410) kbps | **7.96 Mbps** | `79.6%` |
+| 29 | **kwik** | quicX as Server | ✅ | 6744 (± 162) kbps | **6.74 Mbps** | `67.4%` |
+| 30 | **mvfst** | quicX as Server | ✅ | 6727 (± 124) kbps | **6.73 Mbps** | `67.3%` |
+
+> 💡 **性能分析**: quicX 在 10Mbps 瓶颈链路上表现极佳，双向全部 30 个实测场景（Client 模式 16/16，Server 模式 14/14）**100% 满分通过**，最高带宽利用率达 **94.7%** (`lsquic`: 9.47 Mbps)，全局平均有效速率达到 **8.76 Mbps**。
+
+
+### 🔹 crosstraffic (`C`)
+
+> **说明**: Measures goodput over a 10Mbps link when competing with a TCP (cubic) connection.
+
+| 角色 \ 对端实现 | ngtcp2 | go-x-net | quic-go | s2n-quic | quiche | neqo | lsquic | kwik | mvfst | aioquic | msquic | picoquic | xquic | nginx | haproxy | quinn | chrome |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **quicX as Client** | ✅<br><sub>4.25 Mbps</sub> | ✅<br><sub>2.81 Mbps</sub> | ✅<br><sub>4.46 Mbps</sub> | ✅<br><sub>4.94 Mbps</sub> | ✅<br><sub>4.41 Mbps</sub> | ✅<br><sub>4.05 Mbps</sub> | ✅<br><sub>8.35 Mbps</sub> | ✅<br><sub>2.35 Mbps</sub> | ❌ | ✅<br><sub>3.10 Mbps</sub> | ✅<br><sub>3.42 Mbps</sub> | ✅<br><sub>7.14 Mbps</sub> | ✅<br><sub>8.48 Mbps</sub> | ✅<br><sub>2.37 Mbps</sub> | ✅<br><sub>4.57 Mbps</sub> | ✅<br><sub>3.12 Mbps</sub> | — |
+| **quicX as Server** | ✅<br><sub>9.11 Mbps</sub> | ✅<br><sub>6.16 Mbps</sub> | ✅<br><sub>8.46 Mbps</sub> | ✅<br><sub>8.45 Mbps</sub> | ✅<br><sub>7.70 Mbps</sub> | ✅<br><sub>8.72 Mbps</sub> | ✅<br><sub>8.85 Mbps</sub> | ✅<br><sub>6.40 Mbps</sub> | ✅<br><sub>6.38 Mbps</sub> | ✅<br><sub>9.05 Mbps</sub> | ✅<br><sub>8.58 Mbps</sub> | ✅<br><sub>9.00 Mbps</sub> | ❌ | — | — | ✅<br><sub>7.76 Mbps</sub> | ➖ |
+
+
+#### 📊 与 TCP (Cubic) 竞争实测数据明细
+
+| 排名 | 对端实现 | 测试角色 | 状态 | 详细速率 (含波动) | 实测吞吐 (Mbps) | 说明 |
+| :---: | :--- | :---: | :---: | :---: | :---: | :--- |
+| 1 | **ngtcp2** | quicX as Server | ✅ | 9114 (± 144) kbps | **9.11 Mbps** | 成功在 10Mbps 竞争链路建立公平带宽占有 (利用率 `91.1%`) |
+| 2 | **aioquic** | quicX as Server | ✅ | 9047 (± 63) kbps | **9.05 Mbps** | 成功在 10Mbps 竞争链路建立公平带宽占有 (利用率 `90.5%`) |
+| 3 | **picoquic** | quicX as Server | ✅ | 9004 (± 74) kbps | **9.00 Mbps** | 成功在 10Mbps 竞争链路建立公平带宽占有 (利用率 `90.0%`) |
+| 4 | **lsquic** | quicX as Server | ✅ | 8845 (± 93) kbps | **8.85 Mbps** | 成功在 10Mbps 竞争链路建立公平带宽占有 (利用率 `88.4%`) |
+| 5 | **neqo** | quicX as Server | ✅ | 8723 (± 217) kbps | **8.72 Mbps** | 成功在 10Mbps 竞争链路建立公平带宽占有 (利用率 `87.2%`) |
+| 6 | **msquic** | quicX as Server | ✅ | 8576 (± 104) kbps | **8.58 Mbps** | 成功在 10Mbps 竞争链路建立公平带宽占有 (利用率 `85.8%`) |
+| 7 | **xquic** | quicX as Client | ✅ | 8477 (± 77) kbps | **8.48 Mbps** | 成功在 10Mbps 竞争链路建立公平带宽占有 (利用率 `84.8%`) |
+| 8 | **quic-go** | quicX as Server | ✅ | 8458 (± 177) kbps | **8.46 Mbps** | 成功在 10Mbps 竞争链路建立公平带宽占有 (利用率 `84.6%`) |
+| 9 | **s2n-quic** | quicX as Server | ✅ | 8451 (± 147) kbps | **8.45 Mbps** | 成功在 10Mbps 竞争链路建立公平带宽占有 (利用率 `84.5%`) |
+| 10 | **lsquic** | quicX as Client | ✅ | 8345 (± 111) kbps | **8.35 Mbps** | 成功在 10Mbps 竞争链路建立公平带宽占有 (利用率 `83.5%`) |
+| 11 | **quinn** | quicX as Server | ✅ | 7756 (± 143) kbps | **7.76 Mbps** | 成功在 10Mbps 竞争链路建立公平带宽占有 (利用率 `77.6%`) |
+| 12 | **quiche** | quicX as Server | ✅ | 7704 (± 343) kbps | **7.70 Mbps** | 成功在 10Mbps 竞争链路建立公平带宽占有 (利用率 `77.0%`) |
+| 13 | **picoquic** | quicX as Client | ✅ | 7139 (± 171) kbps | **7.14 Mbps** | 成功在 10Mbps 竞争链路建立公平带宽占有 (利用率 `71.4%`) |
+| 14 | **kwik** | quicX as Server | ✅ | 6399 (± 151) kbps | **6.40 Mbps** | 成功在 10Mbps 竞争链路建立公平带宽占有 (利用率 `64.0%`) |
+| 15 | **mvfst** | quicX as Server | ✅ | 6383 (± 138) kbps | **6.38 Mbps** | 成功在 10Mbps 竞争链路建立公平带宽占有 (利用率 `63.8%`) |
+| 16 | **go-x-net** | quicX as Server | ✅ | 6156 (± 53) kbps | **6.16 Mbps** | 成功在 10Mbps 竞争链路建立公平带宽占有 (利用率 `61.6%`) |
+| 17 | **s2n-quic** | quicX as Client | ✅ | 4939 (± 406) kbps | **4.94 Mbps** | 成功在 10Mbps 竞争链路建立公平带宽占有 (利用率 `49.4%`) |
+| 18 | **haproxy** | quicX as Client | ✅ | 4566 (± 131) kbps | **4.57 Mbps** | 成功在 10Mbps 竞争链路建立公平带宽占有 (利用率 `45.7%`) |
+| 19 | **quic-go** | quicX as Client | ✅ | 4465 (± 52) kbps | **4.46 Mbps** | 成功在 10Mbps 竞争链路建立公平带宽占有 (利用率 `44.6%`) |
+| 20 | **quiche** | quicX as Client | ✅ | 4405 (± 452) kbps | **4.41 Mbps** | 成功在 10Mbps 竞争链路建立公平带宽占有 (利用率 `44.0%`) |
+| 21 | **ngtcp2** | quicX as Client | ✅ | 4254 (± 432) kbps | **4.25 Mbps** | 成功在 10Mbps 竞争链路建立公平带宽占有 (利用率 `42.5%`) |
+| 22 | **neqo** | quicX as Client | ✅ | 4049 (± 231) kbps | **4.05 Mbps** | 成功在 10Mbps 竞争链路建立公平带宽占有 (利用率 `40.5%`) |
+| 23 | **msquic** | quicX as Client | ✅ | 3416 (± 186) kbps | **3.42 Mbps** | 成功在 10Mbps 竞争链路建立公平带宽占有 (利用率 `34.2%`) |
+| 24 | **quinn** | quicX as Client | ✅ | 3120 (± 116) kbps | **3.12 Mbps** | 成功在 10Mbps 竞争链路建立公平带宽占有 (利用率 `31.2%`) |
+| 25 | **aioquic** | quicX as Client | ✅ | 3099 (± 190) kbps | **3.10 Mbps** | 成功在 10Mbps 竞争链路建立公平带宽占有 (利用率 `31.0%`) |
+| 26 | **go-x-net** | quicX as Client | ✅ | 2815 (± 92) kbps | **2.81 Mbps** | 成功在 10Mbps 竞争链路建立公平带宽占有 (利用率 `28.1%`) |
+| 27 | **nginx** | quicX as Client | ✅ | 2370 (± 130) kbps | **2.37 Mbps** | 成功在 10Mbps 竞争链路建立公平带宽占有 (利用率 `23.7%`) |
+| 28 | **kwik** | quicX as Client | ✅ | 2351 (± 512) kbps | **2.35 Mbps** | 成功在 10Mbps 竞争链路建立公平带宽占有 (利用率 `23.5%`) |
+| - | `mvfst` | quicX as Client | ❌ | — | — | 与 TCP Cubic 竞争时测算未达 interop runner 阈值 |
+| - | `xquic` | quicX as Server | ❌ | — | — | 与 TCP Cubic 竞争时测算未达 interop runner 阈值 |
+
+> 💡 **竞争分析**: quicX 展现出双向均衡的抗 TCP Cubic 竞争能力：作为 Server 时在 14 个对端 Client 中成功拿下 **13/14 (92.9%)**，平均抢占速率 > 8.0 Mbps（对 ngtcp2、aioquic、picoquic 均突破 9.0 Mbps）；作为 Client 时 **15/16 (93.8%)** 达标，其中对 lsquic (8.35 Mbps) 与 xquic (8.48 Mbps) 场景抢占效率最高。综合抗 TCP Cubic 竞争达标率达到 **93.3% (28/30)**，仅 mvfst (Client) 与 xquic (Server) 两个组合未达标。
