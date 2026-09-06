@@ -1,5 +1,6 @@
-#include "http3/qpack/dynamic_table.h"
 #include <gtest/gtest.h>
+
+#include "http3/qpack/dynamic_table.h"
 
 namespace quicx {
 namespace http3 {

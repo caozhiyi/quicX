@@ -1,6 +1,8 @@
-#include "common/network/address.h"
-#include <gtest/gtest.h>
 #include <iostream>
+
+#include <gtest/gtest.h>
+
+#include "common/network/address.h"
 
 namespace quicx {
 namespace common {

@@ -1,11 +1,13 @@
-#include <gtest/gtest.h>
 #include <atomic>
 #include <memory>
+#include <quicx/upgrade/type.h>
 #include <string>
 #include <vector>
 
-#include <quicx/common/if_event_loop.h>
-#include <quicx/upgrade/type.h>
+#include <gtest/gtest.h>
+
+#include "common/network/if_event_loop.h"
+
 #include "upgrade/handlers/connection_context.h"
 #include "upgrade/handlers/http_smart_handler.h"
 #include "upgrade/handlers/https_smart_handler.h"
@@ -105,8 +107,8 @@ protected:
 TEST_F(HandlersIntegrationTest, CompleteHttpHandlerLifecycle) {
     // Create HTTP settings
     UpgradeSettings settings;
-    settings.http_port = 8080;
-    settings.https_port = 0;
+    settings.http_port_ = 8080;
+    settings.https_port_ = 0;
 
     // Create HTTP handler
     auto handler = factory_->CreateHandler(settings, event_loop_);
@@ -138,10 +140,10 @@ TEST_F(HandlersIntegrationTest, CompleteHttpHandlerLifecycle) {
 TEST_F(HandlersIntegrationTest, CompleteHttpsHandlerLifecycle) {
     // Create HTTPS settings
     UpgradeSettings settings;
-    settings.http_port = 0;
-    settings.https_port = 8443;
-    settings.cert_file = "test.crt";
-    settings.key_file = "test.key";
+    settings.http_port_ = 0;
+    settings.https_port_ = 8443;
+    settings.cert_file_ = "test.crt";
+    settings.key_file_ = "test.key";
 
     // Create HTTPS handler
     auto handler = factory_->CreateHandler(settings, event_loop_);
@@ -173,8 +175,8 @@ TEST_F(HandlersIntegrationTest, CompleteHttpsHandlerLifecycle) {
 TEST_F(HandlersIntegrationTest, ConnectionContextIntegration) {
     // Create HTTP handler
     UpgradeSettings settings;
-    settings.http_port = 8080;
-    settings.https_port = 0;
+    settings.http_port_ = 8080;
+    settings.https_port_ = 0;
 
     auto handler = factory_->CreateHandler(settings, event_loop_);
     auto socket = std::make_shared<TcpSocket>();
@@ -206,8 +208,8 @@ TEST_F(HandlersIntegrationTest, ConnectionContextIntegration) {
 TEST_F(HandlersIntegrationTest, MultipleHandlersDifferentSettings) {
     // Create HTTP handler
     UpgradeSettings http_settings;
-    http_settings.http_port = 8080;
-    http_settings.https_port = 0;
+    http_settings.http_port_ = 8080;
+    http_settings.https_port_ = 0;
 
     auto http_handler = factory_->CreateHandler(http_settings, event_loop_);
     EXPECT_NE(http_handler, nullptr);
@@ -215,10 +217,10 @@ TEST_F(HandlersIntegrationTest, MultipleHandlersDifferentSettings) {
 
     // Create HTTPS handler
     UpgradeSettings https_settings;
-    https_settings.http_port = 0;
-    https_settings.https_port = 8443;
-    https_settings.cert_file = "test.crt";
-    https_settings.key_file = "test.key";
+    https_settings.http_port_ = 0;
+    https_settings.https_port_ = 8443;
+    https_settings.cert_file_ = "test.crt";
+    https_settings.key_file_ = "test.key";
 
     auto https_handler = factory_->CreateHandler(https_settings, event_loop_);
     EXPECT_NE(https_handler, nullptr);
@@ -239,8 +241,8 @@ TEST_F(HandlersIntegrationTest, MultipleHandlersDifferentSettings) {
 TEST_F(HandlersIntegrationTest, HandlerWithEventDriver) {
     // Create HTTP handler
     UpgradeSettings settings;
-    settings.http_port = 8080;
-    settings.https_port = 0;
+    settings.http_port_ = 8080;
+    settings.https_port_ = 0;
 
     auto handler = factory_->CreateHandler(settings, event_loop_);
     auto socket = std::make_shared<TcpSocket>();
@@ -261,8 +263,8 @@ TEST_F(HandlersIntegrationTest, HandlerWithEventDriver) {
 TEST_F(HandlersIntegrationTest, HandlerErrorHandling) {
     // Create handler with invalid settings
     UpgradeSettings settings;
-    settings.http_port = 0;
-    settings.https_port = 0;
+    settings.http_port_ = 0;
+    settings.https_port_ = 0;
 
     auto handler = factory_->CreateHandler(settings, event_loop_);
     EXPECT_NE(handler, nullptr);
@@ -311,10 +313,10 @@ TEST_F(HandlersIntegrationTest, ConnectionContextWithProtocols) {
 TEST_F(HandlersIntegrationTest, FactorySettingsCombinations) {
     // Test with both ports enabled
     UpgradeSettings both_settings;
-    both_settings.http_port = 8080;
-    both_settings.https_port = 8443;
-    both_settings.cert_file = "test.crt";
-    both_settings.key_file = "test.key";
+    both_settings.http_port_ = 8080;
+    both_settings.https_port_ = 8443;
+    both_settings.cert_file_ = "test.crt";
+    both_settings.key_file_ = "test.key";
 
     auto both_handler = factory_->CreateHandler(both_settings, event_loop_);
     EXPECT_NE(both_handler, nullptr);
@@ -322,8 +324,8 @@ TEST_F(HandlersIntegrationTest, FactorySettingsCombinations) {
 
     // Test with only HTTP port
     UpgradeSettings http_only_settings;
-    http_only_settings.http_port = 8080;
-    http_only_settings.https_port = 0;
+    http_only_settings.http_port_ = 8080;
+    http_only_settings.https_port_ = 0;
 
     auto http_only_handler = factory_->CreateHandler(http_only_settings, event_loop_);
     EXPECT_NE(http_only_handler, nullptr);
@@ -331,8 +333,8 @@ TEST_F(HandlersIntegrationTest, FactorySettingsCombinations) {
 
     // Test with only HTTPS port but no certificates
     UpgradeSettings https_no_cert_settings;
-    https_no_cert_settings.http_port = 0;
-    https_no_cert_settings.https_port = 8443;
+    https_no_cert_settings.http_port_ = 0;
+    https_no_cert_settings.https_port_ = 8443;
 
     auto https_no_cert_handler = factory_->CreateHandler(https_no_cert_settings, event_loop_);
     EXPECT_NE(https_no_cert_handler, nullptr);

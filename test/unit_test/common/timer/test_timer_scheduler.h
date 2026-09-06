@@ -6,8 +6,7 @@
 #include <memory>
 #include <utility>
 
-#include <quicx/common/if_timer_scheduler.h>
-
+#include "common/timer/if_timer_scheduler.h"
 #include "common/timer/timer_core.h"
 #include "common/util/time.h"
 
@@ -30,13 +29,14 @@ namespace common {
  */
 class TestTimerScheduler: public ITimerScheduler {
 public:
-    TestTimerScheduler(): now_(UTCTimeMsec()) {}
+    TestTimerScheduler():
+        now_(UTCTimeMsec()) {}
 
     Timer AddTimer(std::weak_ptr<void> owner, std::function<void()> cb, uint32_t delay_ms) override {
         ++arm_count_;
         uint32_t gen = 0;
-        uint32_t index = core_->Arm(std::move(cb), std::move(owner), /*has_owner=*/true, delay_ms, /*interval_ms=*/0,
-            Now(), gen);
+        uint32_t index =
+            core_->Arm(std::move(cb), std::move(owner), /*has_owner=*/true, delay_ms, /*interval_ms=*/0, Now(), gen);
         return Timer(core_, index, gen);
     }
 

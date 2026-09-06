@@ -1,6 +1,7 @@
-#include <gtest/gtest.h>
 #include <cstring>
 #include <memory>
+
+#include <gtest/gtest.h>
 
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
@@ -223,7 +224,7 @@ TEST_F(RecvStreamTest, RecvOverlappingReassembly) {
     auto stream =
         std::make_shared<RecvStream>(event_loop, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
 
-    static const std::string kFlow = "0123456789ABCDEFGHIJKLMN"; // 24 bytes
+    static const std::string kFlow = "0123456789ABCDEFGHIJKLMN";  // 24 bytes
     std::string delivered;
     bool last_flag = false;
     stream->SetStreamReadCallBack([&](std::shared_ptr<IBufferRead> buffer, bool is_last, uint32_t err) {
@@ -321,7 +322,7 @@ TEST_F(RecvStreamTest, RecvFinOnlyAfterAllData) {
     auto stream =
         std::make_shared<RecvStream>(event_loop, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
 
-    static const std::string kFlow = "0123456789ABCDEFGHIJKLMN"; // 24 bytes
+    static const std::string kFlow = "0123456789ABCDEFGHIJKLMN";  // 24 bytes
     std::string delivered;
     bool last_flag = false;
     stream->SetStreamReadCallBack([&](std::shared_ptr<IBufferRead> buffer, bool is_last, uint32_t err) {

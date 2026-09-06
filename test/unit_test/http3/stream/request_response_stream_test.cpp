@@ -1,13 +1,17 @@
-#include <gtest/gtest.h>
 #include <quicx/http3/if_request.h>
 #include <quicx/http3/if_response.h>
+
+#include <gtest/gtest.h>
+
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
+
 #include "http3/http/request.h"
 #include "http3/qpack/blocked_registry.h"
 #include "http3/qpack/qpack_encoder.h"
 #include "http3/stream/request_stream.h"
 #include "http3/stream/response_stream.h"
+
 #include "test/unit_test/http3/stream/mock_quic_stream.h"
 
 namespace quicx {

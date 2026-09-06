@@ -1,5 +1,6 @@
-#include "quic/stream/stream_id_generator.h"
 #include <gtest/gtest.h>
+
+#include "quic/stream/stream_id_generator.h"
 
 namespace quicx {
 namespace quic {

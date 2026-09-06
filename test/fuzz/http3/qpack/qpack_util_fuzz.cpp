@@ -21,6 +21,7 @@
 
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
+
 #include "http3/qpack/util.h"
 
 namespace {
@@ -76,8 +77,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
         std::string decoded;
         if (quicx::http3::QpackDecodeStringLiteral(buf, decoded)) {
             auto reencoded = std::make_shared<quicx::common::SingleBlockBuffer>(
-                std::make_shared<quicx::common::StandaloneBufferChunk>(
-                    static_cast<uint32_t>(decoded.size() + 16)));
+                std::make_shared<quicx::common::StandaloneBufferChunk>(static_cast<uint32_t>(decoded.size() + 16)));
             if (quicx::http3::QpackEncodeStringLiteral(decoded, reencoded, /*huffman=*/false)) {
                 std::string again;
                 if (quicx::http3::QpackDecodeStringLiteral(reencoded, again) && again != decoded) {

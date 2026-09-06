@@ -28,17 +28,17 @@
 // production headers).
 // ----------------------------------------------------------------------------
 
-#include <gtest/gtest.h>
-
 #include <memory>
+#include <quicx/http3/if_response.h>
+#include <quicx/http3/type.h>
 #include <string>
 #include <unordered_map>
 
-#include <quicx/http3/if_response.h>
-#include <quicx/http3/type.h>
+#include <gtest/gtest.h>
 
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
+
 #include "http3/connection/connection_client.h"
 #include "http3/connection/connection_server.h"
 #include "http3/http/request.h"
@@ -532,7 +532,9 @@ TEST_F(QpackDynamicTableE2ETest, AsymmetricCapacityClientZero) {
     auto on_resp = [&](std::shared_ptr<IResponse> resp, uint32_t err) {
         resp_called = true;
         EXPECT_EQ(err, 0u);
-        if (resp) { EXPECT_EQ(resp->GetStatusCode(), 204); }
+        if (resp) {
+            EXPECT_EQ(resp->GetStatusCode(), 204);
+        }
     };
     EXPECT_TRUE(client_->DoRequest(MakeRequest("asym-1"), on_resp));
     EXPECT_TRUE(resp_called);
@@ -746,7 +748,9 @@ TEST_F(QpackDynamicTableE2ETest, PseudoHeadersOnlyHaveZeroDynamicInserts) {
     EXPECT_TRUE(client_->DoRequest(request, [&](std::shared_ptr<IResponse> resp, uint32_t err) {
         resp_called = true;
         EXPECT_EQ(err, 0u);
-        if (resp) { EXPECT_EQ(resp->GetStatusCode(), 200); }
+        if (resp) {
+            EXPECT_EQ(resp->GetStatusCode(), 200);
+        }
     }));
     EXPECT_TRUE(resp_called);
 
@@ -832,7 +836,9 @@ TEST_F(QpackDynamicTableE2ETest, LongHeaderValueRoundTripLiteral) {
     EXPECT_TRUE(client_->DoRequest(request, [&](std::shared_ptr<IResponse> resp, uint32_t err) {
         resp_called = true;
         EXPECT_EQ(err, 0u);
-        if (resp) { EXPECT_EQ(resp->GetStatusCode(), 200); }
+        if (resp) {
+            EXPECT_EQ(resp->GetStatusCode(), 200);
+        }
     }));
 
     EXPECT_TRUE(handler_called);
@@ -895,7 +901,9 @@ TEST_F(QpackDynamicTableE2ETest, LongHeaderValueAtDefaultCapRoundTrip) {
     EXPECT_TRUE(client_->DoRequest(request, [&](std::shared_ptr<IResponse> resp, uint32_t err) {
         resp_called = true;
         EXPECT_EQ(err, 0u);
-        if (resp) { EXPECT_EQ(resp->GetStatusCode(), 200); }
+        if (resp) {
+            EXPECT_EQ(resp->GetStatusCode(), 200);
+        }
     }));
 
     EXPECT_TRUE(handler_called);

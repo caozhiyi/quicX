@@ -1,5 +1,6 @@
-#include <gtest/gtest.h>
 #include <cstdint>
+
+#include <gtest/gtest.h>
 
 #include "quic/congestion_control/bbr_v3_congestion_control.h"
 #include "quic/congestion_control/if_congestion_control.h"

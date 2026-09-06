@@ -1,9 +1,7 @@
-// Use of this source code is governed by a BSD 3-Clause License
-// that can be found in the LICENSE file.
-
-#include <gtest/gtest.h>
 #include <memory>
 #include <string>
+
+#include <gtest/gtest.h>
 
 #include "common/qlog/event/connectivity_events.h"
 #include "common/qlog/event/recovery_events.h"
@@ -19,9 +17,9 @@ namespace {
 // Helper function to create a basic config
 QlogConfig CreateTestConfig() {
     QlogConfig config;
-    config.enabled = true;
-    config.output_dir = "./test_qlogs_integration";
-    config.format = QlogFileFormat::kSequential;
+    config.enabled_ = true;
+    config.output_dir_ = "./test_qlogs_integration";
+    config.format_ = QlogFileFormat::kSequential;
     return config;
 }
 

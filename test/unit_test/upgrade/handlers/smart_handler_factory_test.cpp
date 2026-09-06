@@ -1,9 +1,11 @@
-#include <gtest/gtest.h>
 #include <memory>
+#include <quicx/upgrade/type.h>
 #include <string>
 
-#include <quicx/common/if_event_loop.h>
-#include <quicx/upgrade/type.h>
+#include <gtest/gtest.h>
+
+#include "common/network/if_event_loop.h"
+
 #include "upgrade/handlers/http_smart_handler.h"
 #include "upgrade/handlers/https_smart_handler.h"
 #include "upgrade/handlers/smart_handler_factory.h"
@@ -87,8 +89,8 @@ TEST_F(SmartHandlerFactoryTest, CreateHttpHandler) {
 
     // Create settings for HTTP
     UpgradeSettings settings;
-    settings.http_port = 8080;
-    settings.https_port = 0;  // Disable HTTPS
+    settings.http_port_ = 8080;
+    settings.https_port_ = 0;  // Disable HTTPS
 
     auto handler = factory->CreateHandler(settings, event_loop_);
     EXPECT_NE(handler, nullptr);
@@ -107,10 +109,10 @@ TEST_F(SmartHandlerFactoryTest, CreateHttpsHandler) {
 
     // Create settings for HTTPS
     UpgradeSettings settings;
-    settings.http_port = 0;  // Disable HTTP
-    settings.https_port = 8443;
-    settings.cert_file = "test.crt";
-    settings.key_file = "test.key";
+    settings.http_port_ = 0;  // Disable HTTP
+    settings.https_port_ = 8443;
+    settings.cert_file_ = "test.crt";
+    settings.key_file_ = "test.key";
 
     auto handler = factory->CreateHandler(settings, event_loop_);
     EXPECT_NE(handler, nullptr);
@@ -129,10 +131,10 @@ TEST_F(SmartHandlerFactoryTest, CreateHandlerWithBothEnabled) {
 
     // Create settings with both HTTP and HTTPS
     UpgradeSettings settings;
-    settings.http_port = 8080;
-    settings.https_port = 8443;
-    settings.cert_file = "test.crt";
-    settings.key_file = "test.key";
+    settings.http_port_ = 8080;
+    settings.https_port_ = 8443;
+    settings.cert_file_ = "test.crt";
+    settings.key_file_ = "test.key";
 
     auto handler = factory->CreateHandler(settings, event_loop_);
     EXPECT_NE(handler, nullptr);
@@ -151,8 +153,8 @@ TEST_F(SmartHandlerFactoryTest, CreateHandlerWithNeitherEnabled) {
 
     // Create settings with neither HTTP nor HTTPS
     UpgradeSettings settings;
-    settings.http_port = 0;
-    settings.https_port = 0;
+    settings.http_port_ = 0;
+    settings.https_port_ = 0;
 
     auto handler = factory->CreateHandler(settings, event_loop_);
     EXPECT_NE(handler, nullptr);
@@ -171,8 +173,8 @@ TEST_F(SmartHandlerFactoryTest, CreateHandlerWithInvalidHttpsSettings) {
 
     // Create settings with HTTPS port but no certificate
     UpgradeSettings settings;
-    settings.http_port = 0;
-    settings.https_port = 8443;
+    settings.http_port_ = 0;
+    settings.https_port_ = 8443;
     // No cert_file or key_file
 
     auto handler = factory->CreateHandler(settings, event_loop_);
@@ -192,9 +194,9 @@ TEST_F(SmartHandlerFactoryTest, CreateHandlerWithPartialHttpsSettings) {
 
     // Create settings with only cert file
     UpgradeSettings settings1;
-    settings1.http_port = 0;
-    settings1.https_port = 8443;
-    settings1.cert_file = "test.crt";
+    settings1.http_port_ = 0;
+    settings1.https_port_ = 8443;
+    settings1.cert_file_ = "test.crt";
     // No key_file
 
     auto handler1 = factory->CreateHandler(settings1, event_loop_);
@@ -203,10 +205,10 @@ TEST_F(SmartHandlerFactoryTest, CreateHandlerWithPartialHttpsSettings) {
 
     // Create settings with only key file
     UpgradeSettings settings2;
-    settings2.http_port = 0;
-    settings2.https_port = 8443;
+    settings2.http_port_ = 0;
+    settings2.https_port_ = 8443;
     // No cert_file
-    settings2.key_file = "test.key";
+    settings2.key_file_ = "test.key";
 
     auto handler2 = factory->CreateHandler(settings2, event_loop_);
     EXPECT_NE(handler2, nullptr);
@@ -219,8 +221,8 @@ TEST_F(SmartHandlerFactoryTest, CreateHandlerWithDifferentPorts) {
 
     // Test different HTTP ports
     UpgradeSettings settings1;
-    settings1.http_port = 80;
-    settings1.https_port = 0;
+    settings1.http_port_ = 80;
+    settings1.https_port_ = 0;
 
     auto handler1 = factory->CreateHandler(settings1, event_loop_);
     EXPECT_NE(handler1, nullptr);
@@ -228,10 +230,10 @@ TEST_F(SmartHandlerFactoryTest, CreateHandlerWithDifferentPorts) {
 
     // Test different HTTPS ports
     UpgradeSettings settings2;
-    settings2.http_port = 0;
-    settings2.https_port = 443;
-    settings2.cert_file = "test.crt";
-    settings2.key_file = "test.key";
+    settings2.http_port_ = 0;
+    settings2.https_port_ = 443;
+    settings2.cert_file_ = "test.crt";
+    settings2.key_file_ = "test.key";
 
     auto handler2 = factory->CreateHandler(settings2, event_loop_);
     EXPECT_NE(handler2, nullptr);
@@ -244,10 +246,10 @@ TEST_F(SmartHandlerFactoryTest, CreateHandlerWithEmptyCertFiles) {
 
     // Create settings with empty certificate files
     UpgradeSettings settings;
-    settings.http_port = 0;
-    settings.https_port = 8443;
-    settings.cert_file = "";
-    settings.key_file = "";
+    settings.http_port_ = 0;
+    settings.https_port_ = 8443;
+    settings.cert_file_ = "";
+    settings.key_file_ = "";
 
     auto handler = factory->CreateHandler(settings, event_loop_);
     EXPECT_NE(handler, nullptr);
@@ -262,8 +264,8 @@ TEST_F(SmartHandlerFactoryTest, MultipleHandlerCreation) {
 
     // Create HTTP handler
     UpgradeSettings http_settings;
-    http_settings.http_port = 8080;
-    http_settings.https_port = 0;
+    http_settings.http_port_ = 8080;
+    http_settings.https_port_ = 0;
 
     auto http_handler = factory->CreateHandler(http_settings, event_loop_);
     EXPECT_NE(http_handler, nullptr);
@@ -271,10 +273,10 @@ TEST_F(SmartHandlerFactoryTest, MultipleHandlerCreation) {
 
     // Create HTTPS handler
     UpgradeSettings https_settings;
-    https_settings.http_port = 0;
-    https_settings.https_port = 8443;
-    https_settings.cert_file = "test.crt";
-    https_settings.key_file = "test.key";
+    https_settings.http_port_ = 0;
+    https_settings.https_port_ = 8443;
+    https_settings.cert_file_ = "test.crt";
+    https_settings.key_file_ = "test.key";
 
     auto https_handler = factory->CreateHandler(https_settings, event_loop_);
     EXPECT_NE(https_handler, nullptr);
@@ -305,8 +307,8 @@ TEST_F(SmartHandlerFactoryTest, CreateHandlerWithLargePorts) {
 
     // Test with large port numbers
     UpgradeSettings settings;
-    settings.http_port = 65535;
-    settings.https_port = 0;
+    settings.http_port_ = 65535;
+    settings.https_port_ = 0;
 
     auto handler = factory->CreateHandler(settings, event_loop_);
     EXPECT_NE(handler, nullptr);

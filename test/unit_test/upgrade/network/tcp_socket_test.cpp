@@ -1,9 +1,11 @@
-#include <gtest/gtest.h>
 #include <memory>
 #include <string>
 #include <vector>
 
+#include <gtest/gtest.h>
+
 #include "common/network/io_handle.h"
+
 #include "upgrade/network/tcp_socket.h"
 
 namespace quicx {

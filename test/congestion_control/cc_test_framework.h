@@ -7,8 +7,9 @@
 #include <string>
 #include <vector>
 
-#include "network_simulator.h"
 #include "quic/congestion_control/if_congestion_control.h"
+
+#include "network_simulator.h"
 
 namespace quicx {
 namespace quic {
@@ -135,4 +136,4 @@ public:
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // TEST_CONGESTION_CONTROL_CC_TEST_FRAMEWORK

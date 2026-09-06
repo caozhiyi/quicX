@@ -15,8 +15,7 @@
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
 #include "common/log/log.h"
-#include "connection_test_util.h"
-#include "mock_sender.h"
+
 #include "quic/connection/connection_client.h"
 #include "quic/connection/connection_server.h"
 #include "quic/crypto/tls/tls_ctx_client.h"
@@ -26,6 +25,9 @@
 #include "quic/packet/packet_decode.h"
 #include "quic/packet/type.h"
 #include "quic/quicx/global_resource.h"
+
+#include "connection_test_util.h"
+#include "mock_sender.h"
 
 namespace quicx {
 namespace quic {

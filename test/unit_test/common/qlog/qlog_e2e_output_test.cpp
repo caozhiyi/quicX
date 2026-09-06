@@ -1,7 +1,3 @@
-// Use of this source code is governed by a BSD 3-Clause License
-// that can be found in the LICENSE file.
-
-#include <gtest/gtest.h>
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
@@ -10,6 +6,8 @@
 #include <string>
 #include <thread>
 #include <vector>
+
+#include <gtest/gtest.h>
 
 #include "common/qlog/event/connectivity_events.h"
 #include "common/qlog/event/recovery_events.h"
@@ -138,12 +136,12 @@ protected:
         test_dir_ = "./test_qlog_e2e_" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
 
         QlogConfig config;
-        config.enabled = true;
-        config.output_dir = test_dir_;
-        config.format = QlogFileFormat::kSequential;
-        config.flush_interval_ms = 10;
-        config.batch_write = true;
-        config.sampling_rate = 1.0f;
+        config.enabled_ = true;
+        config.output_dir_ = test_dir_;
+        config.format_ = QlogFileFormat::kSequential;
+        config.flush_interval_ms_ = 10;
+        config.batch_write_ = true;
+        config.sampling_rate_ = 1.0f;
 
         QlogManager::Instance().SetConfig(config);
     }
@@ -461,12 +459,12 @@ TEST_F(QlogE2EOutputTest, EventOrderPreserved) {
 TEST_F(QlogE2EOutputTest, EventWhitelistFiltering) {
     // Reconfigure with whitelist
     QlogConfig config;
-    config.enabled = true;
-    config.output_dir = test_dir_;
-    config.format = QlogFileFormat::kSequential;
-    config.flush_interval_ms = 10;
-    config.sampling_rate = 1.0f;
-    config.event_whitelist = {QlogEvents::kPacketSent, QlogEvents::kPacketReceived};
+    config.enabled_ = true;
+    config.output_dir_ = test_dir_;
+    config.format_ = QlogFileFormat::kSequential;
+    config.flush_interval_ms_ = 10;
+    config.sampling_rate_ = 1.0f;
+    config.event_whitelist_ = {QlogEvents::kPacketSent, QlogEvents::kPacketReceived};
     QlogManager::Instance().SetConfig(config);
 
     std::string conn_id = "e2e-whitelist";

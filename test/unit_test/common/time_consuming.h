@@ -20,4 +20,4 @@ private:
 }  // namespace common
 }  // namespace quicx
 
-#endif
+#endif  // UTEST_COMMON_UTIL_OS_INFO

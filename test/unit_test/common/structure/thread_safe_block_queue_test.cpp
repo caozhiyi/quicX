@@ -1,11 +1,13 @@
-#include "common/structure/thread_safe_block_queue.h"
-#include <gtest/gtest.h>
 #include <atomic>
 #include <chrono>
 #include <iostream>
 #include <string>
 #include <thread>
 #include <vector>
+
+#include <gtest/gtest.h>
+
+#include "common/structure/thread_safe_block_queue.h"
 
 namespace quicx {
 namespace common {

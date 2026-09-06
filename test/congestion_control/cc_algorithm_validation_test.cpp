@@ -1,6 +1,7 @@
+#include <cmath>
+
 #include <gtest/gtest.h>
 
-#include <cmath>
 #include "cc_test_framework.h"
 
 namespace quicx {

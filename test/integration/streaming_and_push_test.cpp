@@ -2,21 +2,20 @@
 // Tests IAsyncServerHandler (streaming upload), IAsyncClientHandler (streaming download),
 // request body provider (streaming upload from client), and Server Push
 
-#include <gtest/gtest.h>
 #include <atomic>
 #include <chrono>
 #include <cstring>
 #include <mutex>
-#include <thread>
-#include <vector>
-
 #include <quicx/http3/if_async_handler.h>
 #include <quicx/http3/if_client.h>
 #include <quicx/http3/if_request.h>
 #include <quicx/http3/if_response.h>
 #include <quicx/http3/if_server.h>
-
 // ==================== Async Server Handler for streaming upload ====================
+#include <thread>
+#include <vector>
+
+#include <gtest/gtest.h>
 
 class StreamingUploadHandler: public quicx::IAsyncServerHandler {
 public:

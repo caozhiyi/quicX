@@ -1,10 +1,10 @@
 #ifndef UTEST_CONNECTION_MOCK_QUIC_CONNECTION
 #define UTEST_CONNECTION_MOCK_QUIC_CONNECTION
 
-#include <quicx/quic/if_quic_connection.h>
-#include <quicx/quic/if_quic_stream.h>
 #include <cstdint>
 #include <cstring>
+#include <quicx/quic/if_quic_connection.h>
+#include <quicx/quic/if_quic_stream.h>
 #include <vector>
 
 namespace quicx {
@@ -29,6 +29,18 @@ public:
     virtual void GetLocalAddr(std::string& addr, uint32_t& port) {}
     virtual void GetRemoteAddr(std::string& addr, uint32_t& port) {}
 
+    // Connection migration (no-op in mock: migration is exercised by the
+    // dedicated path_migration_test suite against real connections)
+    virtual bool InitiateMigration() { return false; }
+    virtual MigrationResult InitiateMigrationTo(const std::string& local_ip, uint16_t local_port = 0) {
+        (void)local_ip;
+        (void)local_port;
+        return MigrationResult::kFailedInvalidState;
+    }
+    virtual void SetMigrationCallback(migration_callback cb) { (void)cb; }
+    virtual bool IsMigrationSupported() const { return false; }
+    virtual bool IsMigrationInProgress() const { return false; }
+
     // close the connection gracefully. that means all the streams will be closed gracefully.
     virtual void Close();
 
@@ -49,8 +61,7 @@ public:
     virtual bool ExportResumptionSession(std::string& out_session_der);
 
     // Timer methods
-    virtual uint64_t AddTimer(timer_callback callback, uint32_t timeout_ms,
-                               bool periodic = false);
+    virtual uint64_t AddTimer(timer_callback callback, uint32_t timeout_ms, bool periodic = false);
     virtual void RemoveTimer(uint64_t timer_id);
 
     // State check
@@ -89,7 +100,7 @@ private:
     bool is_terminating_ = false;
 };
 
-}  // namespace quic
+}  // namespace quicx
 }  // namespace quicx
 
-#endif  // MOCK_QUIC_RECV_STREAM_H
+#endif  // UTEST_CONNECTION_MOCK_QUIC_CONNECTION

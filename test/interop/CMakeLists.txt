@@ -2,10 +2,12 @@
 
 cmake_minimum_required(VERSION 3.10)
 # MSVC / clang-cl reject GCC-style -Wno-* flags (D8021); route to /wd#### instead.
-add_compile_options(
-    "$<$<OR:$<CXX_COMPILER_ID:MSVC>,$<STREQUAL:$<CXX_COMPILER_FRONTEND_VARIANT>,MSVC>>:/wd4101;/wd4189;/wd4505>"
-    "$<$<AND:$<NOT:$<CXX_COMPILER_ID:MSVC>>,$<NOT:$<STREQUAL:$<CXX_COMPILER_FRONTEND_VARIANT>,MSVC>>>:-Wno-unused-variable;-Wno-unused-but-set-variable;-Wno-unused-function>"
-)
+# Configure-time variables instead of genex for CMake >= 3.10 compat (docker builder).
+if(MSVC OR CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+    add_compile_options(/wd4101 /wd4189 /wd4505)
+else()
+    add_compile_options(-Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function)
+endif()
 
 # Interop Server (links http3 library for HTTP/3 support)
 add_executable(interop_server

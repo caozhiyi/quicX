@@ -1,6 +1,7 @@
-#include <gtest/gtest.h>
 #include <memory>
 #include <vector>
+
+#include <gtest/gtest.h>
 
 #include "http3/http/response.h"
 #include "http3/qpack/qpack_encoder.h"
@@ -8,6 +9,7 @@
 #include "http3/stream/push_sender_stream.h"
 #include "http3/stream/type.h"
 #include "http3/stream/unidentified_stream.h"
+
 #include "test/unit_test/http3/stream/mock_quic_stream.h"
 
 namespace quicx {

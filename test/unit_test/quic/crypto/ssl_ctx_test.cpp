@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+
 #include "quic/crypto/tls/tls_ctx.h"
 
 namespace quicx {
@@ -9,5 +10,5 @@ TEST(CryptoSslCtxTest, test1) {
     EXPECT_TRUE(ctx.Init(false));
 }
 
-}  // namespace quic
+}  // namespace quicx
 }  // namespace quicx

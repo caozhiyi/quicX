@@ -1,5 +1,7 @@
-#include <gtest/gtest.h>
 #include <iostream>
+
+#include <gtest/gtest.h>
+
 #include "common/structure/linked_list.h"
 #include "common/structure/linked_list_solt.h"
 

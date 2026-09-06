@@ -1,7 +1,8 @@
-#include <gtest/gtest.h>
 #include <memory>
 #include <string>
 #include <vector>
+
+#include <gtest/gtest.h>
 
 #include "upgrade/core/protocol_detector.h"
 #include "upgrade/core/upgrade_manager.h"
@@ -41,10 +42,10 @@ private:
 class IntegrationTest: public ::testing::Test {
 protected:
     void SetUp() override {
-        settings_.http_port = 80;
-        settings_.https_port = 443;
-        settings_.cert_file = "test.crt";
-        settings_.key_file = "test.key";
+        settings_.http_port_ = 80;
+        settings_.https_port_ = 443;
+        settings_.cert_file_ = "test.crt";
+        settings_.key_file_ = "test.key";
 
         manager_ = std::make_unique<UpgradeManager>(settings_);
     }

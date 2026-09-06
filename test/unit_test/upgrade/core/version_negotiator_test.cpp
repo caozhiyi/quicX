@@ -1,8 +1,10 @@
-#include "upgrade/core/version_negotiator.h"
-#include <gtest/gtest.h>
 #include <memory>
 #include <string>
 #include <vector>
+
+#include <gtest/gtest.h>
+
+#include "upgrade/core/version_negotiator.h"
 #include "upgrade/handlers/connection_context.h"
 #include "upgrade/network/if_tcp_socket.h"
 
@@ -36,10 +38,10 @@ class VersionNegotiatorTest: public ::testing::Test {
 protected:
     void SetUp() override {
         // Set up test fixtures
-        settings_.http_port = 80;
-        settings_.https_port = 443;
-        settings_.cert_file = "test.crt";
-        settings_.key_file = "test.key";
+        settings_.http_port_ = 80;
+        settings_.https_port_ = 443;
+        settings_.cert_file_ = "test.crt";
+        settings_.key_file_ = "test.key";
     }
 
     void TearDown() override {
@@ -153,8 +155,8 @@ TEST_F(VersionNegotiatorTest, EmptyALPNProtocols) {
 
 // Test HTTPS settings
 TEST_F(VersionNegotiatorTest, HTTPSEnabled) {
-    settings_.cert_file = "test.crt";
-    settings_.key_file = "test.key";
+    settings_.cert_file_ = "test.crt";
+    settings_.key_file_ = "test.key";
 
     auto context = CreateContext(Protocol::HTTP1_1);
     context.alpn_protocols = {"h3"};
@@ -169,8 +171,8 @@ TEST_F(VersionNegotiatorTest, HTTPSEnabled) {
 
 // Test HTTPS settings with no ALPN
 TEST_F(VersionNegotiatorTest, HTTPSNoALPN) {
-    settings_.cert_file = "test.crt";
-    settings_.key_file = "test.key";
+    settings_.cert_file_ = "test.crt";
+    settings_.key_file_ = "test.key";
 
     auto context = CreateContext(Protocol::HTTP1_1);
     context.alpn_protocols.clear();
@@ -214,8 +216,8 @@ TEST_F(VersionNegotiatorTest, InvalidUpgradeHeaders) {
 // Test error handling with invalid settings
 TEST_F(VersionNegotiatorTest, InvalidSettings) {
     UpgradeSettings invalid_settings;
-    invalid_settings.http_port = 0;
-    invalid_settings.https_port = 0;
+    invalid_settings.http_port_ = 0;
+    invalid_settings.https_port_ = 0;
 
     auto context = CreateContext(Protocol::HTTP1_1);
 

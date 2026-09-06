@@ -14,9 +14,9 @@
 // Verified by mutation: deleting crypto_.SetVersion() from ApplyVersion() left
 // every end-to-end test green. It fails these.
 
-#include <gtest/gtest.h>
-
 #include <memory>
+
+#include <gtest/gtest.h>
 
 #include "quic/common/constants.h"
 #include "quic/connection/connection_crypto.h"
@@ -71,7 +71,7 @@ TEST_F(QuicVersionNegotiatorTest, ApplyVersionPushesIntoCrypto) {
 
     EXPECT_EQ(negotiator->GetVersion(), kQuicVersion1);
     EXPECT_EQ(crypto_->GetVersion(), kQuicVersion1) << "ConnectionCrypto is the copy the send path reads; if it lags, "
-                                                "packets carry the wrong version while this layer looks correct";
+                                                       "packets carry the wrong version while this layer looks correct";
 }
 
 // Third copy: the version_information TP must be re-encoded and re-pushed to
@@ -220,8 +220,7 @@ TEST_F(QuicVersionNegotiatorTest, AbsentPeerVersionInformationIsTolerated) {
     TransportParam remote;
     ASSERT_FALSE(remote.HasVersionInformation());
 
-    EXPECT_TRUE(negotiator->ValidateAndMaybeUpgradeByRemoteTP(remote))
-        << "peers predating RFC 9368 must keep working";
+    EXPECT_TRUE(negotiator->ValidateAndMaybeUpgradeByRemoteTP(remote)) << "peers predating RFC 9368 must keep working";
     EXPECT_EQ(close_count_, 0);
 }
 

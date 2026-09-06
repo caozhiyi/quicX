@@ -6,12 +6,11 @@
 // on-the-wire QUIC protocol version (RFC 9000 / RFC 9369), which lives
 // in <quic/common/version.h> and is exercised by other tests.
 
-#include <gtest/gtest.h>
-
 #include <cstring>
+#include <quicx/common/version.h>
 #include <string>
 
-#include <quicx/common/version.h>
+#include <gtest/gtest.h>
 
 namespace {
 

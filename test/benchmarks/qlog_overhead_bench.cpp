@@ -35,13 +35,13 @@ static void CleanupBenchTempDir() {
 
 static QlogConfig MakeBenchConfig() {
     QlogConfig cfg;
-    cfg.enabled = true;
-    cfg.output_dir = BenchTempDir();
-    cfg.format = QlogFileFormat::kSequential;
-    cfg.async_queue_size = 100000;
-    cfg.flush_interval_ms = 50;
-    cfg.batch_write = true;
-    cfg.sampling_rate = 1.0f;
+    cfg.enabled_ = true;
+    cfg.output_dir_ = BenchTempDir();
+    cfg.format_ = QlogFileFormat::kSequential;
+    cfg.async_queue_size_ = 100000;
+    cfg.flush_interval_ms_ = 50;
+    cfg.batch_write_ = true;
+    cfg.sampling_rate_ = 1.0f;
     return cfg;
 }
 
@@ -213,7 +213,7 @@ static void BM_Qlog_Throughput_MixedEvents(benchmark::State& state) {
 static void BM_Qlog_AsyncWriter_QueuePressure(benchmark::State& state) {
     const int64_t burst_size = state.range(0);
     auto cfg = MakeBenchConfig();
-    cfg.flush_interval_ms = 200;  // Slower flush to build up queue
+    cfg.flush_interval_ms_ = 200;  // Slower flush to build up queue
     AsyncWriter writer(cfg);
     writer.Start();
 
@@ -246,7 +246,7 @@ static void BM_Qlog_AsyncWriter_QueuePressure(benchmark::State& state) {
 // Sampling rate 1.0 (log everything)
 static void BM_Qlog_SamplingRate_100Percent(benchmark::State& state) {
     auto cfg = MakeBenchConfig();
-    cfg.sampling_rate = 1.0f;
+    cfg.sampling_rate_ = 1.0f;
     AsyncWriter writer(cfg);
     writer.Start();
 
@@ -270,7 +270,7 @@ static void BM_Qlog_SamplingRate_100Percent(benchmark::State& state) {
 static void BM_Qlog_EventFilter_Whitelist(benchmark::State& state) {
     auto cfg = MakeBenchConfig();
     // Only allow recovery events, filter out packet events
-    cfg.event_whitelist = {"recovery:metrics_updated"};
+    cfg.event_whitelist_ = {"recovery:metrics_updated"};
     AsyncWriter writer(cfg);
     writer.Start();
 
@@ -353,7 +353,7 @@ static void BM_Qlog_Manager_CreateRemoveTrace(benchmark::State& state) {
     }
 
     // Cleanup
-    cfg.enabled = false;
+    cfg.enabled_ = false;
     mgr.SetConfig(cfg);
     CleanupBenchTempDir();
 

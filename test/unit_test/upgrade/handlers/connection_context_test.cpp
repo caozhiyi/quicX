@@ -1,11 +1,13 @@
-#include <gtest/gtest.h>
 #include <chrono>
 #include <memory>
 #include <string>
 #include <vector>
 
+#include <gtest/gtest.h>
+
 #include "common/timer/timer_core.h"
 #include "common/util/time.h"
+
 #include "upgrade/handlers/connection_context.h"
 #include "upgrade/network/tcp_socket.h"
 

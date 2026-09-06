@@ -1,10 +1,10 @@
-#include <gtest/gtest.h>
-
 #include <functional>
 #include <random>
 #include <set>
 #include <utility>
 #include <vector>
+
+#include <gtest/gtest.h>
 
 #include "common/timer/timer_core.h"
 #include "common/util/time.h"

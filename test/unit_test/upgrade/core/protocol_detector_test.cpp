@@ -1,7 +1,9 @@
-#include "upgrade/core/protocol_detector.h"
-#include <gtest/gtest.h>
 #include <string>
 #include <vector>
+
+#include <gtest/gtest.h>
+
+#include "upgrade/core/protocol_detector.h"
 #include "upgrade/handlers/connection_context.h"
 
 namespace quicx {

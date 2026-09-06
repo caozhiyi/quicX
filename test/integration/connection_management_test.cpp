@@ -1,15 +1,15 @@
 // Connection Management Integration Test
 // Tests connection lifecycle, graceful shutdown, and timeout handling
 
-#include <gtest/gtest.h>
 #include <atomic>
 #include <chrono>
-#include <thread>
-
 #include <quicx/http3/if_client.h>
 #include <quicx/http3/if_request.h>
 #include <quicx/http3/if_response.h>
 #include <quicx/http3/if_server.h>
+#include <thread>
+
+#include <gtest/gtest.h>
 
 #include "test_server_helper.h"
 

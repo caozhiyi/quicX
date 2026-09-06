@@ -1,15 +1,15 @@
-#include <gtest/gtest.h>
 #include <cstring>
 #include <memory>
 #include <vector>
+
+#include <gtest/gtest.h>
 
 #include "common/allocator/pool_block.h"
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
 #include "common/timer/if_timer.h"
-#include "test/unit_test/common/timer/test_timer_scheduler.h"
 
-#include "quic/connection/controler/send_control.h"
+#include "quic/connection/controller/send_control.h"
 #include "quic/connection/error.h"
 #include "quic/frame/max_stream_data_frame.h"
 #include "quic/frame/reset_stream_frame.h"
@@ -20,6 +20,8 @@
 #include "quic/stream/fix_buffer_frame_visitor.h"
 #include "quic/stream/recv_stream.h"
 #include "quic/stream/send_stream.h"
+
+#include "test/unit_test/common/timer/test_timer_scheduler.h"
 
 namespace quicx {
 namespace quic {

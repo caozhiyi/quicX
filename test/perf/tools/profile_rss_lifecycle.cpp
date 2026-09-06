@@ -33,22 +33,21 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <memory>
-#include <string>
-#include <thread>
-#include <vector>
-
 #if defined(__linux__)
 #include <malloc.h>
 #include <unistd.h>
 #endif
-
+#include <memory>
 #include <quicx/common/metrics.h>
 #include <quicx/http3/if_client.h>
 #include <quicx/http3/if_request.h>
 #include <quicx/http3/if_response.h>
 #include <quicx/http3/if_server.h>
-#include "quic/connection/controler/rtt_calculator.h"
+#include <string>
+#include <thread>
+#include <vector>
+
+#include "quic/connection/controller/rtt_calculator.h"
 
 using quicx::Http3ClientConfig;
 using quicx::Http3ServerConfig;
@@ -193,7 +192,7 @@ static BatchResult RunBatch(int n, const std::string& url, const Http3Settings& 
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     r.before = Sample();
     {
-        std::string dump = quicx::common::Metrics::ExportPrometheus();
+        std::string dump = quicx::Metrics::ExportPrometheus();
         r.active_conns_before = ParsePromMetric(dump, "quic_connections_active");
         r.streams_active_before = ParsePromMetric(dump, "quic_streams_active");
     }
@@ -235,7 +234,7 @@ static BatchResult RunBatch(int n, const std::string& url, const Http3Settings& 
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     r.after_trim = Sample();
     {
-        std::string dump = quicx::common::Metrics::ExportPrometheus();
+        std::string dump = quicx::Metrics::ExportPrometheus();
         r.active_conns_after = ParsePromMetric(dump, "quic_connections_active");
         r.streams_active_after = ParsePromMetric(dump, "quic_streams_active");
     }

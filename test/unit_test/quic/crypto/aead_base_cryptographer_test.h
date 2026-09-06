@@ -2,6 +2,7 @@
 #define UTEST_QUIC_CRYPTO_AEAD_BASE_CRYPTOGRAPHER_TEST
 
 #include <cstdint>
+
 #include "quic/crypto/if_cryptographer.h"
 
 namespace quicx {
@@ -21,4 +22,4 @@ bool DecryptHeaderTest(std::shared_ptr<ICryptographer> encrypter, std::shared_pt
 }  // namespace quic
 }  // namespace quicx
 
-#endif
+#endif  // UTEST_QUIC_CRYPTO_AEAD_BASE_CRYPTOGRAPHER_TEST

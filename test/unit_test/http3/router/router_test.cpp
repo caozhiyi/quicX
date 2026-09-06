@@ -1,5 +1,6 @@
-#include "http3/router/router.h"
 #include <gtest/gtest.h>
+
+#include "http3/router/router.h"
 
 namespace quicx {
 namespace http3 {
@@ -99,8 +100,12 @@ TEST(RouterTest, match_path_param_with_sibling_nested) {
     auto it_pid = r3.params.find("post_id");
     EXPECT_NE(it_uid, r3.params.end());
     EXPECT_NE(it_pid, r3.params.end());
-    if (it_uid != r3.params.end()) { EXPECT_EQ(it_uid->second, "5"); }
-    if (it_pid != r3.params.end()) { EXPECT_EQ(it_pid->second, "100"); }
+    if (it_uid != r3.params.end()) {
+        EXPECT_EQ(it_uid->second, "5");
+    }
+    if (it_pid != r3.params.end()) {
+        EXPECT_EQ(it_pid->second, "100");
+    }
 }
 
 TEST(RouterTest, match_advanced_features_full_set) {

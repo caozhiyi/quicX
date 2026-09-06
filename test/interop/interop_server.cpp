@@ -20,7 +20,6 @@
  *   QUIC_VERSION   - QUIC version hex (e.g. 0x00000001 for v1, 0x6b3343cf for v2)
  */
 
-#include <signal.h>
 #include <cctype>
 #include <cstdlib>
 #include <cstring>
@@ -32,14 +31,14 @@
 #endif
 #include <iostream>
 #include <memory>
-#include <string>
-
 #include <quicx/http3/if_request.h>
 #include <quicx/http3/if_response.h>
 #include <quicx/http3/if_server.h>
 #include <quicx/quic/if_quic_bidirection_stream.h>
 #include <quicx/quic/if_quic_connection.h>
 #include <quicx/quic/if_quic_server.h>
+#include <signal.h>
+#include <string>
 
 using namespace quicx;
 
@@ -73,8 +72,8 @@ public:
         transport_params.preferred_address_v6_ = preferred_address_v6_;
         if (!preferred_address_v4_.empty() || !preferred_address_v6_.empty()) {
             std::cout << "Advertising preferred address: v4="
-                      << (preferred_address_v4_.empty() ? "-" : preferred_address_v4_) << " v6="
-                      << (preferred_address_v6_.empty() ? "-" : preferred_address_v6_) << std::endl;
+                      << (preferred_address_v4_.empty() ? "-" : preferred_address_v4_)
+                      << " v6=" << (preferred_address_v6_.empty() ? "-" : preferred_address_v6_) << std::endl;
         }
         quic_ = IQuicServer::Create(transport_params);
 
@@ -113,8 +112,8 @@ public:
         // QLog
         const char* qlog_dir = std::getenv("QLOGDIR");
         if (qlog_dir) {
-            config.config_.qlog_config_.enabled = true;
-            config.config_.qlog_config_.output_dir = qlog_dir;
+            config.config_.qlog_config_.enabled_ = true;
+            config.config_.qlog_config_.output_dir_ = qlog_dir;
             std::cout << "QLog enabled, output: " << qlog_dir << std::endl;
         }
 
@@ -368,8 +367,7 @@ private:
     // Extract the port from the first non-empty preferred address string
     // ("<ipv4>:<port>" or "[<ipv6>]:<port>"). Returns 0 if none is set.
     uint16_t GetPreferredPort() const {
-        const std::string& addr =
-            !preferred_address_v4_.empty() ? preferred_address_v4_ : preferred_address_v6_;
+        const std::string& addr = !preferred_address_v4_.empty() ? preferred_address_v4_ : preferred_address_v6_;
         auto pos = addr.rfind(':');
         if (pos == std::string::npos) {
             return 0;
@@ -402,8 +400,8 @@ public:
         // QLog
         const char* qlog_dir = std::getenv("QLOGDIR");
         if (qlog_dir) {
-            config.quic_config_.config_.qlog_config_.enabled = true;
-            config.quic_config_.config_.qlog_config_.output_dir = qlog_dir;
+            config.quic_config_.config_.qlog_config_.enabled_ = true;
+            config.quic_config_.config_.qlog_config_.output_dir_ = qlog_dir;
             std::cout << "QLog enabled, output: " << qlog_dir << std::endl;
         }
 
