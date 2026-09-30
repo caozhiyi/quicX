@@ -103,6 +103,11 @@ public:
     // DCID on the path to the preferred address. Empty unless a binary
     // preferred_address was received and successfully parsed.
     void SetPreferredAddressCID(const std::string& cid) { preferred_address_cid_ = cid; }
+
+    // Test/direct-injection setters for the ACK-timing parameters. Production
+    // code populates these via Decode()/Merge(); tests and tooling use these.
+    void SetMaxAckDelay(uint64_t ms) { max_ack_delay_ = ms; }
+    void SetAckDelayExponent(uint64_t exp) { ack_delay_exponent_ = exp; }
     const std::string& GetPreferredAddressCID() const { return preferred_address_cid_; }
     bool HasPreferredAddressCID() const { return !preferred_address_cid_.empty(); }
 

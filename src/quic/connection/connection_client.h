@@ -33,10 +33,10 @@ protected:
     virtual bool OnHandshakePacket(const std::shared_ptr<IPacket>& packet) override;
     virtual bool OnRetryPacket(const std::shared_ptr<IPacket>& packet) override;
 
-    // WriteCryptoData 的握手完成钩子（Base 负责公共的 TLS 数据回灌部分）
+    // Handshake-completion hook for WriteCryptoData (Base handles the common TLS data write-back)
     virtual void OnTlsHandshakeComplete() override;
 
-    // qlog trace 以（可能已轮换的）remote CID hash 注销，见 Base 声明
+    // Unregister the qlog trace under the (possibly rotated) remote CID hash; see the Base declaration
     virtual std::string GetQlogTraceIdForCleanup() const override;
 
     // HANDSHAKE_DONE frame handler (set as callback to frame processor)

@@ -57,6 +57,9 @@ public:
     // after the move.
     std::vector<std::shared_ptr<IFrame>> TakeHandledFrames() { return std::move(handled_frames_); }
 
+    // Move-based counterpart of the (virtual, by-value) GetStreamDataInfo().
+    std::vector<StreamDataInfo> TakeStreamDataInfo() { return std::move(stream_data_list_); }
+
 private:
     uint8_t encryption_level_;
 

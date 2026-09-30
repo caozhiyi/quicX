@@ -146,9 +146,17 @@ bool SessionCache::Init(const std::string& session_cache_path) {
     // Check if cache path exists and is accessible
     if (!std::filesystem::exists(session_cache_path_)) {
         LOG_ERROR("Session cache path does not exist: %s", session_cache_path_.c_str());
-        // Create cache directory if it doesn't exist
+        // Create cache directory if it doesn't exist. Restrict to owner (0700):
+        // the directory holds session tickets with resumable TLS key material.
         try {
             std::filesystem::create_directories(session_cache_path_);
+            std::error_code perm_ec;
+            std::filesystem::permissions(session_cache_path_, std::filesystem::perms::owner_all,
+                std::filesystem::perm_options::replace, perm_ec);
+            if (perm_ec) {
+                LOG_WARN("Failed to restrict session cache directory permissions to 0700 on %s: %s",
+                    session_cache_path_.c_str(), perm_ec.message().c_str());
+            }
         } catch (const std::exception& e) {
             LOG_ERROR("Failed to create session cache directory: %s", e.what());
             return false;
@@ -182,6 +190,9 @@ bool SessionCache::Init(const std::string& session_cache_path) {
     }
 
     enable_session_cache_ = true;
+    // Wall-clock on purpose: session creation/expiry are compared against
+    // SSL_SESSION_get_time(), which is a Unix-time (system_clock) value. Do not
+    // "fix" this to MonotonicTimeMsec() — the two clocks have different epochs.
     last_cleanup_time_ = common::UTCTimeMsec() / 1000;
 
     LOG_INFO("SessionCache initialized with path: %s, loaded %zu sessions", session_cache_path_.c_str(),
@@ -519,6 +530,20 @@ bool SessionCache::SaveSessionToFile(const std::string& server_name, const Seria
     if (!data.Serialize(file)) {
         LOG_ERROR("Failed to serialize session data to file: %s", filepath.c_str());
         return false;
+    }
+    file.close();
+
+    // Session tickets contain resumable TLS session key material: restrict to
+    // owner only (0600). The ofstream above created the file with umask
+    // defaults (often 0644), which would let group/other users read the keys.
+    // Non-fatal on failure: the session is valid, just less protected.
+    std::error_code perm_ec;
+    std::filesystem::permissions(filepath,
+        std::filesystem::perms::owner_read | std::filesystem::perms::owner_write,
+        std::filesystem::perm_options::replace, perm_ec);
+    if (perm_ec) {
+        LOG_WARN("Failed to restrict session file permissions to owner-rw on %s: %s", filepath.c_str(),
+            perm_ec.message().c_str());
     }
 
     return true;

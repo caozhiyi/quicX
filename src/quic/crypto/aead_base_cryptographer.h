@@ -36,13 +36,18 @@ public:
     virtual Result EncryptPacket(uint64_t pkt_number, common::BufferSpan& associated_data,
         common::BufferSpan& plaintext, std::shared_ptr<common::IBuffer> out_ciphertext) override;
 
-    virtual Result DecryptHeader(common::BufferSpan& ciphertext, common::BufferSpan& sample, uint8_t pn_offset,
+    virtual Result DecryptHeader(common::BufferSpan& ciphertext, common::BufferSpan& sample, uint32_t pn_offset,
         uint8_t& out_packet_num_len, bool is_short) override;
 
     // RFC 9001 §6: Check if previous read key is available
     virtual bool HasPrevReadKey() const override { return !prev_read_secret_.key_.empty(); }
 
-    virtual Result EncryptHeader(common::BufferSpan& plaintext, common::BufferSpan& sample, uint8_t pn_offset,
+    // Mirrors DecryptHeader's guard: the read HP secret is the last piece
+    // installed, so once it is present a decryption failure means "corrupt or
+    // wrong key phase", not "key not ready yet".
+    virtual bool HasReadKey() const override { return !read_secret_.hp_.empty(); }
+
+    virtual Result EncryptHeader(common::BufferSpan& plaintext, common::BufferSpan& sample, uint32_t pn_offset,
         size_t pkt_number_len, bool is_short) override;
 
     virtual size_t GetTagLength() override { return aead_tag_length_; }
@@ -66,6 +71,18 @@ public:
     bool WasKeyUpdated() const { return key_updated_flag_; }
 
 protected:
+    // Cipher used for QUIC Header Protection (RFC 9001 §5.4).
+    //
+    // AES-GCM suites protect the header with AES-ECB; ChaCha20-Poly1305 uses
+    // ChaCha20 (RFC 9001 §5.4.4). This is a virtual rather than a length-based
+    // guess in the base class because AES-256-GCM and ChaCha20-Poly1305 both
+    // carry a 32-byte AEAD key: inferring the HP cipher from
+    // `aead_key_length_` silently selects AES-256-ECB for ChaCha20, which does
+    // not fail — it just computes the wrong mask and produces undecryptable
+    // packets. Returning nullptr is legal and means "no cached HP context is
+    // needed" (the subclass computes the mask itself).
+    virtual const EVP_CIPHER* GetHeaderProtectionCipher() const = 0;
+
     // Derive header protection mask into out_mask. Chooses cipher context based on key.
     // PERF: For AES-ECB, prefer the cached EVP_CIPHER_CTX* path (cached_hp_ctx).
     // The base implementation uses cached_hp_ctx when non-null and AEAD is AES-GCM

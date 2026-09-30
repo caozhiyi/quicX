@@ -2,6 +2,7 @@
 #define QUIC_CONNECTION_CONNECTION_BASE
 
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -21,11 +22,13 @@
 #include "quic/connection/controller/send_flow_controller.h"
 #include "quic/connection/controller/send_manager.h"
 #include "quic/connection/datagram_emitter.h"
+#include "quic/connection/encryption_level_scheduler.h"
 #include "quic/connection/if_connection.h"
 #include "quic/connection/if_connection_event_sink.h"
 #include "quic/connection/key_update_trigger.h"
 #include "quic/connection/migration_controller.h"
 #include "quic/connection/remote_transport_param_snapshot.h"
+#include "quic/connection/send_policy.h"
 #include "quic/connection/transport_param.h"
 #include "quic/connection/version_negotiator.h"
 #include "quic/udp/if_sender.h"
@@ -90,6 +93,12 @@ public:
     }
     void SetVersionNegotiationDone() { version_negotiator_->SetVersionNegotiationDone(); }
 
+    // Runtime congestion-control selection (code-review P2-5): the worker
+    // calls this right after creating the connection, before any packet is
+    // sent. Later calls are rejected by SendControl (rebuilding the CC object
+    // mid-connection would drop bytes_in_flight / cwnd state).
+    void SetCongestionControlType(CongestionControlType type) { send_manager_.SetCongestionControlType(type); }
+
     // *************** inner interface ***************//
     // set transport param
     void AddTransportParam(const QuicTransportParams& tp_config) override;
@@ -115,6 +124,19 @@ public:
     virtual void SetPendingEcn(uint8_t ecn) override { pending_ecn_ = ecn; }
     virtual EncryptionLevel GetCurEncryptionLevel() override;
 
+    // Tie the timer controllers' lifetime guards to this connection exactly
+    // once. RecvControl::Bind / SendControl::Bind are idempotent but each
+    // call costs two atomic weak_ptr stores; OnPackets / TrySendBurst run
+    // per datagram and used to repeat it every time. Must only be called
+    // after the connection is owned by a shared_ptr (both call sites are).
+    void BindLifetimeGuardsOnce() {
+        bool expected = false;
+        if (lifetime_guards_bound_.compare_exchange_strong(expected, true)) {
+            recv_control_.Bind(weak_from_this());
+            send_manager_.Bind(weak_from_this());
+        }
+    }
+
     // observed peer address from network; store as candidate if different
     virtual void OnObservedPeerAddress(const common::Address& addr) override;
 
@@ -127,6 +149,11 @@ public:
 
     // Get all local CID hashes for this connection (for cleanup on close)
     virtual std::vector<uint64_t> GetAllLocalCIDHashes() override { return cid_coordinator_->GetAllLocalCIDHashes(); }
+
+    // See IConnection::HasLocalConnectionId. True when |cid| is either in the
+    // local ConnectionIDManager or is the recorded peer-selected Initial DCID.
+    virtual bool HasLocalConnectionId(const ConnectionID& cid) const override;
+    virtual void RecordLocalConnectionId(const ConnectionID& cid) override;
 
     std::shared_ptr<common::IEventLoop> GetEventLoop() { return event_loop_.lock(); }
 
@@ -212,6 +239,20 @@ protected:
     virtual bool OnHandshakePacket(const std::shared_ptr<IPacket>& packet);
     virtual bool OnRetryPacket(const std::shared_ptr<IPacket>& packet) = 0;
 
+    // RFC 9001 §5.7-style early-1-RTT buffering: a 1-RTT packet that arrives
+    // before our TLS stack installed the 1-RTT read keys (the peer sends its
+    // Finished and the first application packet back-to-back; under loss the
+    // Finished can be delayed past the data packet) is buffered instead of
+    // dropped, and replayed once the keys are in. Without this, the packet is
+    // silently discarded and recovery relies entirely on the peer's
+    // retransmission — which weak implementations (kwik: App-space PTO skipped
+    // pre-handshake-confirmation; probes that never hit the wire) do not
+    // provide, deadlocking both sides until the idle timeout
+    // (quicx-server L1/C1 interop, 2026-09-16).
+    void ReplayPending1RttPackets();
+    static constexpr size_t kMaxPending1RttPackets = 16;
+    std::vector<std::shared_ptr<IPacket>> pending_1rtt_packets_;
+
     // handle frames (delegated to frame processor)
     bool OnFrames(std::vector<std::shared_ptr<IFrame>>& frames, uint16_t crypto_level);
 
@@ -284,11 +325,13 @@ private:
     bool SendImmediateAck(PacketNumberSpace ns);
 
     // Send a single-frame probe packet (e.g. PATH_CHALLENGE for path
-    // validation) immediately in 1-RTT, bypassing the send queue and the
+    // validation) immediately, bypassing the send queue and the
     // end-of-round batch flush. Used when the packet must be the first one
-    // a new path sees, so it cannot wait behind queued frames. Only caller
-    // is the path-probe wiring in the constructor.
-    bool SendImmediateProbe(const std::shared_ptr<IFrame>& frame);
+    // a new path sees, so it cannot wait behind queued frames (1-RTT, the
+    // path-probe wiring in the constructor), and by the retransmit path to
+    // emit an RFC 9002 §6.2.4 PTO probe at the lost packet's level when the
+    // §8.1 budget cannot cover a full-size retransmission.
+    bool SendImmediateProbe(const std::shared_ptr<IFrame>& frame, EncryptionLevel level = kApplication);
 
     // RFC 9000 §14.1: a *standalone* retransmitted Initial packet must still
     // form a >=1200 B datagram. The original send may have been coalesced
@@ -312,6 +355,30 @@ private:
     // across iterations and breaks out early if any inner step says we should
     // yield (cwnd full, FC blocked, no data, build failure, encryption level
     // change, etc.). Returns the actual packets emitted (>=0).
+    // Per-iteration send decision for the burst loop: intersects cwnd, the
+    // RFC 9000 §8.1 budget and connection flow control, applies the RFC 9002
+    // §7 narrow-bypass rules and clamps the §14.1 padding floor to what the
+    // budget can cover. |base_min_size| is the burst template's padding
+    // floor. Not pure: queues the DATA_BLOCKED frame on the flow-control
+    // branch (dropping it would lose the peer's only window-blocked signal).
+    SendPolicy ComputeSendPolicy(
+        const EncryptionLevelScheduler::SendContext& send_ctx, bool ack_attached, uint32_t base_min_size);
+
+    // Collect this packet's control frames under the policy's size budget
+    // (cwnd_bypass narrows selection to exempt frame types) and attach the
+    // queued ACK frame when the policy allows it.
+    std::vector<std::shared_ptr<IFrame>> GatherBurstFrames(
+        const SendPolicy& policy, const EncryptionLevelScheduler::SendContext& send_ctx);
+
+    // Build and emit one packet from the burst template + policy + frames,
+    // including post-send bookkeeping: connection-level FC accounting, the
+    // RFC 9001 §6 key-update trigger (refreshing tmpl.key_phase so the rest
+    // of the burst follows the rotation) and the build/send latency metrics.
+    // Returns false when the burst must stop (build or send failure; the
+    // reason is already logged/metered here).
+    bool EmitOnePacket(PacketBuilder::DataPacketContext& tmpl, const SendPolicy& policy,
+        std::vector<std::shared_ptr<IFrame>> frames, const EncryptionLevelScheduler::SendContext& send_ctx);
+
     int TrySendNewBurst(int budget);
 
     // Fill the identity half of a data-packet build context: the level we are
@@ -559,6 +626,8 @@ protected:
     RecvFlowController recv_flow_controller_;  // Receive-side flow controller
     RecvControl recv_control_;
     SendManager send_manager_;
+    // See BindLifetimeGuardsOnce().
+    std::atomic<bool> lifetime_guards_bound_{false};
     // crypto
     ConnectionCrypto connection_crypto_;
     // Encryption level scheduler (centralized encryption level selection)
@@ -617,17 +686,17 @@ protected:
 
     // Metrics: Handshake timing.
     //
-    // NOTE: this is a WALL-CLOCK timestamp (UTCTimeMsec, std::chrono::system_clock)
-    // expressed in milliseconds since the Unix epoch. It is used only to compute
-    // a one-shot, externally observable handshake-duration metric and is therefore
-    // wall-clock on purpose so the value lines up with operator dashboards and qlog
-    // timestamps.
+    // NOTE: this is a MONOTONIC timestamp (MonotonicTimeMsec,
+    // std::chrono::steady_clock). It is only ever used to compute the one-shot
+    // handshake-duration gauge, i.e. a *duration*, so it must be taken from the
+    // same clock as the `now` it is subtracted from. Wall-clock was wrong here:
+    // an NTP step between connection start and handshake completion produced a
+    // bogus (possibly astronomically large, via unsigned underflow) duration.
     //
-    // It is deliberately separate from the monotonic clocks used by the loss /
-    // RTT / PTO machinery (see RttSampler, LossDetector). Do NOT use this field
-    // for protocol timing decisions: a wall-clock jump backwards would silently
-    // produce negative durations.
-    uint64_t handshake_start_wall_time_ms_{0};
+    // This is the same clock the loss / RTT / PTO machinery uses
+    // (RttCalculator, SendControl, timers), so every `now` in the connection
+    // shares one time base and all differences between them are meaningful.
+    uint64_t handshake_start_time_ms_{0};
 
     // Sole owner of the egress path: sender, batch sink, datagram-id counter
     // and the active socket fd. See datagram_emitter.h for the invariants it
@@ -660,6 +729,13 @@ protected:
     // See GetPeerInitialScid(). Recorded once, on the peer's first long-header packet.
     std::string peer_initial_scid_;
     bool peer_initial_scid_recorded_{false};
+
+    // A local (destination) CID that the ConnectionIDManager never generated:
+    // the Initial DCID the peer chose, which the accepting worker installs as
+    // the routing key before the local CID pool has produced anything. Kept so
+    // HasLocalConnectionId() can vouch for it. See RecordLocalConnectionId().
+    ConnectionID initial_local_cid_;
+    bool has_initial_local_cid_{false};
 };
 
 }  // namespace quic

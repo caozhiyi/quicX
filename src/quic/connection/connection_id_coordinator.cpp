@@ -159,6 +159,10 @@ void ConnectionIDCoordinator::CheckAndReplenishLocalCIDPool() {
         }
         frame->SetStatelessResetToken(reset_token);
 
+        // Frame-level loss recovery (RFC 9000 §13.3 / §5.1.1): re-emit an
+        // equivalent frame if the packet carrying this one is declared lost.
+        TrackNewConnectionIDFrameDelivery(frame);
+
         // Send frame through send manager
         send_manager_.EnqueueFrame(frame);
 
@@ -247,6 +251,9 @@ void ConnectionIDCoordinator::RetirePendingRemoteConnectionID() {
     // the migration path is validated and the old CID is no longer active.
     auto retire = std::make_shared<RetireConnectionIDFrame>();
     retire->SetSequenceNumber(pending_retire_remote_seq_);
+    // Frame-level loss recovery (RFC 9000 §13.3 / §5.1.2): the issuer waits
+    // for this RETIRE to be acknowledged before replacing the CID.
+    TrackRetireConnectionIDFrameDelivery(retire);
     send_manager_.EnqueueFrame(retire);
     LOG_DEBUG("ConnectionIDCoordinator: flushed deferred RETIRE for seq=%llu", pending_retire_remote_seq_);
 }
@@ -257,6 +264,87 @@ void ConnectionIDCoordinator::SetPeerActiveConnectionIDLimit(uint64_t limit) {
     }
     peer_active_cid_limit_ = limit;
     CheckAndReplenishLocalCIDPool();  // Trigger replenishment if limit increased
+}
+
+void ConnectionIDCoordinator::TrackNewConnectionIDFrameDelivery(const std::shared_ptr<NewConnectionIDFrame>& frame) {
+    if (!frame) {
+        return;
+    }
+    // Lifetime notes for the captures below:
+    // - |mgr| is a shared_ptr copy, so the CID manager outlives every handler
+    //   that references it, independently of this coordinator.
+    // - |send_mgr| points at the SendManager member of the owning connection.
+    //   Handlers only ever fire from SendControl::FireFrameDelivery, which
+    //   runs while the connection (and therefore both objects) is alive;
+    //   ~SendControl cancels timers and erases entries without firing, so a
+    //   stale invocation after teardown is not possible.
+    std::shared_ptr<ConnectionIDManager> mgr = local_conn_id_manager_;
+    SendManager* send_mgr = &send_manager_;
+
+    // Self-perpetuating re-emission closure: the handler captures the
+    // shared_ptr holding it, so every re-emitted copy re-arms tracking for
+    // itself. The chain is bounded (one link per loss) and released once a
+    // copy is acknowledged and the packets leave SendControl's tables.
+    auto resend = std::make_shared<std::function<void(uint64_t)>>();
+    *resend = [mgr, send_mgr, resend](uint64_t seq) {
+        ConnectionID cid;
+        if (!mgr->GetIDBySequence(seq, cid)) {
+            return;  // CID retired since the frame was sent — nothing to re-advertise
+        }
+        auto fresh = std::make_shared<NewConnectionIDFrame>();
+        fresh->SetSequenceNumber(cid.GetSequenceNumber());
+        fresh->SetRetirePriorTo(0);
+        fresh->SetConnectionID(const_cast<uint8_t*>(cid.GetID()), cid.GetLength());
+        uint8_t reset_token[kStatelessResetTokenLength];
+        if (!StatelessResetTokenGenerator::Instance().Generate(cid.GetID(), cid.GetLength(), reset_token)) {
+            LOG_ERROR("ConnectionIDCoordinator: reset token derivation failed, dropping NCI re-emission for seq=%llu",
+                static_cast<unsigned long long>(seq));
+            return;
+        }
+        fresh->SetStatelessResetToken(reset_token);
+        fresh->SetDeliveryHandler([resend, seq](FrameDeliveryState state) {
+            if (state == FrameDeliveryState::kLost) {
+                (*resend)(seq);
+            }
+        });
+        // EnqueueFrame (not OnFrameReady) is fine here: the kLost notification
+        // originates from loss detection inside SendControl, and the loss
+        // recovery pass that follows always drains the frame queue.
+        send_mgr->EnqueueFrame(fresh);
+    };
+
+    uint64_t seq = frame->GetSequenceNumber();
+    frame->SetDeliveryHandler([resend, seq](FrameDeliveryState state) {
+        if (state == FrameDeliveryState::kLost) {
+            (*resend)(seq);
+        }
+    });
+}
+
+void ConnectionIDCoordinator::TrackRetireConnectionIDFrameDelivery(
+    const std::shared_ptr<RetireConnectionIDFrame>& frame) {
+    if (!frame) {
+        return;
+    }
+    SendManager* send_mgr = &send_manager_;
+    auto resend = std::make_shared<std::function<void(uint64_t)>>();
+    *resend = [send_mgr, resend](uint64_t seq) {
+        auto fresh = std::make_shared<RetireConnectionIDFrame>();
+        fresh->SetSequenceNumber(seq);
+        fresh->SetDeliveryHandler([resend, seq](FrameDeliveryState state) {
+            if (state == FrameDeliveryState::kLost) {
+                (*resend)(seq);
+            }
+        });
+        send_mgr->EnqueueFrame(fresh);
+    };
+
+    uint64_t seq = frame->GetSequenceNumber();
+    frame->SetDeliveryHandler([resend, seq](FrameDeliveryState state) {
+        if (state == FrameDeliveryState::kLost) {
+            (*resend)(seq);
+        }
+    });
 }
 
 }  // namespace quic

@@ -4,12 +4,14 @@
 #include <functional>
 #include <list>
 #include <memory>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
 #include "common/timer/if_timer_scheduler.h"
 
 #include "quic/config.h"
+#include "quic/congestion_control/congestion_control_factory.h"
 #include "quic/congestion_control/if_congestion_control.h"
 #include "quic/connection/controller/rtt_calculator.h"
 #include "quic/connection/transport_param.h"
@@ -118,12 +120,27 @@ public:
      * UpdateConfig, which would overwrite them).
      */
     void ResetRtt() { rtt_calculator_.Reset(); }
+
+    /**
+     * @brief Override the congestion control algorithm for this connection.
+     *
+     * Runtime-configurable CC (code-review P2-5): the worker calls this right
+     * after connection creation, before any packet is sent. Rebuilding the CC
+     * object mid-connection would drop bytes_in_flight / cwnd state, so calls
+     * after the first OnPacketSend are rejected with a warning.
+     */
+    void SetCongestionControlType(CongestionControlType type);
+
+    // ==== Test-only accessors (do not use in production code) ====
     // For test instrumentation only: returns the underlying CC's
     // bytes_in_flight / cwnd. Lets unit tests verify that send_control's
     // packet-tracking maintains exact contract with the CC layer (see
     // send_control_test.cpp G2 group).
     uint64_t GetCcBytesInFlightForTest() const { return congestion_control_->GetBytesInFlight(); }
     uint64_t GetCcCongestionWindowForTest() const { return congestion_control_->GetCongestionWindow(); }
+    // Test instrumentation: which CC algorithm is active (for the runtime
+    // CC-configuration tests).
+    CongestionControlType GetCcTypeForTest() const { return active_cc_type_; }
     // Test instrumentation: how many entries a packet number space still
     // tracks. Used to prove the retransmit path does not leave stale entries
     // behind (see RemoveStaleUnackedEntry).
@@ -191,6 +208,19 @@ public:
     // Called when PTO fires during handshake but no ACK-eliciting data to retransmit
     using ProbeNeededCallback = std::function<void()>;
     void SetProbeNeededCallback(ProbeNeededCallback callback) { probe_needed_cb_ = callback; }
+
+    // Set callback for a protocol violation detected while processing a peer
+    // frame — currently only ACK frames (RFC 9000 §19.3.1: an endpoint MUST
+    // treat an ACK for a packet number it never sent as a connection error).
+    //
+    // SendControl has no way to close the connection itself; the owner wires
+    // this to BaseConnection::InnerConnectionClose(). If no callback is set the
+    // offending frame is simply dropped (safe default: never act on an
+    // unverifiable ACK), which keeps SendControl usable standalone in tests.
+    using ProtocolViolationCallback = std::function<void(uint64_t error, uint16_t frame_type, const std::string& reason)>;
+    void SetProtocolViolationCallback(ProtocolViolationCallback callback) {
+        protocol_violation_cb_ = std::move(callback);
+    }
 
     // RFC 9002 §6.2.4 (post-handshake PTO probe):
     // Called when the PTO timer fires AFTER the handshake is complete, in
@@ -305,12 +335,28 @@ private:
     PacketLostCallback packet_lost_cb_;
     ProbeNeededCallback probe_needed_cb_;
     ApplicationProbeCallback application_probe_cb_;
+    ProtocolViolationCallback protocol_violation_cb_;
     bool handshake_complete_ = false;
     bool skip_initial_for_pto_ = false;
 
     uint64_t pkt_num_largest_sent_[PacketNumberSpace::kNumberSpaceCount] = {0};
     uint64_t pkt_num_largest_acked_[PacketNumberSpace::kNumberSpaceCount] = {0};
     uint64_t largest_sent_time_[PacketNumberSpace::kNumberSpaceCount] = {0};
+
+    // Send time of the most recent largest-acked packet per packet number
+    // space, paired with its packet number. Captured by
+    // AckLargestAckedPacket() BEFORE the entry is erased from
+    // unacked_packets_: DetectLostPackets() needs it for the RFC 9002
+    // §6.1.2 time threshold, but the map lookup it used to do always missed
+    // (the erase happens first), which made the time-threshold branch dead
+    // code. DetectLostPackets() only uses the send time when the recorded
+    // packet number equals the current largest_acked: on a repeated or
+    // out-of-order ACK frame (largest_acked <= last processed) the stale
+    // reference is NOT a valid time-threshold anchor, so the check is
+    // disabled for that round (packet threshold + PTO still apply) and
+    // resumes on the next ACK that advances the largest acknowledged.
+    uint64_t largest_acked_pn_[PacketNumberSpace::kNumberSpaceCount] = {0};
+    uint64_t largest_acked_send_time_[PacketNumberSpace::kNumberSpaceCount] = {0};
 
     // ECN validation state per packet number space
     uint64_t prev_ect0_[PacketNumberSpace::kNumberSpaceCount] = {0};
@@ -320,9 +366,14 @@ private:
 
     RttCalculator rtt_calculator_;
     std::unique_ptr<ICongestionControl> congestion_control_;
+    CongestionControlType active_cc_type_ = CongestionControlType::kReno;  // mirrors congestion_control_'s algorithm
 
     uint32_t max_ack_delay_ = 0;
     uint32_t ack_delay_exponent_ = 0;
+    // True once the first packet was sent: SetCongestionControlType() is
+    // rejected afterwards (rebuilding the CC object mid-connection would
+    // drop bytes_in_flight / cwnd state).
+    bool cc_locked_ = false;
     std::shared_ptr<common::ITimerScheduler> scheduler_;
     // Guards every callback registered from here. It is a weak_ptr to the owning
     // connection: EventLoop::FireSlot skips the callback once the connection is
@@ -416,7 +467,29 @@ private:
 
     // Walk the first ACK range and the additional ranges, running the common
     // per-packet epilogue (AckOnePacket) on every tracked PN.
+    //
+    // The walk is bounded by kAckWalkBudget (see the .cpp): a peer-controlled
+    // range can nominally cover up to 2^62 packet numbers, and every iteration
+    // costs a hash lookup.
     void AckRangePackets(uint64_t now, PacketNumberSpace ns, const std::shared_ptr<AckFrame>& ack_frame);
+
+    // Verify an inbound ACK frame against what this endpoint actually sent.
+    //
+    // Two things are checked, both required before AckRangePackets() is allowed
+    // to walk the frame:
+    //   1. RFC 9000 §19.3.1 — the frame must not acknowledge a packet number we
+    //      never sent. Without this a peer can claim "I received packets
+    //      0..2^62" and force an unbounded walk.
+    //   2. Structural well-formedness — the ranges must be strictly decreasing
+    //      and must not underflow below packet number 0. This mirrors what a
+    //      decoder cannot know on its own (it has no notion of "largest sent").
+    //
+    // Returns false and reports a protocol violation when either check fails.
+    bool ValidateAckFrame(PacketNumberSpace ns, const std::shared_ptr<AckFrame>& ack_frame);
+
+    // Forward a detected violation to the owner (see
+    // SetProtocolViolationCallback). No-op when no callback is installed.
+    void ReportProtocolViolation(uint64_t error, uint16_t frame_type, const std::string& reason);
 
     // Post-ACK PTO management: handshake confirmation on the first 1-RTT
     // ACK, PTO backoff reset, and re-arm / leave-cancelled decision based

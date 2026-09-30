@@ -114,16 +114,6 @@ static constexpr uint64_t kMaxOutOfOrderBytes = 32 * 1024 * 1024;  // 32MB
 static constexpr const char* kDefaultCongestionControl = "cubic";
 
 // ============================================================================
-// TLS/Crypto Configuration
-// ============================================================================
-
-// Legacy default for TLS peer certificate verification. Currently unused:
-// verification is controlled per-client by QuicClientConfig::verify_peer_
-// (include/quicx/quic/if_quic_client.h, default true), which is passed
-// through to TLSCtxClient::Init().
-static constexpr bool kDefaultTlsVerifyPeer = false;
-
-// ============================================================================
 // Server Configuration
 // ============================================================================
 
@@ -297,6 +287,45 @@ static constexpr uint32_t kMaxAckOnlyReplies = 3;
 static constexpr uint32_t kAckOnlySeqThreshold = 2;
 
 // ============================================================================
+// ACK Range Walk Budget (anti-DoS)
+// ============================================================================
+
+// An ACK frame's Largest Acknowledged and every ACK Range Length are
+// peer-controlled varints. RFC 9000 §19.3.1 requires us to reject an ACK that
+// acknowledges a packet number we never sent, which bounds the walk by the
+// number of packets we actually sent — still far too many to iterate per frame.
+//
+// SendControl::AckRangePackets() therefore walks at most
+//   max(kAckWalkBudgetFloor, in_flight * kAckWalkBudgetSlack)
+// packet numbers per frame. Packets still tracked in unacked_packets_ are the
+// only ones a walk can affect, and they are always the highest numbers, so a
+// downward walk reaches all of them well inside this budget; the slack covers
+// gaps between tracked entries. Anything beyond it could only produce
+// "not found" results, and those entries remain recoverable through
+// packet-threshold / PTO loss detection.
+static constexpr uint64_t kAckWalkBudgetFloor = 4096;
+static constexpr uint64_t kAckWalkBudgetSlack = 4;
+
+// ============================================================================
+// Stateless Reset Rate Limit (RFC 9000 §10.3)
+// ============================================================================
+
+// An unroutable short-header packet triggers a Stateless Reset, and that
+// trigger is unauthenticated with a spoofable source address: every datagram
+// costs a CSPRNG draw plus a sendto, and creates an on-path observable that
+// reveals which connection IDs are live.
+//
+// The reset we send is always smaller than the packet that triggered it, so
+// this is NOT an amplification concern — it is a CPU/egress/liveness-probe
+// concern. CanAcceptNewConnection() does not help here: it only guards
+// connection *creation*, and this path returns before that check.
+//
+// Limit is per source IP per window.
+static constexpr uint32_t kResetLimiterCacheSize = 10000;
+static constexpr uint32_t kResetLimiterRateThreshold = 100;
+static constexpr uint32_t kResetLimiterWindowSeconds = 1;
+
+// ============================================================================
 // Connection Timers
 // ============================================================================
 
@@ -365,6 +394,22 @@ static constexpr uint64_t kDefaultInitialCredit = 400;
 // Fraction of the amplification limit above which we consider asking the
 // peer to validate via Retry (90%).
 static constexpr double kNearLimitThreshold = 0.9;
+
+// Headroom subtracted from the §8.1 budget when sizing a packet *at build
+// time*: short/long header + AEAD tag + packet-number encoding. The budget
+// gate (CheckAndChargeAmpBudget) charges the FULL datagram length, so a
+// payload sized exactly to the remaining budget would still be refused at
+// the emitter. Conservative: a long header with 20-byte CIDs, varint lengths
+// and a 16-byte tag sums to well under this.
+static constexpr uint64_t kAmpOverheadReserve = 64;
+
+// Smallest remaining §8.1 budget worth building a packet for. Below this a
+// datagram cannot carry a meaningful frame (CRYPTO fragment or ACK), so the
+// send path stops instead of emitting padding-only packets. MUST stay far
+// below kMinInitialPacketSize (1200): the handshake-corruption interop
+// scenario that motivated build-time sizing had 591 B remaining, which is
+// exactly the window this threshold must let through.
+static constexpr uint64_t kMinAmpUsableBytes = 128;
 
 // ============================================================================
 // Crypto Stream (handshake)

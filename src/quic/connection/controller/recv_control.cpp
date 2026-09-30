@@ -38,9 +38,28 @@ void RecvControl::OnPacketRecv(uint64_t time, std::shared_ptr<IPacket> packet) {
     uint64_t pkt_num = packet->GetPacketNumber();
     bool is_ack_eliciting = IsAckElictingPacket(packet->GetFrameTypeBit());
 
-    // Update largest received packet number
-    if (pkt_num_largest_recvd_[ns] < pkt_num) {
-        pkt_num_largest_recvd_[ns] = pkt_num;
+    // Update largest received packet number and its receive time.
+    //
+    // BUGFIX (L1 handshakeloss 120s deadlock, 2026-09-16): the old strict `<`
+    // never fired for the FIRST packet of a packet number space when its
+    // packet number is 0 (0 < 0 is false), so largest_recv_time_[ns] stayed
+    // at its constructor-initialised 0 forever. The first ACK frame covering
+    // pn=0 then computed ack_delay = now - 0 = the host's entire steady_clock
+    // uptime (observed: 2817865296 ms on the interop runner). The peer (kwik)
+    // decoded the shifted field with a Java int multiply that overflowed to a
+    // NEGATIVE delay (-1477102 ms), and its RTT estimator (which only clamps
+    // the upper bound of ack_delay) produced smoothed_rtt ~= 1477 seconds.
+    // Loss-detection / PTO timers derived from that RTT were pushed 27-73
+    // minutes into the future, so the peer stopped retransmitting entirely:
+    // one lost response packet deadlocked the connection until the 120 s
+    // DownloadTimeout. Record the receive time for the first packet of each
+    // space as well; late duplicates of the current largest PN merely refresh
+    // the timestamp, which matches the RFC 9000 §13.2 semantics (the ACK
+    // Delay reflects when the largest acknowledged packet was received).
+    if (pkt_num_largest_recvd_[ns] < pkt_num || largest_recv_time_[ns] == 0) {
+        if (pkt_num_largest_recvd_[ns] < pkt_num) {
+            pkt_num_largest_recvd_[ns] = pkt_num;
+        }
         largest_recv_time_[ns] = time;
     }
 
@@ -344,8 +363,13 @@ std::shared_ptr<IFrame> RecvControl::MayGenerateAckFrame(uint64_t now, PacketNum
     // that would cause the peer to underestimate RTT.
     {
         uint64_t delay_ms = 0;
-        if (largest_ack_in_frame == pkt_num_largest_recvd_[ns]) {
-            // Exact: largest in frame IS the global largest, use tracked time
+        if (largest_ack_in_frame == pkt_num_largest_recvd_[ns] && largest_recv_time_[ns] != 0 &&
+            now >= largest_recv_time_[ns]) {
+            // Exact: largest in frame IS the global largest, use tracked time.
+            // The largest_recv_time_ != 0 and now >= recv_time guards guard
+            // against a never-set timestamp (the pn==0 first-packet bug fixed
+            // in OnPacketRecv) and any clock-domain mismatch — both would
+            // produce a runaway delay below.
             delay_ms = now - largest_recv_time_[ns];
         } else {
             // Approximate: We don't track per-packet receive time.
@@ -356,6 +380,19 @@ std::shared_ptr<IFrame> RecvControl::MayGenerateAckFrame(uint64_t now, PacketNum
             // Reporting 0 is safe — peer will slightly overestimate RTT, which
             // is conservative and better than underestimation.
             delay_ms = 0;
+        }
+        // Defence in depth: never advertise more delay than the max_ack_delay
+        // we effectively honour (RFC 9000 §13.2 caps a receiver's deliberate
+        // delay at its advertised max_ack_delay; the sender's RTT estimator
+        // trusts this field). A runaway value (the full steady_clock uptime,
+        // 2.8e9 ms, once slipped through when largest_recv_time_ was never
+        // set) overflowed the peer's integer math into a NEGATIVE delay and
+        // poisoned its smoothed_rtt to ~1477 s — silencing the peer's loss
+        // detection and PTO for the rest of the connection (kwik
+        // handshakeloss: 120 s transfer deadlock from ONE lost packet).
+        uint64_t delay_cap_ms = max_ack_delay_ > 0 ? max_ack_delay_ : 25;
+        if (delay_ms > delay_cap_ms) {
+            delay_ms = delay_cap_ms;
         }
         uint64_t encoded = delay_ms >> ack_delay_exponent_;
         frame->SetAckDelay(static_cast<uint32_t>(encoded));

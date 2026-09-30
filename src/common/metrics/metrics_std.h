@@ -17,6 +17,13 @@ struct MetricsStd {
     static MetricID UdpDroppedPackets;  // Total UDP packets dropped
     static MetricID UdpSendErrors;      // Total UDP send errors
 
+    // GSO accounting (always-on: one relaxed atomic inc per successful GSO
+    // batch, negligible vs. the sendmsg it brackets). Ratio vs. UdpPacketsTx
+    // answers "what share of packets actually rode the GSO path".
+    static MetricID GsoBatchesTotal;  // SendBatch calls that used GSO
+    static MetricID GsoSegmentsTotal; // Packets sent via GSO (sum of run lengths)
+    static MetricID GsoRunLenHist;    // GSO run length distribution (Histogram)
+
     // ==================== QUIC Connection ====================
     static MetricID QuicConnectionsActive;    // Current active connections (Gauge)
     static MetricID QuicConnectionsTotal;     // Total connections created
@@ -183,6 +190,10 @@ struct MetricsStd {
 
     // ACK receive path (Counter)
     static MetricID DiagAcksReceived;  // ACK frames received at SendControl
+    // Number of ACK frames whose range walk hit the anti-DoS budget (see
+    // SendControl::AckRangePackets). Non-zero means a peer sent an extremely
+    // sparse ACK; it must never be non-zero for legitimate traffic.
+    static MetricID DiagAckWalkBudgetExhausted;
 
     // ACK generation (Counter)
     static MetricID DiagAckGenCalls;    // MayGenerateAckFrame entries

@@ -94,6 +94,16 @@ bool TLSServerCtx::Init(bool enable_early_data, uint32_t session_ticket_timeout,
     // save RAM by releasing read and write buffers when they're empty
     SSL_CTX_set_mode(ssl_ctx_.get(), SSL_MODE_RELEASE_BUFFERS);
 
+    // RFC 8446 §4.6.1 permits multiple post-handshake NewSessionTicket
+    // messages, but BoringSSL's default is TWO. At least one interop peer
+    // (kwik) wedges its event loop after receiving the second ticket — its
+    // armed PTO timer never fires and a lost request is never retransmitted
+    // (observed in handshakeloss: connection 2 stalls for 300s after
+    // "NewSessionTicket,NewSessionTicket"). One ticket is all interop
+    // resumption needs (nginx/aioquic also send exactly one), so pin the
+    // count to 1.
+    SSL_CTX_set_num_tickets(ssl_ctx_.get(), 1);
+
     // set session ticket timeout for 0-RTT support
     SSL_CTX_set_session_psk_dhe_timeout(ssl_ctx_.get(), session_ticket_timeout);
     return true;

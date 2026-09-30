@@ -142,10 +142,15 @@ void PacketBuilder::HandleInitialPacketRequirements(const std::shared_ptr<IPacke
         return;
     }
 
-    // Set token if provided
-    if (ctx.token_data && ctx.token_length > 0) {
-        init_packet->SetToken(const_cast<uint8_t*>(ctx.token_data), ctx.token_length);
-        LOG_DEBUG("PacketBuilder::HandleInitialPacketRequirements: set token of length %zu", ctx.token_length);
+    // Set token if provided.
+    //
+    // NOTE: this used to read the never-assigned ctx.token_data/ctx.token_length
+    // pointer pair, so the token silently never made it onto the wire on this
+    // path. The single source of truth is ctx.token (std::string), which is what
+    // BuildDataPacket step 8 uses.
+    if (!ctx.token.empty()) {
+        init_packet->SetToken((uint8_t*)ctx.token.data(), ctx.token.length());
+        LOG_DEBUG("PacketBuilder::HandleInitialPacketRequirements: set token of length %zu", ctx.token.length());
     }
 
     // Add padding if requested
@@ -240,7 +245,50 @@ PacketBuilder::BuildResult PacketBuilder::BuildDataPacket(const DataPacketContex
         LOG_WARN("PacketBuilder::BuildDataPacket: %s (pre_size=%u)", result.error_message.c_str(), pre_size);
         return result;
     }
-    const uint32_t visitor_budget = kMaxFramePayload - pre_size;
+
+    // 2b. Derive the frame budget from the REAL per-packet envelope instead
+    // of a flat constant. The flat kMaxFramePayload=1420 was sized for a
+    // ~13 B header, but quicX's own headers are frequently far larger: long
+    // headers carry up to 20 B SCID + up to 20 B DCID (+ Length varint, and a
+    // token for Initial), and the packet number (1-4 B) and AEAD tag (16 B)
+    // are appended on top. With a 33-49 B envelope, "1420 B of frames"
+    // produced 1452-1489 B UDP payloads.
+    //
+    // Interop impact (C2, quic-go zerortt): peers commonly receive with
+    // fixed 1452-byte buffers (quic-go's packet-buffer pool reads UDP
+    // datagrams into 1452 B). A larger datagram is silently truncated by
+    // ReadFrom; the Long-Header Length field then overruns the remaining
+    // bytes and the peer drops it as a header-parse error — never ACKed,
+    // so the sender PTO-retransmits forever (observed: 2481 dropped
+    // 1453/1468-byte 0-RTT packets, ~4900 retransmissions). Cap the final
+    // datagram at kMaxV6PacketSize (1452), the universally safe UDP payload.
+    uint32_t header_overhead = 0;
+    if (ctx.level == kInitial || ctx.level == kHandshake || ctx.level == kEarlyData) {
+        // Long header: flags(1) + version(4) + DCID len byte(1) + DCID
+        // + SCID len byte(1) + SCID + Length varint (upper bound 4).
+        header_overhead = 6 + ctx.remote_cid_manager->GetCurrentID().GetLength()
+            + 1 + ctx.local_cid_manager->GetCurrentID().GetLength() + 4;
+        if (ctx.level == kInitial && !ctx.token.empty()) {
+            // Retry token: length varint (upper bound 4) + token bytes.
+            header_overhead += 4 + static_cast<uint32_t>(ctx.token.length());
+        }
+    } else {
+        // Short header: flags(1) + DCID.
+        header_overhead = 1 + ctx.remote_cid_manager->GetCurrentID().GetLength();
+    }
+    // The packet number (1..4 B) is only assigned after the frames are
+    // built (step 11), so budget its maximum; the AEAD tag (16 B) is
+    // appended when the payload is sealed.
+    const uint32_t envelope = header_overhead + 4 + kInitialTlsTagLength;
+    if (envelope + pre_size >= kMaxV6PacketSize) {
+        result.error_message = "header envelope leaves no datagram space";
+        LOG_WARN("PacketBuilder::BuildDataPacket: %s (envelope=%u, pre_size=%u)", result.error_message.c_str(),
+            envelope, pre_size);
+        return result;
+    }
+    const uint32_t udp_budget = kMaxV6PacketSize - envelope - pre_size;
+    const uint32_t frame_budget = kMaxFramePayload - pre_size;
+    const uint32_t visitor_budget = udp_budget < frame_budget ? udp_budget : frame_budget;
     FixBufferFrameVisitor visitor(visitor_budget);
 
     // Set stream data size limit for flow control. Never let the flow-control
@@ -460,8 +508,7 @@ PacketBuilder::BuildResult PacketBuilder::BuildDataPacket(const DataPacketContex
         output_buffer->GetDataLength());
 
     // 15. Record packet send event (for congestion control)
-    auto stream_data_info = visitor.GetStreamDataInfo();
-    send_control.OnPacketSend(common::UTCTimeMsec(), packet, encoded_size, stream_data_info);
+    send_control.OnPacketSend(common::MonotonicTimeMsec(), packet, encoded_size, visitor.TakeStreamDataInfo());
 
     // 16. Success! Fill in result
     result.success = true;
@@ -490,7 +537,7 @@ PacketBuilder::BuildResult PacketBuilder::BuildAckPacket(EncryptionLevel level,
     const std::shared_ptr<ICryptographer>& cryptographer, const std::shared_ptr<IFrame>& ack_frame,
     ConnectionIDManager* local_cid_mgr, ConnectionIDManager* remote_cid_mgr,
     const std::shared_ptr<common::IBuffer>& output_buffer, PacketNumber& packet_number, SendControl& send_control,
-    uint32_t quic_version, uint8_t key_phase) {
+    uint32_t quic_version, uint8_t key_phase, const std::string& token) {
     // Simplified: use DataPacketContext with only ACK frame
     DataPacketContext ctx;
     ctx.level = level;
@@ -503,6 +550,12 @@ PacketBuilder::BuildResult PacketBuilder::BuildAckPacket(EncryptionLevel level,
     ctx.include_stream_data = false;        // ACK packets don't include stream data
     ctx.add_padding = (level == kInitial);  // Initial packets need padding
     ctx.min_size = kMinInitialPacketSize;   // RFC 9000 §14.1
+    // RFC 9000 §17.2.5.2: after a Retry every Initial packet the client sends
+    // — including an ACK-only one — MUST carry the Retry token. An Initial ACK
+    // without it is treated by some peers (e.g. aioquic, which locates the
+    // connection by DCID) as a brand-new connection, triggering a second Retry
+    // and deadlocking the handshake.
+    ctx.token = token;
 
     LOG_DEBUG("PacketBuilder::BuildAckPacket: building ACK packet at level=%d", level);
     return BuildDataPacket(ctx, output_buffer, packet_number, send_control);
@@ -511,7 +564,8 @@ PacketBuilder::BuildResult PacketBuilder::BuildAckPacket(EncryptionLevel level,
 PacketBuilder::BuildResult PacketBuilder::BuildImmediatePacket(const std::shared_ptr<IFrame>& frame,
     EncryptionLevel level, const std::shared_ptr<ICryptographer>& cryptographer, ConnectionIDManager* local_cid_mgr,
     ConnectionIDManager* remote_cid_mgr, const std::shared_ptr<common::IBuffer>& output_buffer,
-    PacketNumber& packet_number, SendControl& send_control, uint32_t quic_version, uint8_t key_phase) {
+    PacketNumber& packet_number, SendControl& send_control, uint32_t quic_version, uint8_t key_phase,
+    const std::string& token) {
     // Simplified: use DataPacketContext with single frame
     DataPacketContext ctx;
     ctx.level = level;
@@ -520,6 +574,9 @@ PacketBuilder::BuildResult PacketBuilder::BuildImmediatePacket(const std::shared
     ctx.remote_cid_manager = remote_cid_mgr;
     ctx.quic_version = quic_version;
     ctx.key_phase = key_phase;
+    // RFC 9000 §17.2.5.2: an Initial-level immediate packet must echo the
+    // Retry token as well.
+    ctx.token = token;
     ctx.frames.push_back(frame);
     ctx.include_stream_data = false;  // Immediate packets don't include stream data
     ctx.add_padding = false;          // No padding for immediate packets (except Initial)

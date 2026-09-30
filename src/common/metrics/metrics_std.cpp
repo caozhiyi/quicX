@@ -136,6 +136,7 @@ MetricID MetricsStd::DiagRecvAckEcn = kInvalidMetricID;
 MetricID MetricsStd::DiagRecvAckInitial = kInvalidMetricID;
 MetricID MetricsStd::DiagRecvAckDelayed = kInvalidMetricID;
 MetricID MetricsStd::DiagAcksReceived = kInvalidMetricID;
+MetricID MetricsStd::DiagAckWalkBudgetExhausted = kInvalidMetricID;
 MetricID MetricsStd::DiagAckGenCalls = kInvalidMetricID;
 MetricID MetricsStd::DiagAckGenEmitted = kInvalidMetricID;
 MetricID MetricsStd::DiagAckQueueDepth = kInvalidMetricID;
@@ -157,6 +158,9 @@ MetricID MetricsStd::DiagPktPayloadHist = kInvalidMetricID;
 MetricID MetricsStd::DiagPktPerIterHist = kInvalidMetricID;
 MetricID MetricsStd::DiagTrySendBurstPkts = kInvalidMetricID;
 MetricID MetricsStd::DiagSpanWriteHist = kInvalidMetricID;
+MetricID MetricsStd::GsoBatchesTotal = kInvalidMetricID;
+MetricID MetricsStd::GsoSegmentsTotal = kInvalidMetricID;
+MetricID MetricsStd::GsoRunLenHist = kInvalidMetricID;
 
 void InitializeStandardMetrics() {
     // UDP Layer
@@ -166,6 +170,10 @@ void InitializeStandardMetrics() {
     MetricsStd::UdpBytesTx = Metrics::RegisterCounter("udp_bytes_tx", "Total UDP bytes transmitted");
     MetricsStd::UdpDroppedPackets = Metrics::RegisterCounter("udp_dropped_packets", "Total UDP packets dropped");
     MetricsStd::UdpSendErrors = Metrics::RegisterCounter("udp_send_errors", "Total UDP send errors");
+    MetricsStd::GsoBatchesTotal = Metrics::RegisterCounter("udp_gso_batches_total", "SendBatch calls sent via UDP GSO");
+    MetricsStd::GsoSegmentsTotal = Metrics::RegisterCounter("udp_gso_segments_total", "Packets sent via UDP GSO");
+    MetricsStd::GsoRunLenHist = Metrics::RegisterHistogram("udp_gso_run_len",
+        "Packets coalesced per GSO sendmsg (run length)", {2, 4, 8, 16, 32, 64});
 
     // QUIC Connection
     MetricsStd::QuicConnectionsActive =
@@ -374,6 +382,8 @@ void InitializeStandardMetrics() {
 
     // Diagnostic - ACK receive path
     MetricsStd::DiagAcksReceived = Metrics::RegisterCounter("diag_acks_received", "ACK frames received at SendControl");
+    MetricsStd::DiagAckWalkBudgetExhausted =
+        Metrics::RegisterCounter("diag_ack_walk_budget_exhausted", "ACK range walks truncated by the anti-DoS budget");
 
     // Diagnostic - ACK generation
     MetricsStd::DiagAckGenCalls = Metrics::RegisterCounter("diag_ack_gen_calls", "MayGenerateAckFrame entries");

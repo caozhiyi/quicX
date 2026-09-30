@@ -26,13 +26,15 @@ licenses(["notice"])  # MIT-style per project LICENSE
 
 # Platform-agnostic source files. Platform-specific code (epoll/kqueue/select,
 # Win32 vs POSIX helpers) is appended via select() below.
+#
+# Note: `structure/` and `thread/` are header-only today; allow_empty keeps
+# their globs valid if/when sources are added or removed.
 _COMMON_SRCS = glob(
     [
         "allocator/*.cpp",
         "buffer/*.cpp",
         "decode/*.cpp",
         "http/*.cpp",
-        "lock/*.cpp",
         "log/*.cpp",
         "metrics/*.cpp",
         "qlog/**/*.cpp",
@@ -45,6 +47,7 @@ _COMMON_SRCS = glob(
         # live under network/<linux|macos|windows>/ and are added below.
         "network/*.cpp",
     ],
+    allow_empty = True,
 )
 
 cc_library(
@@ -77,6 +80,13 @@ cc_library(
     # `..` resolves to `src/`, which becomes a -I include root that lets
     # source files use `common/...` and `quic/...` paths consistently.
     includes = [".."],
+    # qlog feature switch. Mirrors the CMake default `option(QUICX_ENABLE_QLOG
+    # ... ON)` in CMakeLists.txt: without this define every QLOG_* macro in
+    # qlog.h compiles to a no-op and the qlog unit/integration tests fail with
+    # GetEventCount() == 0. `defines` propagates to all dependents (tests,
+    # examples), matching how add_definitions(-DQUICX_ENABLE_QLOG) applies
+    # project-wide under CMake.
+    defines = ["QUICX_ENABLE_QLOG"],
     copts = select({
         # Winsock fd_set defaults to FD_SETSIZE=64 entries and FD_SET does not
         # bounds-check, so select-based monitoring silently corrupts memory

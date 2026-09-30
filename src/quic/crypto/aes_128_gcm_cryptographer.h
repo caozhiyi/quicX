@@ -15,6 +15,10 @@ public:
     virtual const char* GetName();
 
     virtual CryptographerId GetCipherId();
+
+protected:
+    // RFC 9001 §5.4.3: AES-128-GCM uses AES-128-ECB for header protection.
+    const EVP_CIPHER* GetHeaderProtectionCipher() const override;
 };
 
 }  // namespace quic

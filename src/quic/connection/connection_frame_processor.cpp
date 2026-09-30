@@ -207,7 +207,7 @@ bool FrameProcessor::OnStreamFrame(std::shared_ptr<IFrame> frame) {
     // arrive before handshake confirmation and must be accepted per RFC (subject to anti-replay policy
     // which is handled at TLS/session level). Here we don't gate on connection state.
     uint64_t stream_id = stream_frame->GetStreamID();
-    common::LogTagGuard guard("|strm:" + std::to_string(stream_id));
+    common::LogTagGuard guard("|strm:", stream_id);
     // find stream
     auto stream_ptr = stream_manager_.FindStream(stream_id);
     if (stream_ptr) {
@@ -419,6 +419,10 @@ bool FrameProcessor::OnNewConnectionIDFrame(std::shared_ptr<IFrame> frame) {
         for (uint64_t seq = 0; seq < retire_count; ++seq) {
             auto retire = std::make_shared<RetireConnectionIDFrame>();
             retire->SetSequenceNumber(seq);
+            // Frame-level loss recovery (RFC 9000 §13.3 / §5.1.2): re-emit on
+            // loss — the peer keeps the retired-CID slot open until this frame
+            // is acknowledged.
+            cid_coordinator_.TrackRetireConnectionIDFrameDelivery(retire);
             event_sink_.OnFrameReady(retire);
         }
         if (retire_prior_to > kMaxRetireConnectionIdPerFrame) {

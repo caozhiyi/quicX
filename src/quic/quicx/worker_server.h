@@ -145,6 +145,17 @@ private:
     std::shared_ptr<IPRateLimiter> ip_limiter_;
 
     /**
+     * @brief Per-IP rate limiter for Stateless Reset replies.
+     *
+     * Separate from ip_limiter_ on purpose: that one is only created in
+     * SELECTIVE retry mode and is meant to decide whether to *challenge* a new
+     * connection, whereas this one must guard the unauthenticated
+     * "reply to a CID we do not know" path unconditionally. See
+     * kResetLimiterRateThreshold in quic/config.h.
+     */
+    std::shared_ptr<IPRateLimiter> reset_limiter_;
+
+    /**
      * @brief Handshake watchdog timers, keyed by the (still-in-connecting_set_)
      * connection shared_ptr. Entries are removed and the underlying timer is
      * cancelled in HandleHandshakeDone() as soon as the handshake finishes.

@@ -33,6 +33,11 @@ uint64_t UTCTimeMsec() {
         .count();
 }
 
+uint64_t MonotonicTimeMsec() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+        .count();
+}
+
 std::string GetFormatTime(FormatTimeUnit unit) {
     char buf[kFormatTimeBufSize] = {0};
     uint32_t len = kFormatTimeBufSize;

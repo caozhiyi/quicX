@@ -59,8 +59,8 @@ bool PmtuProber::CheckAckCoversProbe(std::shared_ptr<IFrame> frame) {
     }
 
     // First contiguous range: [largest - first_range, largest]
-    uint32_t first_range = ack->GetFirstAckRange();
-    if (probe >= largest - first_range && probe <= largest) {
+    uint64_t first_range = ack->GetFirstAckRange();
+    if (first_range <= largest && probe >= largest - first_range && probe <= largest) {
         OnProbeResult(true);
         return true;
     }

@@ -92,8 +92,8 @@ void CubicCongestionControl::OnPacketAcked(const AckEvent& ev) {
             // Fast Convergence: check if cwnd decreased since last congestion event
             double curr_w_max_pkts = BytesToPkts(cwnd_bytes_, cfg_.mss_bytes);
             if (curr_w_max_pkts < w_max_pkts_) {
-                // Fast convergence: reduce W_max more aggressively
-                w_max_pkts_ = curr_w_max_pkts * (2.0 - kBetaCubic) / 2.0;
+                // Fast convergence: W_max = cwnd * (1 + β_cubic)/2
+                w_max_pkts_ = curr_w_max_pkts * (1.0 + kBetaCubic) / 2.0;
             } else {
                 w_max_pkts_ = curr_w_max_pkts;
             }
@@ -182,14 +182,14 @@ void CubicCongestionControl::OnPacketLost(const LossEvent& ev) {
     // Fast Convergence: if cwnd decreased since last loss, further reduce W_max
     // RFC 9438 §4.7 "Fast convergence": when consecutive congestion
     // events show cwnd shrinking (network getting more contended), pull
-    // W_max down by an extra factor of (2-β)/2 = 0.85 with β=0.7. This
+    // W_max down to cwnd * (1 + β_cubic)/2 = 0.85 * cwnd with β=0.7. This
     // gives competing flows a faster path to fairness — without it, a
     // newly-arriving CUBIC flow would see W_max anchored at the old
     // (less-contended) value and ramp up too slowly.
     double curr_w_max_pkts = BytesToPkts(cwnd_bytes_, cfg_.mss_bytes);
     if (curr_w_max_pkts < w_max_pkts_) {
-        // Fast convergence: reduce W_max more aggressively
-        w_max_pkts_ = curr_w_max_pkts * (2.0 - kBetaCubic) / 2.0;
+        // Fast convergence: W_max = cwnd * (1 + β_cubic)/2 (RFC 9438 §4.7)
+        w_max_pkts_ = curr_w_max_pkts * (1.0 + kBetaCubic) / 2.0;
     } else {
         w_max_pkts_ = curr_w_max_pkts;
     }
@@ -275,12 +275,14 @@ void CubicCongestionControl::IncreaseOnAck(uint64_t bytes_acked, uint64_t now) {
     // time it takes to ramp from cwnd back to W_max under the cubic
     // curve. Below K the function is concave (slow growth around the
     // recent congestion point), above K convex (aggressive probing into
-    // unexplored territory). |t - K| is used because t < K and t > K
-    // share the same |t-K|^3 magnitude — the curve is symmetric.
+    // unexplored territory). The cube is SIGNED — never fold |t - K|:
+    // the curve is point-symmetric about (K, W_max), which only holds
+    // with the signed cubic. |t-K|^3 would mirror the concave half
+    // ABOVE W_max, jumping cwnd past the pre-loss window on the very
+    // first ACK after a loss (e.g. 100 -> 130 pkts at t=0).
     // t = (now - epoch_start)/1e6
     double t_sec = static_cast<double>(now - epoch_start_us_) / 1e6;
-    double t_k = t_sec - k_time_sec_;
-    if (t_k < 0) t_k = -t_k;  // account for pre-K period
+    double t_k = t_sec - k_time_sec_;  // signed: negative in concave region (t < K)
 
     // CUBIC window in packets: W_cubic(t) = C*(t - K)^3 + Wmax
     double w_cubic_pkts = kCubicC * t_k * t_k * t_k + w_max_pkts_;

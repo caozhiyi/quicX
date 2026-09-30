@@ -31,6 +31,9 @@ Worker::Worker(const QuicConfig& config, std::shared_ptr<TLSCtx> ctx, std::share
     ecn_enabled_ = config.enable_ecn_;
     enable_key_update_ = config.enable_key_update_;
     quic_version_ = config.quic_version_;
+    // Runtime CC selection (code-review P2-5): empty string resolves to the
+    // compile-time default; unknown names fall back to reno with a warning.
+    cc_type_ = CongestionControlTypeFromString(config.congestion_control_);
 }
 
 Worker::~Worker() {}
@@ -79,7 +82,7 @@ void Worker::ProcessSend() {
     for (auto iter = active_connections.begin(); iter != active_connections.end();) {
         bool has_more_data = false;
         auto conn = *iter;
-        common::LogTagGuard guard("conn:" + std::to_string(conn->GetConnectionIDHash()));
+        common::LogTagGuard guard("conn:", conn->GetConnectionIDHash());
 
         // Try to send data using the new high-level interface.
         // TrySend() handles all packet building and sending internally.
@@ -251,6 +254,24 @@ void Worker::HandleAddConnectionId(ConnectionID& cid, std::shared_ptr<IConnectio
     if (auto notify = connection_id_notify_.lock()) {
         notify->AddConnectionID(cid, GetWorkerId());
     }
+}
+
+std::shared_ptr<IConnection> Worker::FindConnection(const ConnectionID& cid) {
+    // ConnectionID::Hash() is non-const (it lazily caches into a mutable
+    // member), so work on a local copy rather than making the parameter
+    // non-const and forcing every caller to copy.
+    ConnectionID key = cid;
+    auto it = conn_map_.find(key.Hash());
+    if (it == conn_map_.end() || !it->second) {
+        return nullptr;
+    }
+    if (!it->second->HasLocalConnectionId(key)) {
+        LOG_WARN("conn_map_ hash collision: found a connection under cid hash %llu that does not own the CID; "
+                 "treating the packet as unknown",
+            key.Hash());
+        return nullptr;
+    }
+    return it->second;
 }
 
 void Worker::HandleRetireConnectionId(ConnectionID& cid) {

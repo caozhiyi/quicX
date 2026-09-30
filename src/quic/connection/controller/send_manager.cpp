@@ -58,7 +58,7 @@ SendOperation SendManager::GetSendOperation() {
         // CanSend() honour the discovered path MTU instead of optimistically
         // assuming wire-MTU on every connection.
         uint64_t can_send_size = pmtu_prober_.GetMtuLimit();
-        uint64_t now = common::UTCTimeMsec();
+        uint64_t now = common::MonotonicTimeMsec();
         send_control_.CanSend(now, can_send_size);
         if (can_send_size == 0) {
             // RFC 9002: Allow ACK-only packets to bypass congestion control.
@@ -103,6 +103,29 @@ void SendManager::EnqueueFrame(std::shared_ptr<IFrame> frame) {
     wait_frame_list_.emplace_front(frame);
 }
 
+void SendManager::AttachRequeueOnLoss(const std::shared_ptr<IFrame>& frame) {
+    // The handler lives ON the frame, so capturing the shared_ptr directly
+    // would create a self-cycle (frame -> handler -> frame) and leak. A weak
+    // ref keeps the semantics honest: if the frame object is gone its packet
+    // has left the unacked table and there is nothing to re-queue.
+    std::weak_ptr<IFrame> weak = frame;
+    SendManager* mgr = this;
+    frame->SetDeliveryHandler([weak, mgr](FrameDeliveryState state) {
+        if (state != FrameDeliveryState::kLost) {
+            return;
+        }
+        auto f = weak.lock();
+        if (!f) {
+            return;
+        }
+        // EnqueueFrame (not the connection's queue+wake entry) matches the
+        // ConnectionIDCoordinator precedent: kLost fires from inside
+        // SendControl's loss detection, and the loss-recovery pass that
+        // follows always drains the frame queue, so no extra wake-up.
+        mgr->EnqueueFrame(f);
+    });
+}
+
 bool SendManager::HasPendingProbingFrame() const {
     for (const auto& frame : wait_frame_list_) {
         uint16_t type = static_cast<uint16_t>(frame->GetType());
@@ -115,7 +138,7 @@ bool SendManager::HasPendingProbingFrame() const {
 
 void SendManager::OnPacketAck(PacketNumberSpace ns, std::shared_ptr<IFrame> frame) {
     // Pass to send control for RTT/loss/cc updates
-    send_control_.OnPacketAck(common::UTCTimeMsec(), ns, frame);
+    send_control_.OnPacketAck(common::MonotonicTimeMsec(), ns, frame);
 
     // Bug #17: an incoming ACK is also a wake-up signal for a flow-control-
     // blocked connection. The peer might bundle MAX_DATA with the ACK, and
@@ -333,7 +356,7 @@ void SendManager::SetQlogTrace(std::shared_ptr<common::QlogTrace> trace) {
 
 uint32_t SendManager::GetAvailableWindow() {
     uint64_t can_send_size = pmtu_prober_.GetMtuLimit();
-    uint64_t now = common::UTCTimeMsec();
+    uint64_t now = common::MonotonicTimeMsec();
     send_control_.CanSend(now, can_send_size);
 
     return static_cast<uint32_t>(can_send_size);

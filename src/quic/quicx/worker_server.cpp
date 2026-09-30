@@ -63,6 +63,13 @@ ServerWorker::ServerWorker(const QuicServerConfig& config, std::shared_ptr<TLSCt
     } else {
         LOG_INFO("Retry mechanism disabled (NEVER mode)");
     }
+
+    // RFC 9000 §10.3: the Stateless Reset path is triggered by an
+    // unauthenticated short-header packet whose source address is spoofable, so
+    // it is rate limited on its own — independently of the Retry policy above
+    // and of CanAcceptNewConnection(), which only guards connection creation.
+    reset_limiter_ = std::make_shared<IPRateLimiter>(
+        kResetLimiterCacheSize, kResetLimiterRateThreshold, kResetLimiterWindowSeconds);
 }
 
 ServerWorker::~ServerWorker() {}
@@ -90,6 +97,7 @@ void ServerWorker::Shutdown() {
     // wrong thread → AssertInLoopThread() abort).
     rate_monitor_.reset();
     ip_limiter_.reset();
+    reset_limiter_.reset();
     retry_token_manager_.reset();
 
     Worker::Shutdown();
@@ -146,22 +154,22 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
 
     // dispatch packet
     LOG_DEBUG("get packet. dcid:%llu", packet_info.cid_.Hash());
-    auto conn = conn_map_.find(packet_info.cid_.Hash());
+    // FindConnection() confirms the CID bytes, not just the 64-bit hash.
+    auto connection = FindConnection(packet_info.cid_);
     // Per-datagram trace: keep at DEBUG. Under load this fires once per
     // received packet (millions of times in a benchmark) and at INFO it
     // synchronously stalls the worker on log-flush IO -- which presents
     // as a sudden ~9s "stall" mid-test even though no real progress is
     // being lost. See note in connection_base.cpp::ActiveSend.
     LOG_DEBUG("[DISPATCH-TRACE] dispatch dcid_hash=%llu hit=%d conn_map=%zu connecting_set=%zu hs_timers=%zu",
-        packet_info.cid_.Hash(), conn != conn_map_.end() ? 1 : 0, conn_map_.size(), connecting_set_.size(),
+        packet_info.cid_.Hash(), connection != nullptr ? 1 : 0, conn_map_.size(), connecting_set_.size(),
         handshake_timers_.size());
-    if (conn != conn_map_.end()) {
-        common::LogTagGuard guard("conn:" + std::to_string(packet_info.cid_.Hash()));
-        // Pin the connection with a local shared_ptr copy. OnPackets may
-        // trigger OnStateToDraining → InvokeConnectionCloseCallback which
-        // removes the entry from conn_map_. Without this pin, the iterator
-        // would be the last owner and `this` would be destroyed mid-call.
-        auto connection = conn->second;
+    if (connection) {
+        common::LogTagGuard guard("conn:", packet_info.cid_.Hash());
+        // |connection| is a local shared_ptr copy: OnPackets may trigger
+        // OnStateToDraining → InvokeConnectionCloseCallback which removes the
+        // entry from conn_map_. Without this pin the map entry would be the
+        // last owner and `this` would be destroyed mid-call.
 
         // RFC 9000 §9: a datagram arriving on a different local listener
         // (the preferred_address socket) opens a NEW path even when the
@@ -199,8 +207,19 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
     // tears down immediately instead of retransmitting until its idle timeout.
     auto* first_header = packet_info.packets_[0]->GetHeader();
     if (first_header != nullptr && first_header->GetHeaderType() == PacketHeaderType::kShortHeader) {
-        SendStatelessReset(packet_info.net_packet_->GetAddress(), packet_info.net_packet_->GetSocket(),
-            packet_info.cid_, packet_info.datagram_size_);
+        // Rate limit before spending a CSPRNG draw and a sendto. The reply is
+        // already smaller than the trigger (SendStatelessReset enforces that),
+        // so this is not about amplification — it is about an unauthenticated,
+        // spoofable-source trigger being usable to burn CPU/egress and to probe
+        // which connection IDs are live.
+        const auto& reset_addr = packet_info.net_packet_->GetAddress();
+        reset_limiter_->RecordConnection(reset_addr);
+        if (reset_limiter_->IsSuspicious(reset_addr)) {
+            LOG_DEBUG("stateless reset suppressed for %s: per-IP rate limit", reset_addr.AsString().c_str());
+            return false;
+        }
+        SendStatelessReset(
+            reset_addr, packet_info.net_packet_->GetSocket(), packet_info.cid_, packet_info.datagram_size_);
         return false;
     }
 
@@ -225,7 +244,7 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
     }
     ConnectionID src_cid(long_header->GetSourceConnectionId(), long_header->GetSourceConnectionIdLength());
     ConnectionID dst_cid(long_header->GetDestinationConnectionId(), long_header->GetDestinationConnectionIdLength());
-    common::LogTagGuard guard("conn:" + std::to_string(dst_cid.Hash()));
+    common::LogTagGuard guard("conn:", dst_cid.Hash());
 
     // Record this connection attempt for rate monitoring
     const auto& client_addr = packet_info.net_packet_->GetAddress();
@@ -308,6 +327,10 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
     // Inject Sender for direct packet transmission
     new_conn->SetSender(sender_);
 
+    // Runtime CC selection (code-review P2-5): must happen before any packet
+    // is sent on this connection.
+    new_conn->SetCongestionControlType(cc_type_);
+
     // RFC 9368 Compatible Version Negotiation: on the server side, the on-wire
     // |quic_version_| is determined by the client's Initial packet (set in
     // BaseConnection::OnInitialPacket). The configured |quic_version_| here
@@ -350,6 +373,12 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
     // in HandleConnectionClose().
     conn_source_ip_[new_conn.get()] = client_addr.GetIp();
     OnConnectionAdmitted(client_addr);
+
+    // The Initial DCID was chosen by the client, so it is not in the local
+    // ConnectionIDManager. Record it on the connection: routing lookups confirm
+    // the CID bytes (FindConnection) and would otherwise reject every
+    // handshake packet as a hash collision.
+    new_conn->RecordLocalConnectionId(dst_cid);
 
     // Register Initial DCID to connection map so subsequent packets can be routed
     conn_map_[dst_cid.Hash()] = new_conn;

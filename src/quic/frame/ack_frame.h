@@ -25,8 +25,12 @@ public:
     void SetAckDelay(uint32_t delay) { ack_delay_ = delay; }
     uint32_t GetAckDelay() { return ack_delay_; }
 
-    void SetFirstAckRange(uint32_t range) { first_ack_range_ = range; }
-    uint32_t GetFirstAckRange() { return first_ack_range_; }
+    // The wire field is a varint, so both accessors are uint64_t. They used to
+    // round-trip through uint32_t, which silently truncated any range above
+    // 4 Gi packets; the loss-recovery walk then worked off a value that did not
+    // match the frame.
+    void SetFirstAckRange(uint64_t range) { first_ack_range_ = range; }
+    uint64_t GetFirstAckRange() { return first_ack_range_; }
 
     void AddAckRange(uint64_t gap, uint64_t range) { ack_ranges_.emplace_back(AckRange(gap, range)); }
     const std::vector<AckRange>& GetAckRange() { return ack_ranges_; }

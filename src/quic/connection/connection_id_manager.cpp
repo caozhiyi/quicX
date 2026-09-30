@@ -202,5 +202,28 @@ std::vector<uint64_t> ConnectionIDManager::GetAllIDHashes() {
     return hashes;
 }
 
+bool ConnectionIDManager::HasID(const ConnectionID& id) const {
+    // A default-constructed cur_id_ is zero-length; comparing it would match
+    // any other zero-length CID and produce a false positive.
+    if (cur_id_.GetLength() > 0 && cur_id_ == id) {
+        return true;
+    }
+    for (const auto& pair : sequence_cid_map_) {
+        if (pair.second == id) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool ConnectionIDManager::GetIDBySequence(uint64_t sequence, ConnectionID& out) const {
+    auto it = sequence_cid_map_.find(sequence);
+    if (it == sequence_cid_map_.end()) {
+        return false;
+    }
+    out = it->second;
+    return true;
+}
+
 }  // namespace quic
 }  // namespace quicx

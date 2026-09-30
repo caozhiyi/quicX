@@ -52,12 +52,55 @@ void* BlockMemoryPool::PoolLargeMalloc() {
 
     void* ret = nullptr;
     {
-        std::lock_guard<std::mutex> lg(free_vec_mtx_);  // TODO remove this lock
-        if (free_mem_vec_.empty()) {
-            Expansion();
+        std::lock_guard<std::mutex> lg(free_vec_mtx_);
+        if (!free_mem_vec_.empty()) {
+            ret = free_mem_vec_.back();
+            free_mem_vec_.pop_back();
         }
-        ret = free_mem_vec_.back();
-        free_mem_vec_.pop_back();
+    }
+
+    if (ret == nullptr) {
+        // Slow path: free list empty. malloc the expansion batch OUTSIDE the
+        // critical section (code-review P3b): malloc can block on page faults
+        // / mmap and must not stall concurrent frees or another thread's
+        // DrainHandback. The batch is spliced under the lock below. Two
+        // concurrent slow paths may over-allocate transiently; the
+        // kMaxBlockNum trim bounds the overshoot. This also fixes a latent
+        // UB in the old code, which called free_mem_vec_.back() even when
+        // Expansion() had failed to allocate anything.
+        uint32_t num = number_large_add_nodes_ == 0 ? 1 : number_large_add_nodes_;
+        std::vector<void*> batch;
+        batch.reserve(num);
+        for (uint32_t i = 0; i < num; ++i) {
+            void* mem = malloc(large_size_);
+            if (mem == nullptr) {
+                LOG_ERROR("BlockMemoryPool::PoolLargeMalloc: malloc(%u) failed", large_size_);
+                break;
+            }
+            batch.push_back(mem);
+        }
+        if (batch.empty()) {
+            return nullptr;
+        }
+        const uint32_t malloced = static_cast<uint32_t>(batch.size());
+
+        {
+            std::lock_guard<std::mutex> lg(free_vec_mtx_);
+            ret = batch.back();
+            batch.pop_back();
+            for (void* m : batch) {
+                free_mem_vec_.push_back(m);
+            }
+            if (free_mem_vec_.size() > kMaxBlockNum) {
+                ReleaseHalf();
+            }
+        }
+        // Metrics: count ALL freshly-malloced blocks as free (mirrors the old
+        // Expansion() accounting); the unified GaugeDec below then accounts
+        // for the one block handed to the caller, so the net equals the
+        // number spliced into the free list. Counting batch.size() here
+        // (post-pop, num-1) under-counted by exactly one per slow-path call.
+        Metrics::GaugeInc(common::MetricsStd::MemPoolFreeBlocks, malloced);
     }
 
     // Metrics: Memory allocated
