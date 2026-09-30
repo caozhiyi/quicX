@@ -28,6 +28,11 @@ struct Http3ClientConfig {
     /** Local connection limits */
     uint64_t max_concurrent_streams_ = 200;  // max concurrent streams allowed
     bool enable_push_ = false;               // whether to enable push streams
+
+    /** Max PUSH_ID the client advertises (RFC 9114 §7.2.7), when enable_push_.
+     * Bounds how many push streams the server may initiate; the client
+     * rejects pushes beyond it. 100 keeps the historical default. */
+    uint64_t max_push_id_ = 100;
 };
 
 /**

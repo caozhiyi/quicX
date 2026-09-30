@@ -19,8 +19,11 @@ bool DynamicTable::AddHeaderItem(const std::string& name, const std::string& val
         return false;
     }
 
-    // Evict entries if needed to make room
-    while (current_size_ + entry_size > max_size_) {
+    // Evict entries if needed to make room. The entry_size > max_size_ guard
+    // above guarantees termination (empty table => current_size_ == 0, so the
+    // condition goes false), but also check emptiness defensively so a future
+    // desync between current_size_ and the deque can never hang this loop.
+    while (!headeritem_deque_.empty() && current_size_ + entry_size > max_size_) {
         EvictEntries();
     }
 
@@ -133,8 +136,10 @@ void DynamicTable::UpdateMaxTableSize(uint32_t new_size) {
 
     max_size_ = new_size;
 
-    // Evict entries if current size exceeds new max size
-    while (current_size_ > max_size_) {
+    // Evict entries if current size exceeds new max size. Empty-table check
+    // is defensive: current_size_ is 0 once the deque is drained, so the loop
+    // terminates today, but guard against state desync anyway.
+    while (!headeritem_deque_.empty() && current_size_ > max_size_) {
         EvictEntries();
     }
 }

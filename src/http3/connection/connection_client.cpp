@@ -26,11 +26,13 @@ namespace http3 {
 ClientConnection::ClientConnection(const std::string& unique_id, const Http3Settings& settings,
     const std::shared_ptr<IQuicConnection>& quic_connection,
     const std::function<void(const std::string& unique_id, uint32_t error_code)>& error_handler,
-    const std::function<bool(std::unordered_map<std::string, std::string>& headers)>& push_promise_handler,
-    const http_response_handler& push_handler, uint64_t max_concurrent_streams, bool enable_push):
+    const std::function<bool(HttpFields& headers)>& push_promise_handler,
+    const http_response_handler& push_handler, uint64_t max_concurrent_streams, bool enable_push,
+    uint64_t max_push_id):
     IConnection(unique_id, settings, quic_connection, error_handler, max_concurrent_streams, enable_push),
     push_handler_(push_handler),
-    push_promise_handler_(push_promise_handler) {
+    push_promise_handler_(push_promise_handler),
+    max_push_id_(max_push_id) {
     // All stream/QPACK wiring is deferred to Init() so we can capture
     // weak_from_this() safely (see ownership_and_memory.md §3.1 / §5).
 }
@@ -44,9 +46,10 @@ void ClientConnection::Init() {
 
     // Send MAX_PUSH_ID if push is enabled (RFC 9114 Section 7.2.7).
     if (enable_push_) {
-        // Set a reasonable limit for concurrent pushes (100 is a common default)
-        control_sender_stream_->SendMaxPushId(100);
-        advertised_max_push_id_ = 100;
+        // Configurable via Http3ClientConfig::max_push_id_ (code-review P3g);
+        // 100 was the previous hardcoded default.
+        control_sender_stream_->SendMaxPushId(max_push_id_);
+        advertised_max_push_id_ = max_push_id_;
     }
 }
 
@@ -59,7 +62,7 @@ void ClientConnection::CreateAndSendRequestStream(
     // callback fires after ~ClientConnection() (the original __cxa_pure_virtual
     // SIGABRT). weak_ptr fixes both.
     auto weak_self = WeakSelfAs<ClientConnection>();
-    auto push_promise_cb = [weak_self](std::unordered_map<std::string, std::string>& headers, uint64_t push_id) {
+    auto push_promise_cb = [weak_self](HttpFields& headers, uint64_t push_id) {
         auto self = weak_self.lock();
         if (!self) {
             return;
@@ -90,7 +93,7 @@ void ClientConnection::CreateAndSendRequestStream(std::shared_ptr<IRequest> requ
     std::shared_ptr<IQuicStream> stream, std::shared_ptr<IAsyncClientHandler> handler) {
     // Same rationale as the sibling overload above — see ownership_and_memory.md.
     auto weak_self = WeakSelfAs<ClientConnection>();
-    auto push_promise_cb = [weak_self](std::unordered_map<std::string, std::string>& headers, uint64_t push_id) {
+    auto push_promise_cb = [weak_self](HttpFields& headers, uint64_t push_id) {
         auto self = weak_self.lock();
         if (!self) {
             return;
@@ -337,7 +340,7 @@ void ClientConnection::HandleError(uint64_t stream_id, uint32_t error_code) {
     }
 }
 
-void ClientConnection::HandlePushPromise(std::unordered_map<std::string, std::string>& headers, uint64_t push_id) {
+void ClientConnection::HandlePushPromise(HttpFields& headers, uint64_t push_id) {
     // Metrics: Push promise received
     Metrics::CounterInc(common::MetricsStd::Http3PushPromisesRx);
 

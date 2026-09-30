@@ -562,7 +562,7 @@ bool ReqRespBaseStream::SendBodyDirectly(const std::shared_ptr<common::IBuffer>&
     return true;
 }
 
-bool ReqRespBaseStream::SendHeaders(const std::unordered_map<std::string, std::string>& headers) {
+bool ReqRespBaseStream::SendHeaders(const HttpFields& headers) {
     auto headers_buffer =
         std::make_shared<common::MultiBlockBuffer>(quic::GlobalResource::Instance().GetThreadLocalBlockPool());
     if (!qpack_encoder_->Encode(headers, headers_buffer)) {

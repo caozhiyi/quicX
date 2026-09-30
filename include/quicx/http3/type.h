@@ -10,6 +10,64 @@
 
 namespace quicx {
 
+// ==================== HTTP field lines (RFC 9110 §5.2 / §5.3) ====================
+//
+// A field section is an ORDERED SEQUENCE of field lines, not a name->value map:
+//
+//   §5.2: "When a field name is repeated within a section, its combined field
+//          value consists of the list of corresponding field line values ...
+//          concatenated in order, with each field line value separated by a
+//          comma."
+//   §5.3: "The order in which field lines with the same name are received is
+//          therefore significant ... a proxy MUST NOT change the order of these
+//          field line values when forwarding a message."
+//   §5.3: "the Set-Cookie header field often appears in a response message
+//          across multiple field lines and does not use the list syntax ...
+//          Since it cannot be combined into a single field value, recipients
+//          ought to handle Set-Cookie as a special case."
+//
+// Consequently the library stores headers as a vector of (name, value) pairs:
+// duplicate names are preserved (mandatory for Set-Cookie, whose value may
+// itself contain commas, e.g. Expires=Wed, 21 Oct 2015 07:28:00 GMT) and the
+// original order is kept for QPACK encoding and for forwarding.
+using HttpFieldLine = std::pair<std::string, std::string>;
+using HttpFields = std::vector<HttpFieldLine>;
+
+/**
+ * @brief Find the first field line with the given name (names are lowercase)
+ *
+ * @param fields The ordered field lines
+ * @param name The lowercase field name to look for
+ * @param value Receives the value of the first match
+ * @return True if found
+ */
+inline bool FindField(const HttpFields& fields, const std::string& name, std::string& value) {
+    for (const auto& field : fields) {
+        if (field.first == name) {
+            value = field.second;
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief Collect every field line value with the given name, in wire order
+ *
+ * Required for fields that repeat and MUST NOT be merged (Set-Cookie).
+ *
+ * @param fields The ordered field lines
+ * @param name The lowercase field name to look for
+ * @return All matching values, in order
+ */
+inline std::vector<std::string> FindAllFields(const HttpFields& fields, const std::string& name) {
+    std::vector<std::string> values;
+    for (const auto& field : fields) {
+        if (field.first == name) values.push_back(field.second);
+    }
+    return values;
+}
+
 /**
  * @brief HTTP method
  *
@@ -69,10 +127,14 @@ struct Http3Config {
  * This settings is used to initialize the HTTP3 client and server.
  */
 struct Http3Settings {
-    uint64_t max_header_list_size = 100;      // max header list size
-    uint64_t enable_push = 0;                 // enable push
-    uint64_t max_concurrent_streams = 200;    // max concurrent streams
-    uint64_t max_frame_size = 16384;          // max frame size
+    // NOTE (#8, code review round 2): four dead fields were removed here
+    // (max_header_list_size / enable_push / max_concurrent_streams /
+    // max_frame_size). They were never sent in the SETTINGS frame
+    // (AdaptSettings only emits the field below plus QPACK) and had no other
+    // readers, so configuring them silently did nothing. Push is expressed
+    // via MAX_PUSH_ID (Http3ClientConfig::max_push_id_) and stream
+    // concurrency via Http3ClientConfig::max_concurrent_streams_ /
+    // Http3ServerConfig::max_concurrent_streams_.
     uint64_t max_field_section_size = 16384;  // max field section size
     // QPACK dynamic table (RFC 9204).
     //
@@ -218,7 +280,7 @@ typedef std::function<void(std::shared_ptr<IResponse> response, uint32_t error)>
  * @param headers The push promise headers
  * @return true to accept push, false to cancel push
  */
-typedef std::function<bool(std::unordered_map<std::string, std::string>& headers)> http_push_promise_handler;
+typedef std::function<bool(HttpFields& headers)> http_push_promise_handler;
 
 /**
  * @brief Error handler callback

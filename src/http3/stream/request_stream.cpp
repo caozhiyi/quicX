@@ -17,7 +17,7 @@ RequestStream::RequestStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
     const std::shared_ptr<QpackEncoder>& qpack_decoder, const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
     const std::shared_ptr<IQuicBidirectionStream>& stream, std::shared_ptr<IAsyncClientHandler> async_handler,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
-    const std::function<void(std::unordered_map<std::string, std::string>&, uint64_t push_id)>& push_promise_handler):
+    const std::function<void(HttpFields&, uint64_t push_id)>& push_promise_handler):
     ReqRespBaseStream(qpack_encoder, qpack_decoder, blocked_registry, stream, error_handler),
     body_length_(0),
     received_body_length_(0),
@@ -28,7 +28,7 @@ RequestStream::RequestStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
     const std::shared_ptr<QpackEncoder>& qpack_decoder, const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
     const std::shared_ptr<IQuicBidirectionStream>& stream, http_response_handler response_handler,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
-    const std::function<void(std::unordered_map<std::string, std::string>&, uint64_t push_id)>& push_promise_handler):
+    const std::function<void(HttpFields&, uint64_t push_id)>& push_promise_handler):
     ReqRespBaseStream(qpack_encoder, qpack_decoder, blocked_registry, stream, error_handler),
     body_length_(0),
     received_body_length_(0),
@@ -48,7 +48,7 @@ bool RequestStream::SendRequest(std::shared_ptr<IRequest> request) {
     auto body_buffer = request->GetBody();
     if (!body_provider && body_buffer && body_buffer->GetDataLength() > 0) {
         LOG_DEBUG("SendRequest: adding content-length: %zu", body_buffer->GetDataLength());
-        request->AddHeader("content-length", std::to_string(body_buffer->GetDataLength()));
+        request->SetHeader("content-length", std::to_string(body_buffer->GetDataLength()));
     }
 
     // send headers
@@ -99,14 +99,15 @@ void RequestStream::HandleHeaders() {
     }
 
     bool has_content_length = false;
-    if (headers_.find("content-length") != headers_.end()) {
+    std::string content_length;
+    if (FindField(headers_, "content-length", content_length)) {
         try {
-            body_length_ = std::stoul(headers_["content-length"]);
+            body_length_ = std::stoul(content_length);
             has_content_length = true;
             LOG_DEBUG("RequestStream::HandleHeaders: content-length found: %u", body_length_);
         } catch (const std::exception& e) {
             LOG_ERROR("RequestStream::HandleHeaders: invalid content-length value '%s': %s",
-                headers_["content-length"].c_str(), e.what());
+                content_length.c_str(), e.what());
             error_handler_(GetStreamID(), Http3ErrorCode::kMessageError);
             return;
         }
@@ -277,11 +278,22 @@ void RequestStream::HandleFrame(std::shared_ptr<IFrame> frame) {
 void RequestStream::HandlePushPromise(std::shared_ptr<IFrame> frame) {
     auto push_promise_frame = std::static_pointer_cast<PushPromiseFrame>(frame);
     // Decode headers using QPACK decoder (incoming headers use decoder table)
-    std::unordered_map<std::string, std::string> headers;
+    HttpFields headers;
     auto encoded_fields = push_promise_frame->GetEncodedFields();
     if (!qpack_decoder_->Decode(encoded_fields, headers)) {
         LOG_ERROR("RequestStream::HandlePushPromise error");
         error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);
+        return;
+    }
+
+    // A server may push even when the client never installed a handler (the
+    // example server does). Calling an empty std::function would throw
+    // std::bad_function_call inside the worker thread and abandon the rest of
+    // this stream's frame processing — including the response DATA frames.
+    // Ignore the promise instead, as if it had been rejected.
+    if (!push_promise_handler_) {
+        LOG_DEBUG("RequestStream::HandlePushPromise: no handler installed, ignoring push_id=%llu",
+            static_cast<unsigned long long>(push_promise_frame->GetPushId()));
         return;
     }
 

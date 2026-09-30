@@ -365,10 +365,10 @@ void Client::OnConnection(
         std::string host_name = first_context.host;
 
         // Create client connection
-        auto client_conn = std::make_shared<ClientConnection>(
-            host_name, settings_, conn, [this](auto a, auto b) { HandleError(a, b); },
-            [this](auto a) { return HandlePushPromise(a); }, [this](auto a, auto b) { HandlePush(a, b); },
-            config_.max_concurrent_streams_, config_.enable_push_);
+        auto client_conn = std::make_shared<ClientConnection>(host_name, settings_, conn,
+            [this](auto a, auto b) { HandleError(a, b); }, [this](auto a) { return HandlePushPromise(a); },
+            [this](auto a, auto b) { HandlePush(a, b); }, config_.max_concurrent_streams_, config_.enable_push_,
+            config_.max_push_id_);
 
         // Initialize connection (starts timers)
         client_conn->Init();
@@ -415,7 +415,7 @@ void Client::HandleError(const std::string& unique_id, uint32_t error_code) {
     }
 }
 
-bool Client::HandlePushPromise(std::unordered_map<std::string, std::string>& headers) {
+bool Client::HandlePushPromise(HttpFields& headers) {
     if (!push_promise_handler_) {
         return false;
     }

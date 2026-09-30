@@ -36,7 +36,7 @@ ResponseStream::~ResponseStream() {
     // Do NOT call Close() here - it should have been called by the base class after sending response
 }
 
-void ResponseStream::SendPushPromise(const std::unordered_map<std::string, std::string>& headers, int32_t push_id) {
+void ResponseStream::SendPushPromise(const HttpFields& headers, int32_t push_id) {
     // Create and encode push promise frame
     PushPromiseFrame push_frame;
     push_frame.SetPushId(push_id);
@@ -102,7 +102,7 @@ bool ResponseStream::SendResponse(std::shared_ptr<IResponse> response) {
 
     // Add content-length if body exists (even for HEAD, to indicate GET body size)
     if (body && body_size > 0) {
-        response->AddHeader("content-length", std::to_string(body_size));
+        response->SetHeader("content-length", std::to_string(body_size));
     }
 
     // Send headers
@@ -176,13 +176,14 @@ void ResponseStream::HandleHeaders() {
     PseudoHeader::Instance().DecodeRequest(request_);
 
     bool has_content_length = false;
-    if (headers_.find("content-length") != headers_.end()) {
+    std::string content_length;
+    if (FindField(headers_, "content-length", content_length)) {
         try {
-            body_length_ = std::stoul(headers_["content-length"]);
+            body_length_ = std::stoul(content_length);
             has_content_length = true;
         } catch (const std::exception& e) {
             LOG_ERROR("ResponseStream::HandleHeaders: invalid content-length value '%s': %s",
-                headers_["content-length"].c_str(), e.what());
+                content_length.c_str(), e.what());
             if (error_handler_) {
                 error_handler_(GetStreamID(), Http3ErrorCode::kMessageError);
             }
@@ -366,6 +367,17 @@ void ResponseStream::HandleHttp(
 }
 
 void ResponseStream::HandleResponse() {
+    // RFC 9114 §7.2.1: PUSH_PROMISE travels on the request stream and MUST be
+    // sent before the response is finalized. Emitting it after the response
+    // body made the trailing FIN land on the PUSH_PROMISE frame instead of the
+    // response DATA frame (SendBodyDirectly() closes the stream right after the
+    // body). Peers that end the response body on FIN — e.g. streaming clients
+    // using IAsyncClientHandler — then never saw the response complete and
+    // hung until their own timeout. Send promises first, response last.
+    if (push_handler_) {
+        push_handler_(response_, std::dynamic_pointer_cast<ResponseStream>(shared_from_this()));
+    }
+
     // send response
     if (!SendResponse(response_)) {
         if (error_handler_) {
@@ -373,11 +385,6 @@ void ResponseStream::HandleResponse() {
         }
         LOG_ERROR("ResponseStream::HandleHttp send response error");
         return;
-    }
-
-    // handle push
-    if (push_handler_) {
-        push_handler_(response_, std::dynamic_pointer_cast<ResponseStream>(shared_from_this()));
     }
 }
 

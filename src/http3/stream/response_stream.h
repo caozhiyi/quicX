@@ -47,7 +47,7 @@ public:
         const std::function<bool()>& settings_received_cb);
     virtual ~ResponseStream();
 
-    void SendPushPromise(const std::unordered_map<std::string, std::string>& headers, int32_t push_id);
+    void SendPushPromise(const HttpFields& headers, int32_t push_id);
     bool SendResponse(std::shared_ptr<IResponse> response);
 
     // ResponseStream should signal completion after sending response body

@@ -27,18 +27,41 @@ std::string Request::GetMethodString() const {
 }
 
 void Request::AddHeader(const std::string& name, const std::string& value) {
-    // HTTP/2 and HTTP/3 require header names to be lowercase
-    headers_[ToLowerCase(name)] = value;
+    // HTTP/2 and HTTP/3 require header names to be lowercase.
+    // Append (not replace): RFC 9110 §5.3 — repeated names are legal.
+    headers_.emplace_back(ToLowerCase(name), value);
+}
+
+void Request::SetHeader(const std::string& name, const std::string& value) {
+    std::string key = ToLowerCase(name);
+    HttpFields kept;
+    kept.reserve(headers_.size() + 1);
+    for (auto& field : headers_) {
+        if (field.first != key) kept.push_back(field);
+    }
+    kept.emplace_back(key, value);
+    headers_.swap(kept);
 }
 
 bool Request::GetHeader(const std::string& name, std::string& value) const {
-    // Search with lowercase key for case-insensitive matching
-    auto it = headers_.find(ToLowerCase(name));
-    if (it != headers_.end()) {
-        value = it->second;
-        return true;
+    // First matching field line wins (case-insensitive name match).
+    std::string key = ToLowerCase(name);
+    for (const auto& field : headers_) {
+        if (field.first == key) {
+            value = field.second;
+            return true;
+        }
     }
     return false;
+}
+
+std::vector<std::string> Request::GetAllHeaders(const std::string& name) const {
+    std::string key = ToLowerCase(name);
+    std::vector<std::string> values;
+    for (const auto& field : headers_) {
+        if (field.first == key) values.push_back(field.second);
+    }
+    return values;
 }
 
 std::string Request::GetBodyAsString() const {

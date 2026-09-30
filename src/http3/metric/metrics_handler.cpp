@@ -13,7 +13,7 @@ void MetricsHandler::Handle(std::shared_ptr<IRequest> /*request*/, std::shared_p
 
     // Set response headers
     response->SetStatusCode(200);
-    response->AddHeader("Content-Type", "text/plain; version=0.0.4; charset=utf-8");
+    response->SetHeader("Content-Type", "text/plain; version=0.0.4; charset=utf-8");
 
     // Set response body
     response->AppendBody(metrics_data);

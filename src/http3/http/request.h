@@ -36,13 +36,13 @@ public:
     virtual void SetAuthority(const std::string& authority) override { authority_ = authority; }
     virtual const std::string& GetAuthority() const override { return authority_; }
 
-    // Headers
+    // Headers (ordered field lines, duplicates preserved — RFC 9110 §5.3)
     virtual void AddHeader(const std::string& name, const std::string& value) override;
+    virtual void SetHeader(const std::string& name, const std::string& value) override;
     virtual bool GetHeader(const std::string& name, std::string& value) const override;
-    virtual void SetHeaders(const std::unordered_map<std::string, std::string>& headers) override {
-        headers_ = headers;
-    }
-    virtual std::unordered_map<std::string, std::string>& GetHeaders() override { return headers_; }
+    virtual std::vector<std::string> GetAllHeaders(const std::string& name) const override;
+    virtual void SetHeaders(const HttpFields& headers) override { headers_ = headers; }
+    virtual const HttpFields& GetHeaders() const override { return headers_; }
     virtual std::string GetBodyAsString() const override;
 
     // Request body sending (client)
@@ -78,7 +78,7 @@ private:
     std::string authority_;
 
 private:
-    std::unordered_map<std::string, std::string> headers_;
+    HttpFields headers_;
     std::shared_ptr<common::IBuffer> body_;
     body_provider request_body_provider_;   // For streaming request body sending (client)
     body_consumer response_body_consumer_;  // For streaming response body receiving (client)

@@ -13,7 +13,7 @@ namespace quicx {
 namespace http3 {
 
 bool QpackEncoder::Encode(
-    const std::unordered_map<std::string, std::string>& headers, std::shared_ptr<common::IBuffer> buffer) {
+    const std::vector<std::pair<std::string, std::string>>& headers, std::shared_ptr<common::IBuffer> buffer) {
     if (!buffer) {
         LOG_ERROR("QpackEncoder::Encode: buffer is null");
         return false;
@@ -56,7 +56,7 @@ bool QpackEncoder::Encode(
 }
 
 std::vector<std::pair<std::string, std::string>> QpackEncoder::OrderHeaders(
-    const std::unordered_map<std::string, std::string>& headers) {
+    const std::vector<std::pair<std::string, std::string>>& headers) {
     // RFC 9114 Section 4.3: Pseudo-headers MUST appear before regular headers
     // and MUST be in a specific order: :method, :scheme, :authority, :path (for
     // requests) or :status (for responses)
@@ -65,21 +65,38 @@ std::vector<std::pair<std::string, std::string>> QpackEncoder::OrderHeaders(
 
     std::vector<std::pair<std::string, std::string>> ordered_headers;
     for (const auto& pseudo : pseudo_header_order) {
-        auto it = headers.find(pseudo);
-        if (it != headers.end()) {
-            ordered_headers.push_back({it->first, it->second});
+        for (const auto& header : headers) {
+            if (header.first == pseudo) {
+                // Duplicates are kept: RFC 9114 forbids repeated
+                // pseudo-headers, but that is an HTTP-layer protocol error —
+                // QPACK is a byte-faithful compression layer and must not
+                // silently drop field lines (found by qpack_roundtrip_fuzz).
+                ordered_headers.push_back(header);
+            }
         }
     }
-    // Regular headers sorted for deterministic output (fixes P2-3: unordered_map iteration order)
-    std::vector<std::pair<std::string, std::string>> regular_headers;
+    // Regular headers: field-line order is significant (RFC 9110 §5.3 — a
+    // proxy MUST NOT reorder same-named values), so emit them as received.
+    // Sorting was only ever a workaround for unordered_map's random iteration
+    // order and is no longer needed now that the caller supplies an ordered
+    // sequence; keeping the original order also preserves duplicate values.
+    // Unknown ':'-prefixed names are kept too: the known-pseudo-header set is
+    // closed per RFC 9114 §4.3, but rejecting (or dropping — the old
+    // behaviour, found by qpack_roundtrip_fuzz) them belongs to the HTTP
+    // semantic layer, not to the compression layer.
     for (const auto& header : headers) {
-        if (!header.first.empty() && header.first[0] == ':') {
+        bool is_known_pseudo = false;
+        for (const auto& pseudo : pseudo_header_order) {
+            if (header.first == pseudo) {
+                is_known_pseudo = true;
+                break;
+            }
+        }
+        if (is_known_pseudo) {
             continue;
         }
-        regular_headers.push_back({header.first, header.second});
+        ordered_headers.push_back(header);
     }
-    std::sort(regular_headers.begin(), regular_headers.end());
-    ordered_headers.insert(ordered_headers.end(), regular_headers.begin(), regular_headers.end());
     return ordered_headers;
 }
 
@@ -97,10 +114,15 @@ QpackEncoder::HeaderEncoding QpackEncoder::DecideHeaderEncoding(const std::pair<
         return enc;
     }
 
-    // Try name-only match in static table (with lowercase)
-    std::string lower_name = header.first;
-    for (auto& c : lower_name) c = std::tolower(static_cast<unsigned char>(c));
-    index = StaticTable::Instance().FindHeaderItemIndex(lower_name);
+    // Try name-only match in the static table. NOTE (#9 fuzz finding): the
+    // name is deliberately NOT lowercased before matching — the old
+    // lowercasing silently rewrote field names on the wire (":methOd" was
+    // encoded as a static name-ref and decoded back as ":method"). RFC 9114
+    // §4.1.2 requires lowercase field names, but enforcing that is the HTTP
+    // semantic layer's job; the QPACK layer must stay byte-faithful. A
+    // mixed-case name simply misses the static table here and falls through
+    // to a literal. Lowercase names (all legal traffic) are unaffected.
+    index = StaticTable::Instance().FindHeaderItemIndex(header.first);
     if (index >= 0) {
         enc.action = EncodeAction::kStaticNameRef;
         enc.index = index;
@@ -227,7 +249,7 @@ void QpackEncoder::WriteHeaderRepresentation(
 }
 
 bool QpackEncoder::Decode(
-    const std::shared_ptr<common::IBuffer> buffer, std::unordered_map<std::string, std::string>& headers) {
+    const std::shared_ptr<common::IBuffer> buffer, std::vector<std::pair<std::string, std::string>>& headers) {
     if (!buffer || buffer->GetDataLength() < 2) {
         LOG_ERROR("QpackEncoder::Decode: buffer is null or data length is less than 2");
         return false;
@@ -298,7 +320,7 @@ bool QpackEncoder::Decode(
 }
 
 bool QpackEncoder::DecodeIndexedStatic(const std::shared_ptr<common::IBuffer>& buffer, uint8_t first_byte,
-    int64_t /*base*/, std::unordered_map<std::string, std::string>& headers) {
+    int64_t /*base*/, std::vector<std::pair<std::string, std::string>>& headers) {
     // Indexed — static (11xxxxxx)
     uint64_t sidx = 0;
     if (!QpackDecodePrefixedIntegerFrom(buffer, QpackHeaderPattern::kIndexedStaticPrefix, first_byte, sidx)) {
@@ -310,12 +332,12 @@ bool QpackEncoder::DecodeIndexedStatic(const std::shared_ptr<common::IBuffer>& b
         LOG_ERROR("QpackEncoder::Decode: find header item failed. sidx:%llu", sidx);
         return false;
     }
-    headers[item->name_] = item->value_;
+    headers.emplace_back(item->name_, item->value_);
     return true;
 }
 
 bool QpackEncoder::DecodeIndexedDynamic(const std::shared_ptr<common::IBuffer>& buffer, uint8_t first_byte, int64_t base,
-    std::unordered_map<std::string, std::string>& headers) {
+    std::vector<std::pair<std::string, std::string>>& headers) {
     // Indexed — dynamic (10xxxxxx)
     uint64_t rel = 0;
     if (!QpackDecodePrefixedIntegerFrom(buffer, QpackHeaderPattern::kIndexedDynamicPrefix, first_byte, rel)) {
@@ -332,12 +354,12 @@ bool QpackEncoder::DecodeIndexedDynamic(const std::shared_ptr<common::IBuffer>& 
         LOG_ERROR("QpackEncoder::Decode: find header item failed. abs_index:%lld", abs_index);
         return false;
     }
-    headers[item->name_] = item->value_;
+    headers.emplace_back(item->name_, item->value_);
     return true;
 }
 
 bool QpackEncoder::DecodeLiteralNameRefStatic(const std::shared_ptr<common::IBuffer>& buffer, uint8_t first_byte,
-    int64_t /*base*/, std::unordered_map<std::string, std::string>& headers) {
+    int64_t /*base*/, std::vector<std::pair<std::string, std::string>>& headers) {
     // Literal with name reference — static (0101xxxx, T=1)
     uint64_t sidx = 0;
     if (!QpackDecodePrefixedIntegerFrom(buffer, QpackHeaderPattern::kLiteralNameRefStaticPrefix, first_byte, sidx)) {
@@ -355,12 +377,12 @@ bool QpackEncoder::DecodeLiteralNameRefStatic(const std::shared_ptr<common::IBuf
             value.c_str());
         return false;
     }
-    headers[item->name_] = value;
+    headers.emplace_back(item->name_, value);
     return true;
 }
 
 bool QpackEncoder::DecodeLiteralNameRefDynamic(const std::shared_ptr<common::IBuffer>& buffer, uint8_t first_byte,
-    int64_t base, std::unordered_map<std::string, std::string>& headers) {
+    int64_t base, std::vector<std::pair<std::string, std::string>>& headers) {
     // Literal with name reference — dynamic (010xxxxx)
     uint64_t rel = 0;
     if (!QpackDecodePrefixedIntegerFrom(buffer, QpackHeaderPattern::kLiteralNameRefDynamicPrefix, first_byte, rel)) {
@@ -382,12 +404,12 @@ bool QpackEncoder::DecodeLiteralNameRefDynamic(const std::shared_ptr<common::IBu
         LOG_ERROR("QpackEncoder::Decode: decode string failed. value:%s", value.c_str());
         return false;
     }
-    headers[item->name_] = value;
+    headers.emplace_back(item->name_, value);
     return true;
 }
 
 bool QpackEncoder::DecodeLiteralNoNameRef(const std::shared_ptr<common::IBuffer>& buffer, uint8_t first_byte,
-    int64_t /*base*/, std::unordered_map<std::string, std::string>& headers) {
+    int64_t /*base*/, std::vector<std::pair<std::string, std::string>>& headers) {
     // RFC 9204 Section 4.5.6: Literal Field Line With Literal Name (001xxxxx)
     // Format: 001 N H NameLen(3+) | Name | H ValueLen(7+) | Value
     // first_byte already consumed, contains N, H bits and 3-bit name length prefix
@@ -399,25 +421,18 @@ bool QpackEncoder::DecodeLiteralNoNameRef(const std::shared_ptr<common::IBuffer>
         return false;
     }
 
-    // Read name string
+    // Read name string.
+    //
+    // |name_len| comes straight off the wire (a varint, up to 2^62-1) and this
+    // is the same unbounded-allocation pattern DecodeString() used to have:
+    // resize first, read second. Route through QpackReadStringBody() so the
+    // length is bounded by the bytes actually present before anything is
+    // allocated.
     std::string name;
-    if (name_len > 0) {
-        if (name_huffman) {
-            std::vector<uint8_t> encoded;
-            encoded.resize(static_cast<size_t>(name_len));
-            if (buffer->Read(encoded.data(), static_cast<uint32_t>(name_len)) != static_cast<uint32_t>(name_len)) {
-                LOG_ERROR("QpackEncoder::Decode: read huffman name failed. len:%llu", name_len);
-                return false;
-            }
-            name = HuffmanEncoder::Instance().Decode(encoded);
-        } else {
-            name.resize(static_cast<size_t>(name_len));
-            if (buffer->Read((uint8_t*)name.data(), static_cast<uint32_t>(name_len)) !=
-                static_cast<uint32_t>(name_len)) {
-                LOG_ERROR("QpackEncoder::Decode: read name failed. len:%llu", name_len);
-                return false;
-            }
-        }
+    if (!QpackReadStringBody(buffer, name_len, name_huffman, name)) {
+        LOG_ERROR("QpackEncoder::Decode: read name string failed. len:%llu, readable:%u", name_len,
+            buffer ? buffer->GetDataLength() : 0u);
+        return false;
     }
 
     // Read value using DecodeString (7-bit prefix with H bit)
@@ -429,12 +444,12 @@ bool QpackEncoder::DecodeLiteralNoNameRef(const std::shared_ptr<common::IBuffer>
 
     LOG_DEBUG("QpackEncoder::Decode: LiteralNoNameRef decoded header: %s=%s, remaining=%u", name.c_str(),
         value.c_str(), buffer->GetDataLength());
-    headers[name] = value;
+    headers.emplace_back(name, value);
     return true;
 }
 
 bool QpackEncoder::DecodePostBaseIndexed(const std::shared_ptr<common::IBuffer>& buffer, uint8_t first_byte,
-    int64_t base, std::unordered_map<std::string, std::string>& headers) {
+    int64_t base, std::vector<std::pair<std::string, std::string>>& headers) {
     // RFC 9204 Section 4.5.3: Post-Base Indexed Header Field (0001xxxx)
     // Index is relative to Base, references entries inserted AFTER Base
     uint64_t post_base_index = 0;
@@ -458,12 +473,12 @@ bool QpackEncoder::DecodePostBaseIndexed(const std::shared_ptr<common::IBuffer>&
         LOG_ERROR("QpackEncoder::Decode: find header item failed. abs_index:%lld", abs_index);
         return false;
     }
-    headers[item->name_] = item->value_;
+    headers.emplace_back(item->name_, item->value_);
     return true;
 }
 
 bool QpackEncoder::DecodePostBaseLiteralNameRef(const std::shared_ptr<common::IBuffer>& buffer, uint8_t first_byte,
-    int64_t base, std::unordered_map<std::string, std::string>& headers) {
+    int64_t base, std::vector<std::pair<std::string, std::string>>& headers) {
     // RFC 9204 Section 4.5.5: Literal Header Field With Post-Base Name Reference (0000xxxx)
     // Name reference is relative to Base, value is literal
     uint64_t post_base_index = 0;
@@ -490,7 +505,7 @@ bool QpackEncoder::DecodePostBaseLiteralNameRef(const std::shared_ptr<common::IB
         LOG_ERROR("QpackEncoder::Decode: decode string failed. value:%s", value.c_str());
         return false;
     }
-    headers[item->name_] = value;
+    headers.emplace_back(item->name_, value);
     return true;
 }
 
@@ -913,26 +928,20 @@ bool QpackEncoder::DecodeString(const std::shared_ptr<common::IBuffer> buffer, s
 
     bool huffman = (first_byte & QpackString::kHuffmanBit) != 0;
 
-    if (length == 0) {
-        output.clear();
-        return true;
-    }
-
-    // Read encoded string
-    if (huffman) {
-        std::vector<uint8_t> encoded;
-        encoded.resize(static_cast<size_t>(length));
-        if (buffer->Read(encoded.data(), static_cast<uint32_t>(length)) != static_cast<uint32_t>(length)) {
-            LOG_ERROR("QpackEncoder::DecodeString: read encoded string failed. length:%llu", length);
-            return false;
-        }
-        output = HuffmanEncoder::Instance().Decode(encoded);
-    } else {
-        output.resize(static_cast<size_t>(length));
-        if (buffer->Read((uint8_t*)output.data(), static_cast<uint32_t>(length)) != static_cast<uint32_t>(length)) {
-            LOG_ERROR("QpackEncoder::DecodeString: read encoded string failed. length:%llu", length);
-            return false;
-        }
+    // |length| is whatever the peer wrote (a varint, up to 2^62-1). It MUST be
+    // bounded by the bytes actually readable before allocating: the old code
+    // resized to |length| first and only then tried to read, so a single
+    // HEADERS frame could request gigabytes and the resulting std::bad_alloc /
+    // std::length_error propagated out of the HTTP/3 stream callback into the
+    // event loop, terminating the process.
+    //
+    // QpackReadStringBody() performs exactly that bound (and is the same helper
+    // the instruction-stream decoders use), so route through it rather than
+    // keeping a second, unguarded copy here.
+    if (!QpackReadStringBody(buffer, length, huffman, output)) {
+        LOG_ERROR("QpackEncoder::DecodeString: read string body failed. length:%llu, readable:%u", length,
+            buffer ? buffer->GetDataLength() : 0u);
+        return false;
     }
     return true;
 }

@@ -1,6 +1,7 @@
 #ifndef HTTP3_ROUTER_ROUTER_NODE
 #define HTTP3_ROUTER_ROUTER_NODE
 
+#include <map>
 #include <memory>
 #include <unordered_map>
 
@@ -51,7 +52,16 @@ protected:
     RouteConfig config_;  // Route configuration (handler + mode)
 
     std::shared_ptr<IRouterNode> wildcard_node_;                                       // wildcard node
-    std::unordered_map<std::string, std::shared_ptr<IRouterNode>> dynamic_param_map_;  // dynamic param => router node
+    // #7 (code review round 2): ordered map so Match()'s dynamic-param
+    // iteration is deterministic. With unordered_map, two same-level dynamic
+    // nodes that both fully match a path ("/users/:id" vs "/users/:name",
+    // both leaves, for "/users/42") won in hash order — an unspecified
+    // parameter binding. Lexicographic section order makes the winner stable.
+    // Registering different param names at the same level remains legal:
+    // structurally-different routes (e.g. /users/:id plus
+    // /users/:user_id/posts/:post_id) are disambiguated by the
+    // match-with-backtrack semantics, not by iteration order.
+    std::map<std::string, std::shared_ptr<IRouterNode>> dynamic_param_map_;  // dynamic param => router node
     std::unordered_map<std::string, std::shared_ptr<IRouterNode>> static_path_map_;    // static section => router node
 };
 

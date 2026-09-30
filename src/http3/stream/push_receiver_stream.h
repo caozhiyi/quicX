@@ -50,7 +50,7 @@ private:
 
     uint32_t body_length_;
     std::shared_ptr<common::IBuffer> body_;
-    std::unordered_map<std::string, std::string> headers_;
+    HttpFields headers_;  // ordered field lines (RFC 9110 §5.3)
 
     // Frame decoder for stateful decoding
     FrameDecoder frame_decoder_;

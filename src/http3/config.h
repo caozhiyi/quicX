@@ -48,6 +48,17 @@ static constexpr uint32_t kClientConnectionTimeoutMs = 60000;  // 60 seconds
 // Optimized from original 1400 to better fit within path MTU
 static constexpr uint32_t kMaxDataFramePayload = 1350;
 
+// Local fallback cap on inbound HTTP/3 field sections (bytes, RFC 9114
+// §4.2.2 accounting: name + value + 32 per field). Applies when we did NOT
+// advertise SETTINGS_MAX_FIELD_SECTION_SIZE (the advertised value always
+// takes precedence once set). Without a local cap, a malicious peer could
+// buffer an arbitrarily large header block into memory before any check
+// runs — RFC 9114 explicitly allows implementations to impose their own
+// limit regardless of the SETTINGS value. 256KB comfortably exceeds any
+// legitimate API response header set. Set the advertised
+// SETTINGS_MAX_FIELD_SECTION_SIZE to override.
+static constexpr uint64_t kDefaultMaxFieldSectionSize = 256 * 1024;
+
 // ============================================================================
 // HTTP/3 Stream Lifecycle
 // ============================================================================

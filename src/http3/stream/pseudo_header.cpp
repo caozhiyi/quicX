@@ -23,60 +23,85 @@ PseudoHeader::~PseudoHeader() {}
 
 void PseudoHeader::EncodeRequest(std::shared_ptr<IRequest> request) {
     // Add pseudo-headers
-    request->AddHeader(PSEUDO_HEADER_METHOD, MethodToString(request->GetMethod()));
-    request->AddHeader(PSEUDO_HEADER_PATH, request->GetPath());
-    request->AddHeader(PSEUDO_HEADER_SCHEME, request->GetScheme());
-    request->AddHeader(PSEUDO_HEADER_AUTHORITY, request->GetAuthority());
+    request->SetHeader(PSEUDO_HEADER_METHOD, MethodToString(request->GetMethod()));
+    request->SetHeader(PSEUDO_HEADER_PATH, request->GetPath());
+    request->SetHeader(PSEUDO_HEADER_SCHEME, request->GetScheme());
+    request->SetHeader(PSEUDO_HEADER_AUTHORITY, request->GetAuthority());
 }
 
 void PseudoHeader::DecodeRequest(std::shared_ptr<IRequest> request) {
-    auto& headers = request->GetHeaders();
+    // Headers are an ordered field-line sequence (RFC 9110 §5.3), so pseudo
+    // headers are read out and the remainder is written back via SetHeaders().
+    const HttpFields& fields = request->GetHeaders();
 
-    // Extract pseudo-headers
-    if (headers.find(PSEUDO_HEADER_METHOD) != headers.end()) {
-        request->SetMethod(StringToMethod(headers[PSEUDO_HEADER_METHOD]));
-        headers.erase(PSEUDO_HEADER_METHOD);
+    auto take = [&fields](const std::string& name, std::string* out) -> bool {
+        for (const auto& field : fields) {
+            if (field.first == name) {
+                if (out) *out = field.second;
+                return true;
+            }
+        }
+        return false;
+    };
+
+    std::string value;
+    if (take(PSEUDO_HEADER_METHOD, &value)) {
+        request->SetMethod(StringToMethod(value));
     }
 
-    if (headers.find(PSEUDO_HEADER_PATH) != headers.end()) {
-        const std::string& path_with_query = headers[PSEUDO_HEADER_PATH];
+    if (take(PSEUDO_HEADER_PATH, &value)) {
         std::string path;
         std::unordered_map<std::string, std::string> query_params;
-        if (common::ParsePathWithQuery(path_with_query, path, query_params)) {
+        if (common::ParsePathWithQuery(value, path, query_params)) {
             request->SetPath(path);
             if (!query_params.empty()) {
                 request->SetQueryParams(query_params);
             }
         } else {
-            request->SetPath(path_with_query);
+            request->SetPath(value);
         }
-        headers.erase(PSEUDO_HEADER_PATH);
     }
 
-    if (headers.find(PSEUDO_HEADER_SCHEME) != headers.end()) {
-        request->SetScheme(headers[PSEUDO_HEADER_SCHEME]);
-        headers.erase(PSEUDO_HEADER_SCHEME);
+    if (take(PSEUDO_HEADER_SCHEME, &value)) {
+        request->SetScheme(value);
     }
 
-    if (headers.find(PSEUDO_HEADER_AUTHORITY) != headers.end()) {
-        request->SetAuthority(headers[PSEUDO_HEADER_AUTHORITY]);
-        headers.erase(PSEUDO_HEADER_AUTHORITY);
+    if (take(PSEUDO_HEADER_AUTHORITY, &value)) {
+        request->SetAuthority(value);
     }
+
+    // Drop pseudo-header field lines, preserving the order of the rest.
+    HttpFields rest;
+    rest.reserve(fields.size());
+    for (const auto& field : fields) {
+        if (!field.first.empty() && field.first[0] == ':') continue;
+        rest.push_back(field);
+    }
+    request->SetHeaders(rest);
 }
 
 void PseudoHeader::EncodeResponse(std::shared_ptr<IResponse> response) {
     // Add status pseudo-header
-    response->AddHeader(PSEUDO_HEADER_STATUS, std::to_string(response->GetStatusCode()));
+    response->SetHeader(PSEUDO_HEADER_STATUS, std::to_string(response->GetStatusCode()));
 }
 
 void PseudoHeader::DecodeResponse(std::shared_ptr<IResponse> response) {
-    auto& headers = response->GetHeaders();
+    const HttpFields& fields = response->GetHeaders();
 
-    // Extract status pseudo-header
-    if (headers.find(PSEUDO_HEADER_STATUS) != headers.end()) {
-        response->SetStatusCode(std::stoi(headers[PSEUDO_HEADER_STATUS]));
-        headers.erase(PSEUDO_HEADER_STATUS);
+    for (const auto& field : fields) {
+        if (field.first == PSEUDO_HEADER_STATUS) {
+            response->SetStatusCode(static_cast<uint32_t>(std::stoul(field.second)));
+            break;
+        }
     }
+
+    HttpFields rest;
+    rest.reserve(fields.size());
+    for (const auto& field : fields) {
+        if (!field.first.empty() && field.first[0] == ':') continue;
+        rest.push_back(field);
+    }
+    response->SetHeaders(rest);
 }
 
 std::string PseudoHeader::MethodToString(HttpMethod method) {

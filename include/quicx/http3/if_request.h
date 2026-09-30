@@ -81,7 +81,10 @@ public:
     virtual const std::string& GetAuthority() const = 0;
 
     /**
-     * @brief Add a header
+     * @brief Add a header field line (appends)
+     *
+     * RFC 9110 §5.3: field names are NOT unique — AddHeader APPENDS and never
+     * replaces an existing field line. Use SetHeader() to replace.
      *
      * @param name The header name
      * @param value The header value
@@ -89,26 +92,43 @@ public:
     virtual void AddHeader(const std::string& name, const std::string& value) = 0;
 
     /**
-     * @brief Get a header
+     * @brief Set a header, replacing any existing field lines with that name
      *
      * @param name The header name
      * @param value The header value
+     */
+    virtual void SetHeader(const std::string& name, const std::string& value) = 0;
+
+    /**
+     * @brief Get a header
+     *
+     * @param name The header name
+     * @param value Receives the FIRST field line value with that name
      * @return True if the header is found, false otherwise
      */
     virtual bool GetHeader(const std::string& name, std::string& value) const = 0;
 
     /**
+     * @brief Get every field line value with the given name, in wire order
+     *
+     * @param name The header name
+     * @return All matching values, in the order they appear
+     */
+    virtual std::vector<std::string> GetAllHeaders(const std::string& name) const = 0;
+
+    /**
      * @brief Set the headers
      *
-     * @param headers The headers
+     * @param headers The ordered field lines
      */
-    virtual void SetHeaders(const std::unordered_map<std::string, std::string>& headers) = 0;
+    virtual void SetHeaders(const HttpFields& headers) = 0;
+
     /**
      * @brief Get the headers
      *
-     * @return The headers
+     * @return The ordered field lines (duplicates preserved)
      */
-    virtual std::unordered_map<std::string, std::string>& GetHeaders() = 0;
+    virtual const HttpFields& GetHeaders() const = 0;
     /**
      * @brief Get the request body as a string
      *

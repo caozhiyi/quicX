@@ -52,7 +52,7 @@ private:
         const std::string& reason);
 
     void HandleError(const std::string& unique_id, uint32_t error_code);
-    bool HandlePushPromise(std::unordered_map<std::string, std::string>& headers);
+    bool HandlePushPromise(HttpFields& headers);
     void HandlePush(std::shared_ptr<IResponse> response, uint32_t error);
 
     // Shared body for the two DoRequest overloads. Templated on the handler

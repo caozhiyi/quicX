@@ -136,13 +136,13 @@ void PushReceiverStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
 
     LOG_DEBUG("decoded %zu headers", headers_.size());
 
-    if (headers_.find("content-length") != headers_.end()) {
+    std::string content_length;
+    if (FindField(headers_, "content-length", content_length)) {
         try {
-            body_length_ = std::stoul(headers_["content-length"]);
+            body_length_ = std::stoul(content_length);
             LOG_DEBUG("found content-length=%u", body_length_);
         } catch (const std::exception& e) {
-            LOG_ERROR("PushReceiverStream: invalid content-length value '%s': %s", headers_["content-length"].c_str(),
-                e.what());
+            LOG_ERROR("PushReceiverStream: invalid content-length value '%s': %s", content_length.c_str(), e.what());
             error_handler_(GetStreamID(), Http3ErrorCode::kMessageError);
             return;
         }
