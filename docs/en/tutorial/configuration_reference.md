@@ -16,7 +16,7 @@ This struct controls "global" behaviour: event loop, crypto, logging.
 
 | Field / Type | Default | Meaning and tuning notes |
 | :--- | :--- | :--- |
-| `thread_mode_`<br>`ThreadMode` | `kSingleThread` | **Core**: Engine threading model.<br/>- `kSingleThread`: Lowest latency on a single core, no lock contention.<br/>- `kMultiThread`: For high-concurrency servers on multi-core CPUs. Incoming UDP packets are hashed across worker threads. |
+| `thread_mode_`<br>`ThreadMode` | `kMultiThread` | **Core**: Engine threading model.<br/>- `kSingleThread`: Lowest latency on a single core, no lock contention.<br/>- `kMultiThread`: For high-concurrency servers on multi-core CPUs. Incoming UDP packets are hashed across worker threads. |
 | `worker_thread_num_`<br>`uint16_t` | `2` | Number of worker threads in `kMultiThread` mode. Recommended: `CPU cores - 1`, leaving one core for the OS to handle network interrupts. |
 | `log_level_`<br>`LogLevel` | `kNull` | Log level. Silenced by default for maximum performance. Set to `kInfo` or `kDebug` while debugging. |
 | `quic_version_`<br>`uint32_t` | `kQuicVersion2` | Preferred protocol version to negotiate. Defaults to QUIC v2 (RFC 9369). You can manually downgrade to v1. |
@@ -25,17 +25,17 @@ This struct controls "global" behaviour: event loop, crypto, logging.
 
 ### 1.2 `QlogConfig`: Network Tracing and Diagnostics
 
-Inside `QuicConfig`, `qlog_config_` controls the in-kernel diagnostic tracer. When enabled, every frame is emitted as a structured log following RFC 9001 (consumable by `qvis` and Wireshark).
+Inside `QuicConfig`, `qlog_config_` controls the in-kernel diagnostic tracer. When enabled, every frame is emitted as a structured log following RFC 9254 (consumable by `qvis` and Wireshark).
 
 | Field / Type | Default | Meaning and tuning notes |
 | :--- | :--- | :--- |
-| `enabled` | `false` | Enable qlog collection. Because tracing has a noticeable throughput cost, only turn it on when chasing packet loss or congestion-control bugs. |
-| `output_dir` | `"./qlogs"` | Root directory for log files. |
-| `format` | `kSequential` | File format. Defaults to `kSequential` (JSON-Lines) so logs can be streamed to disk without buffering everything in memory. |
-| `batch_write` | `true` | Asynchronous batched disk writes. **Keep this on** under production load — synchronous I/O would block the event loop. |
-| `flush_interval_ms` | `100` | When `batch_write` is on, the buffered logs are flushed to disk every N milliseconds. |
-| `max_file_size_mb` | `100` | Per-file size cap. Once exceeded, the file is rotated (so a runaway trace cannot fill the disk). |
-| `max_file_count` | `10` | Maximum number of rolled files retained; older files are deleted. |
+| `enabled_` | `false` | Enable qlog collection. Because tracing has a noticeable throughput cost, only turn it on when chasing packet loss or congestion-control bugs. |
+| `output_dir_` | `"./qlogs"` | Root directory for log files. |
+| `format_` | `kSequential` | File format. Defaults to `kSequential` (JSON-Lines) so logs can be streamed to disk without buffering everything in memory. |
+| `batch_write_` | `true` | Asynchronous batched disk writes. **Keep this on** under production load — synchronous I/O would block the event loop. |
+| `flush_interval_ms_` | `100` | When `batch_write_` is on, the buffered logs are flushed to disk every N milliseconds. |
+| `max_file_size_mb_` | `100` | Per-file size cap. Once exceeded, the file is rotated (so a runaway trace cannot fill the disk). |
+| `max_file_count_` | `10` | Maximum number of rolled files retained; older files are deleted. |
 
 ### 1.3 `QuicServerConfig`: Anti-DDoS and Retry
 
@@ -92,7 +92,7 @@ HTTP/3 settings live in `Http3Config`, `Http3ServerConfig`, and `Http3ClientConf
 | Field | Default | Meaning |
 | :--- | :--- | :--- |
 | `enable_push_` | `false` | Whether to enable HTTP/3 Server Push (RFC 9114). When on, the server can use `Response::AppendPush` to push static assets (e.g. `style.css`, large images) the client did not explicitly request. May cause head-of-line contention under heavy load — currently considered experimental. |
-| `qpack_max_table_capacity` | `0` (dynamic table off) | Lives inside `Http3Settings`. Size of the QPACK header-compression dynamic table. `0` keeps QPACK in pure-static mode (no extra memory, best perf); raise it when your traffic carries large per-request headers (Trace IDs, large cookies) and you want to trade memory for bandwidth. |
+| `qpack_max_table_capacity` | `4096` | Lives inside `Http3Settings`. Size of the QPACK header-compression dynamic table (RFC 9204). `0` keeps QPACK in pure-static mode (no extra memory, best perf); the default 4096 is a conservative interop-friendly value — raise it when your traffic carries large per-request headers (Trace IDs, large cookies) and you want to trade memory for bandwidth. |
 
 ### 2.3 Metrics Endpoint
 
@@ -100,11 +100,13 @@ The QUIC stack collects detailed counters (loss, retransmissions, buffer occupan
 
 ```cpp
 quicx::Http3ServerConfig server_config;
-server_config.metrics_.prometheus_export = true;        // export in Prometheus format
-server_config.metrics_.prometheus_endpoint = "/metrics"; // serve metrics on /metrics inside the quicX server
+server_config.metrics_.enable_ = true;           // global metrics collection (on by default)
+server_config.metrics_.http_enable_ = true;      // built-in HTTP/3 metrics endpoint (off by default)
+server_config.metrics_.http_path_ = "/metrics";  // endpoint path (default /metrics)
+server_config.metrics_.http_port_ = 8828;        // dedicated metrics port (default 8828)
 ```
 
-After this is configured, your monitoring system can scrape `/metrics` directly to observe quicX runtime health.
+After this is configured, your monitoring system can scrape `/metrics` directly to observe quicX runtime health (metrics are exported in Prometheus format; you can also pull them via `Metrics::ExportPrometheus()`).
 
 ---
 
@@ -119,7 +121,7 @@ If you need to deploy quicX on resource-constrained embedded devices, or on a to
 | Constant | Default | Meaning |
 | :--- | :--- | :--- |
 | `kMaxDataFramePayload` | `1350` | Maximum payload size of a single HTTP/3 DATA frame handed to the transport. `1350` is sized to fit a 1500-byte MTU after subtracting IP / UDP / QUIC / AEAD-tag / H3 framing overhead. |
-| `kServerPushWaitTimeMs` | `30000` | How long (ms) the client will wait for a pushed stream from the server (30 s). |
+| `kServerPushWaitTimeMs` | `10` | How long (ms) the client will wait for a pushed stream from the server. |
 | `kClientConnectionTimeoutMs` | `60000` | Idle timeout for the client-side HTTP/3 session (60 s). |
 
 ### 3.2 QUIC Compile-Time Constants (`src/quic/config.h`)
@@ -138,7 +140,8 @@ The protocol's core control-plane limits.
 | `kPacketPoolSize` | `256` | Number of pre-allocated packet buffers in the memory pool. Keep it a power of two. Gateway / load-balancer nodes benefit from raising it to 1024 / 2048 to remove allocation jitter. |
 | `kPacketBufferSize` | `1500` | Packet buffer size; sized to a typical Ethernet MTU. **Do not raise this** — going above MTU will cause IP fragmentation and tank throughput. |
 | **Handshake and protocol** | |
-| `kHandshakeTimeoutMs` | `5000` (5 s) | Hard upper bound on TLS handshake duration; protects against slowloris-style attacks. |
-| `kDefaultTlsVerifyPeer` | `false` | **Heads up**: TLS peer-certificate verification is disabled by default to make local testing painless. **Set this to `true`, or override at runtime, before deploying to production.** |
+| `kHandshakeTimeoutMs` | `30000` (30 s) | Hard upper bound on TLS handshake duration; protects against slowloris-style attacks. Aligned with the 30 s client timeout: under heavy-loss networks the PTO backoff (0.75s/1.5s/3s/6s/12s…) needs far more than 5 seconds of retries to get through. |
+| **TLS peer verification (runtime)** | |
+| `QuicClientConfig::verify_peer_` | `true` | **Note**: certificate verification is controlled by runtime config, not a compile-time constant. The client **verifies** TLS peer certificates by default; set to `false` for local self-signed testing, or pair with `ca_file_` to pin a CA. |
 
 After editing any of these constants you must rerun `cmake --build` to rebuild the library — the changes only take effect after a recompile.

@@ -90,6 +90,7 @@ HTTP/3 follows the same structure:
 | `IStream::event_loop_` → `IEventLoop` | `std::weak_ptr<IEventLoop>` | same |
 | `Worker::event_loop_` → `IEventLoop` | `std::weak_ptr<IEventLoop>` | same |
 | `ResponseStream::http_processor_` → `IHttpProcessor` | `std::weak_ptr<IHttpProcessor>` | User-level handler, owned at the top |
+| `http3::IStream` callbacks → `http3::IConnection` | `std::weak_ptr<IConnection>` (lambda capture) | See §3.5 — streams must never hold a strong back-reference to the connection |
 
 Rule of thumb: **upward / sideways references use `weak_ptr`; only downward
 (owner → ownee) references may be `shared_ptr`.**
@@ -191,7 +192,102 @@ Reason: `OnPackets` may fire a `CONNECTION_CLOSE` callback → user code →
 `Destroy()` → erases self from `conn_map_`. Accessing the map entry directly
 like `conn_map_[...]->OnPackets()` triggers a use-after-free under ASan.
 
-### 3.5 Sender sharing
+### 3.5 HTTP/3 Connection: Two-Phase Initialization + Weak-Self Lambda
+
+`http3::IConnection` and its subclasses `ClientConnection` / `ServerConnection`
+create their control / QPACK encoder / QPACK decoder streams during setup and
+bind several callbacks to themselves (`HandleError` / `HandleSettings` /
+`HandlePushPromise`, ...). Two traps you must never step into:
+
+1. **`weak_from_this()` is empty inside the constructor.** The internal
+   weak_ptr of `std::enable_shared_from_this<T>` is only populated once
+   `std::make_shared<T>` completes; calling `weak_from_this()` /
+   `shared_from_this()` inside the constructor body fails (the former yields
+   a forever-expired weak, the latter throws `bad_weak_ptr`).
+2. **Callbacks that `std::bind(&Xxx::HandleYyy, this, ...)` or capture a raw
+   `this`** will invoke virtual functions on a destroyed object if a stream
+   callback fires after the connection is destructed, hitting
+   `__cxa_pure_virtual` → SIGABRT.
+
+`http3::IConnection` therefore uses **two-phase initialization**:
+
+```cpp
+// 1) Constructor: only initialization that does not depend on shared_from_this
+IConnection(unique_id, quic_conn, error_handler);   // just assign members
+
+// 2) Call Init() right after factory creation; shared_from_this() is now usable
+auto conn = std::make_shared<ServerConnection>(...);
+conn->Init();   // creates control / QPACK streams and binds weak-self callbacks
+```
+
+#### The three standard callback patterns
+
+**(a) Base-class public callbacks** — via the factories provided by
+`IConnection`:
+
+```cpp
+// if_connection.h
+std::function<void(uint64_t, uint32_t)> MakeErrorHandler();
+std::function<void(const std::unordered_map<uint16_t, uint64_t>&)> MakeSettingsHandler();
+
+// subclass usage
+control_stream_->SetErrorCallback(MakeErrorHandler());
+control_stream_->SetSettingsCallback(MakeSettingsHandler());
+```
+
+Internally the factories bind a `weak_ptr<IConnection>` and `lock()` on
+invocation, giving up cleanly if the connection is already gone.
+
+**(b) Subclass-private callbacks** — inline weak-lambda via `WeakSelfAs<T>()`
+at the call site:
+
+```cpp
+// connection_client.cpp
+auto weak_self = WeakSelfAs<ClientConnection>();
+stream->SetPushPromiseCallback([weak_self](uint64_t push_id) {
+    if (auto self = weak_self.lock()) self->HandlePushPromise(push_id);
+});
+```
+
+`WeakSelfAs<T>()` is a protected template on `IConnection`, essentially
+`weak_ptr<T>(static_pointer_cast<T>(shared_from_this()))`. Subclass-private
+methods thus need neither friends nor pollution of the base interface.
+
+**(c) Stream-state callbacks** — registered centrally inside
+`IConnection::Init()`:
+
+```cpp
+void IConnection::Init() {
+    auto weak_self = weak_from_this();   // usable at this point
+    quic_connection_->SetStreamStateCallBack(
+        [weak_self](uint64_t stream_id, StreamState state) {
+            if (auto self = weak_self.lock()) self->OnStreamState(stream_id, state);
+        });
+}
+```
+
+#### Anti-patterns
+
+```cpp
+//  bind raw this: stream callback fires after connection destruction → __cxa_pure_virtual
+control_stream_->SetErrorCallback(
+    std::bind(&ServerConnection::HandleError, this, _1, _2));
+
+//  capturing shared_from_this(): closes the Connection → streams_ → Stream → cb → Connection cycle
+control_stream_->SetErrorCallback(
+    [self = shared_from_this()](uint64_t id, uint32_t ec) { self->HandleError(id, ec); });
+
+//  creating streams in the constructor then binding weak: weak_from_this() is empty there
+ServerConnection::ServerConnection(...) {
+    control_stream_ = std::make_shared<ControlStream>(...);
+    control_stream_->SetErrorCallback(MakeErrorHandler());  // the bound weak is forever expired
+}
+```
+
+The correct pattern: the constructor only stores parameters; stream creation
+and callback binding all move into `Init()`.
+
+### 3.6 Sender sharing
 
 `ISender` (the UDP sender) is legitimately held by multiple parties:
 
@@ -291,7 +387,54 @@ std::tuple<Conn, Conn, Sender, Sender, std::shared_ptr<IEventLoop>> Make() {
 }
 ```
 
-### Pitfall 4 — User callback fired from `OnStateToClosing`
+### Pitfall 4 — Calling `weak_from_this()` / `shared_from_this()` in a constructor
+
+```cpp
+//  the internal weak of enable_shared_from_this is populated only after
+//  make_shared completes; here it is forever expired and never locks
+class Http3Conn : public std::enable_shared_from_this<Http3Conn> {
+public:
+    Http3Conn() {
+        auto weak = weak_from_this();
+        stream_->SetCb([weak]{ if (auto s = weak.lock()) s->Do(); });
+    }
+};
+
+//  two-phase init: the constructor only assigns, Init() binds the callbacks
+class Http3Conn : public std::enable_shared_from_this<Http3Conn> {
+public:
+    Http3Conn(...) { /* just store parameters */ }
+    void Init() {
+        auto weak = weak_from_this();   // usable now
+        stream_ = std::make_shared<Stream>(...);
+        stream_->SetCb([weak]{ if (auto s = weak.lock()) s->Do(); });
+    }
+};
+
+// caller
+auto c = std::make_shared<Http3Conn>(...);
+c->Init();   // must immediately follow make_shared
+```
+
+### Pitfall 5 — `std::bind(&X::M, this, ...)` in stream callbacks
+
+```cpp
+//  a stream callback may fire after the connection is destructed
+//  → calls a pure virtual function → __cxa_pure_virtual
+control_stream_->SetErrorCallback(
+    std::bind(&ServerConnection::HandleError, this, _1, _2));
+
+//  base-class public callbacks go through the factories
+control_stream_->SetErrorCallback(MakeErrorHandler());
+
+//  subclass-private callbacks use WeakSelfAs<T>() inline lambdas
+auto weak_self = WeakSelfAs<ServerConnection>();
+push_stream->SetCallback([weak_self](uint64_t id) {
+    if (auto self = weak_self.lock()) self->HandlePush(id);
+});
+```
+
+### Pitfall 6 — User callback fired from `OnStateToClosing`
 
 ```cpp
 // ❌ If the user callback drops the last shared_ptr, the rest of this
@@ -340,7 +483,9 @@ Before adding any new `shared_ptr` member, ask:
 | Self-pinning | `auto self = shared_from_this();` at the entry of a critical section, extending self-lifetime to function end |
 | Guarded Fixed Process | `AddFixedProcess(weak_ptr<void> owner, cb)`; auto-skipped when owner expires |
 | Connection Pinning | Worker copies `shared_ptr<IConnection>` into a local before dispatch, so erasure during dispatch is safe |
+| Two-phase Init | The constructor only assigns members; `Init()` is called after `make_shared` and is where `weak_from_this()` / `shared_from_this()` may bind callbacks |
+| Weak-self Lambda | `auto weak_self = weak_from_this();` + `[weak_self](...){ if (auto s = weak_self.lock()) s->Do(); }` — the standard pattern for binding stream callbacks in the HTTP/3 connection layer |
 
 ---
 
-*Last updated: 2026-05, matches the completed Exclusive Ownership refactor.*
+*Matches the completed Exclusive Ownership refactor + HTTP/3 connection two-phase-init fixes.*

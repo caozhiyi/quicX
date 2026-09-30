@@ -1,7 +1,7 @@
 # PoolAlloter 接入 Frame 分配 —— 调研与可行性评估
 
 > 状态：**已调研，暂缓实施（非当前优先级）**
-> 调研日期：2026-05
+
 > 适用范围：`src/quic/frame/`、`src/quic/stream/`、`src/quic/connection/`、`src/quic/packet/`
 > 相关代码：`src/common/alloter/pool_alloter.h`、`src/common/alloter/if_alloter.h`
 

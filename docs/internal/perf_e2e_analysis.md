@@ -1,6 +1,6 @@
 # quicX E2E Performance — Root-Cause Analysis
 
-**Date**: 2026-05-03
+
 **Build**: `DEBUG` (all absolute numbers are 2–10× slower than Release)
 **Binary**: `./build/bin/perf/e2e_perf_test`
 
@@ -156,7 +156,7 @@ These together produce the 50×–400× run-to-run variance documented above.
 
 ### P0 — Fix the cold-start packet drop (the real bug) ✅ **DONE**
 
-**Status**: Fixed in `src/quic/quicx/master_with_thread.cpp` (2026-05-03).
+**Status**: Fixed in `src/quic/quicx/master_with_thread.cpp`.
 
 `MasterWithThread::AddListener(ip, port)` and the `fd` overload previously used
 `event_loop_->RunInLoop(...)` in fire-and-forget mode — they returned `true`
@@ -187,7 +187,7 @@ processing client N-1). See P1.
 
 ### P1 — Graceful-close 1 s latency tax ✅ **DONE**
 
-**Status**: Fixed in three files on 2026-05-03.
+**Status**: Fixed in three files.
 
 The original P1 hypothesis ("single-worker concurrent handshake drop") was
 **falsified** by adding `[PERF-PTO]` / `[PERF-RTT]` probes: `Handshake_Burst`,
@@ -291,7 +291,7 @@ into the same range as the others.
 
 ### P2 — Harden the benchmark harness ✅ **DONE**
 
-**Status**: Fixed in `test/perf/e2e_perf_test.cpp` on 2026-05-03.
+**Status**: Fixed in `test/perf/e2e_perf_test.cpp`.
 
 Three changes, all inside the benchmark file (no stack-level changes):
 
@@ -366,7 +366,7 @@ result stream.
 ### P3 — Cold-start PTO knob + teardown-race fix ✅ **DONE**
 
 **Status**: Fixed in `rtt_calculator.{h,cpp}`, `send_control.{h,cpp}` and
-`e2e_perf_test.cpp` on 2026-05-03.
+`e2e_perf_test.cpp`.
 
 Three library-side changes, one of which surfaced a real latent bug:
 

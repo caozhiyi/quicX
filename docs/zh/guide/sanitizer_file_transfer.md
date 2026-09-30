@@ -14,64 +14,7 @@
 
 ---
 
-## 方式一：一键自动化脚本（推荐）
-
-项目提供了 `scripts/run_file_transfer_sanitizer.sh`，可自动完成构建、测试、收集报告的全流程。
-
-### 基本用法
-
-```bash
-cd /data/workspace/quicX
-
-# 运行单个 sanitizer
-./scripts/run_file_transfer_sanitizer.sh asan
-./scripts/run_file_transfer_sanitizer.sh tsan
-./scripts/run_file_transfer_sanitizer.sh ubsan
-
-# 依次运行所有 sanitizer
-./scripts/run_file_transfer_sanitizer.sh all
-```
-
-### 脚本工作流程
-
-```
-┌─────────────────────────────────────────────────┐
-│  1. cmake 配置 (-DSANITIZER=xxx)                │
-│  2. 构建 file_transfer_server / client          │
-│  3. 生成 10MB 随机测试文件                       │
-│  4. 启动 server                                  │
-│  5. 执行三项测试：                               │
-│     • 上传小文本文件                             │
-│     • 上传 10MB 二进制文件                       │
-│     • 下载文件                                   │
-│  6. 优雅停止 server (SIGTERM)                    │
-│  7. 收集并分析 sanitizer 报告                    │
-│  8. 输出汇总结果                                 │
-└─────────────────────────────────────────────────┘
-```
-
-### 输出结果
-
-报告保存在 `sanitizer-results/` 目录：
-
-```
-sanitizer-results/
-├── asan_build_config.log   # ASan 构建配置日志
-├── asan_build.log          # ASan 编译日志
-├── asan_server.log         # server 运行日志
-├── asan_client.log.*       # client 各测试步骤日志
-├── asan_report.log         # ★ ASan 最终汇总报告
-├── tsan_report.log         # ★ TSan 最终汇总报告
-└── ubsan_report.log        # ★ UBSan 最终汇总报告
-```
-
-如果某个 sanitizer **未检测到问题**，报告内容为 `No issues detected by xxx.`。
-
----
-
-## 方式二：手动构建与测试
-
-当需要更灵活的控制（如自定义测试文件大小、调整超时、调试特定场景）时，可手动操作。
+## 方式一：构建与测试
 
 ### 第一步：构建
 
@@ -202,19 +145,19 @@ cat sanitizer-results/ubsan_san.*  2>/dev/null  # UBSan 问题
 
 ---
 
-## 方式三：配合 CI 使用
+## 方式二：配合 CI 使用
 
-项目的 `scripts/ci-local.sh` 也支持 sanitizer 测试（仅运行单元测试，不含 file_transfer）：
+CI 的 `sanitizer.yml` 会在每次 push/PR 与每日定时任务中，用 clang + sanitizer 标志（等价于 `-DSANITIZER={asan,ubsan,tsan}`）构建并运行单元测试（`run_tests.py utest`），不含 file_transfer。本地复现：
 
 ```bash
 # 运行 sanitizer + 单元测试
-./scripts/ci-local.sh sanitize asan
-./scripts/ci-local.sh sanitize tsan
-./scripts/ci-local.sh sanitize ubsan
-
-# 单元测试 + file_transfer 集成测试完整流程：
-./scripts/ci-local.sh sanitize tsan && ./scripts/run_file_transfer_sanitizer.sh tsan
+cmake -S . -B build-tsan -DCMAKE_BUILD_TYPE=Debug -DSANITIZER=tsan -DBUILD_EXAMPLES=ON
+cmake --build build-tsan -j$(nproc)
+rm -rf build && ln -s build-tsan build
+TSAN_OPTIONS=halt_on_error=1 python3 run_tests.py utest
 ```
+
+file_transfer 集成测试按上文手动流程单独运行，作为单元测试的补充。
 
 ---
 
@@ -283,9 +226,9 @@ QUIC 协议中涉及大量计算（RTT、拥塞窗口、时间戳），需要注
 
 ### Q: 测试时 server 启动失败？
 
-1. 检查端口 7006 是否被占用：`ss -tlnp | grep 7006`
+1. 检查端口 7006 是否被占用：`ss -ulnp | grep 7006`
 2. 确认 TLS 证书文件可访问（server 默认使用内置的测试证书）
-3. 查看构建日志确认编译成功：`cat sanitizer-results/xxx_build.log`
+3. 查看构建输出确认编译成功（重新执行 `cmake --build` 看是否有报错）
 
 ### Q: 如何增大测试文件或并发连接？
 
@@ -310,9 +253,9 @@ wait
 
 | 需求 | 推荐方法 |
 |---|---|
-| 日常开发快速验证 | `./scripts/run_file_transfer_sanitizer.sh tsan` |
-| 发版前全面检查 | `./scripts/run_file_transfer_sanitizer.sh all` |
+| 日常开发快速验证 | 手动 tsan 构建 + 上传/下载测试 |
+| 发版前全面检查 | ASan / TSan / UBSan 各手动构建跑一轮 |
 | 调试特定竞争场景 | 手动构建 + 调整环境变量 + 并发 client |
-| CI 集成 | `ci-local.sh sanitize xxx` + `run_file_transfer_sanitizer.sh xxx` |
+| CI 集成 | `sanitizer.yml`（单元测试）+ 手动 file_transfer 流程 |
 
 保持 **ASan / TSan / UBSan clean** 是本项目的质量底线——每次提交前至少跑一轮 `tsan`（多线程是最容易出 bug 的领域），发版前必须三者全绿。

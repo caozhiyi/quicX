@@ -1,31 +1,12 @@
-# quicX Metrics 监控系统
+# Metrics 监控系统
 
-## 概述
+quicX Metrics 为 QUIC/HTTP3 实现提供全面的可观测性：54+ 指标覆盖 UDP、QUIC、HTTP/3 各层，无锁设计，支持 Prometheus 格式导出。所有指标操作为 O(1) 复杂度——原子操作避免锁竞争、预分配槽位实现零堆分配，单次指标更新 < 10ns；核心指标自动埋点，可运行时启停。本文尝试回答以下问题：
 
-quicX Metrics 是一个高性能、零开销的监控系统，为 quicX QUIC/HTTP3 实现提供全面的可观测性。系统采用无锁设计，支持 Prometheus 格式导出，可实时监控网络、传输、应用层的各项指标。
+1. **指标系统怎么做到零开销？** —— 见"系统架构"与"性能保证"；
+2. **54+ 指标如何组织、各覆盖什么？** —— 见"指标分类"的 13 个功能类别；
+3. **如何在项目中接入与导出？** —— 见"使用指南"。
 
-## 核心特性
-
-### 高性能设计
-
-- **O(1) 复杂度**：所有指标操作均为常数时间复杂度
-- **无锁实现**：使用原子操作，避免锁竞争
-- **零堆分配**：预分配槽位，运行时无内存分配
-- **极低开销**：单次指标更新 < 10ns
-
-### 完整覆盖
-
-- **54+ 指标**：覆盖 UDP、QUIC、HTTP/3 各层
-- **实时更新**：指标即时反映系统状态
-- **分类清晰**：按功能模块组织指标
-
-### 易于使用
-
-- **自动埋点**：核心指标自动收集
-- **运行时配置**：可动态启用/禁用
-- **标准格式**：Prometheus text format 导出
-
-## 系统架构
+## 1. 系统架构
 
 ### 核心组件
 
@@ -100,7 +81,7 @@ std::string ExportPrometheus() {
 }
 ```
 
-## 指标分类
+## 2. 指标分类
 
 ### 1. UDP 层指标 (6个)
 
@@ -135,6 +116,7 @@ std::string ExportPrometheus() {
 | `quic_packets_tx` | Counter | QUIC 包发送总数 |
 | `quic_packets_retransmit` | Counter | 重传包总数 |
 | `quic_packets_lost` | Counter | 丢包总数 |
+| `quic_packets_dropped` | Counter | 丢弃包总数 |
 | `quic_packets_acked` | Counter | 确认包总数 |
 
 **用途**：监控传输层可靠性，计算丢包率和重传率。
@@ -163,7 +145,7 @@ std::string ExportPrometheus() {
 
 **用途**：监控网络延迟，评估连接质量。
 
-### 6. 拥塞控制指标 (7个)
+### 6. 拥塞控制指标 (6个)
 
 | 指标名称 | 类型 | 说明 |
 |---------|------|------|
@@ -172,6 +154,7 @@ std::string ExportPrometheus() {
 | `slow_start_exits` | Counter | 退出慢启动次数 |
 | `bytes_in_flight` | Gauge | 在途字节数 |
 | `pacing_rate_bytes_per_sec` | Gauge | Pacing 速率 (字节/秒) |
+| `pacing_delay_us` | Histogram | Pacing 延迟 (微秒) |
 
 **用途**：监控拥塞控制算法，优化吞吐量。
 
@@ -235,16 +218,17 @@ std::string ExportPrometheus() {
 
 **用途**：监控协议层活动，分析通信模式。
 
-### 13. ACK 相关指标 (2个)
+### 13. ACK 相关指标 (3个)
 
 | 指标名称 | 类型 | 说明 |
 |---------|------|------|
-| `ack_delay_us` | Gauge | ACK 延迟 (微秒) |
-| `ack_ranges_per_frame` | Gauge | 每个 ACK Frame 的 Range 数 |
+| `ack_delay_us` | Histogram | ACK 延迟 (微秒) |
+| `ack_ranges_per_frame` | Histogram | 每个 ACK Frame 的 Range 数 |
+| `ack_frequency` | Gauge | ACK 频率 (每秒 ACK 数) |
 
 **用途**：监控 ACK 行为，优化确认策略。
 
-## 使用指南
+## 3. 使用指南
 
 ### 初始化
 
@@ -253,19 +237,19 @@ std::string ExportPrometheus() {
 
 // 1. 配置 Metrics
 quicx::MetricsConfig config;
-config.enable = true;              // 启用 metrics
-config.initial_slots = 1024;       // 初始槽位数
-config.prefix = "quicx_";          // 指标名称前缀
+config.enable_ = true;             // 启用 metrics
+config.initial_slots_ = 1024;      // 初始槽位数
+config.prefix_ = "quicx_";         // 指标名称前缀
 
 // 2. 初始化 Metrics 系统
-quicx::common::Metrics::Initialize(config);
+quicx::Metrics::Initialize(config);
 ```
 
 ### 导出 Prometheus 格式
 
 ```cpp
 // 获取 Prometheus 格式的 metrics 数据
-std::string metrics_data = quicx::common::Metrics::ExportPrometheus();
+std::string metrics_data = quicx::Metrics::ExportPrometheus();
 
 // 输出到文件
 std::ofstream file("/var/lib/prometheus/quicx.prom");
@@ -286,12 +270,12 @@ auto server = quicx::IServer::Create(settings);
 
 // 配置 server
 quicx::Http3ServerConfig config;
-config.cert_file_ = "server.crt";
-config.key_file_ = "server.key";
+config.quic_config_.cert_file_ = "server.crt";
+config.quic_config_.key_file_ = "server.key";
 
 // 启用 metrics endpoint
-config.config_.metrics_.enable = true;
-config.config_.metrics_.path = "/metrics";
+config.metrics_.http_enable_ = true;
+config.metrics_.http_path_ = "/metrics";
 
 // 初始化并启动
 server->Init(config);
@@ -304,7 +288,7 @@ server->Start("0.0.0.0", 8443);
 curl --http3 https://localhost:8443/metrics
 ```
 
-## 性能保证
+## 4. 性能保证
 
 ### 基准测试结果
 
@@ -334,13 +318,13 @@ ExportPrometheus/1000        452.0 µs   452.0 µs
 导出缓冲区：~100 KB (临时)
 ```
 
-## 最佳实践
+## 5. 最佳实践
 
 ### 1. 合理配置槽位数
 
 ```cpp
 // 根据预期指标数量配置
-config.initial_slots = expected_metrics * 1.5;  // 留 50% 余量
+config.initial_slots_ = expected_metrics * 1.5;  // 留 50% 余量
 ```
 
 ### 2. 定期导出
@@ -388,7 +372,7 @@ groups:
           summary: "High error rate"
 ```
 
-## 故障排查
+## 6. 故障排查
 
 ### 问题：指标未更新
 
@@ -400,7 +384,7 @@ groups:
 Metrics::Initialize(config);
 
 // 确保启用
-config.enable = true;
+config.enable_ = true;
 ```
 
 ### 问题：导出数据为空
@@ -420,10 +404,10 @@ config.enable = true;
 **解决**：
 ```cpp
 // 增加初始槽位数
-config.initial_slots = 2048;  // 或更大
+config.initial_slots_ = 2048;  // 或更大
 ```
 
-## 扩展开发
+## 7. 扩展开发
 
 ### 添加自定义指标
 
@@ -458,7 +442,7 @@ MetricID latency_hist = Metrics::RegisterHistogram(
 Metrics::HistogramObserve(latency_hist, latency_value);
 ```
 
-## 参考资料
+## 8. 关联 RFC
 
 - [Prometheus 文档](https://prometheus.io/docs/)
 - [QUIC RFC 9000](https://www.rfc-editor.org/rfc/rfc9000.html)

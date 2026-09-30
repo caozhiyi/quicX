@@ -1,6 +1,6 @@
 # quicX `test/perf` 火焰图级性能分析与修复记录
 
-**日期**：2026-04-30
+
 **范围**：`test/perf/packet_perf_test.cpp` 中的 P0/P1 新增 benchmark
 **工具**：自研 SIGPROF 采样 profiler (`test/perf/tools/sampling_profiler.h`) + `addr2line` 离线符号化 (`test/perf/tools/resolve_stacks.py`)
 
@@ -213,7 +213,7 @@ python3 test/perf/tools/resolve_stacks.py /tmp/decode.raw --top 25
 
 ---
 
-# 第二轮：其他 perf target 的火焰图定位与修复（2026-04-30 续）
+# 第二轮：其他 perf target 的火焰图定位与修复（续）
 
 在修好 packet_perf 的 dispatch 通路后，我们把同一套工具应用到 **QPACK** 与 **BlockedRegistry** 两个疑似热点上，定位并修复了两个真实的算法/实现问题。
 

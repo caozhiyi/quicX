@@ -1,8 +1,13 @@
 # quicX 生产成熟度完善计划
 
+> ⚠️ **状态**：本文档为**历史计划**，自 v1.0.0 起已被
+> [`learning_project_roadmap.md`](./learning_project_roadmap.md)（教学优先方向的
+> v1.0 路线图）取代。下文的目标、进度与勾选状态是历史阶段的快照，仅作
+> 历史参考，不代表当前计划。
+
 > **版本**: 2.0  
-> **创建日期**: 2026-02-05  
-> **最后更新**: 2026-03-20  
+  
+  
 > **总体目标**: 将 quicX 从当前状态推进到生产级成熟度  
 > **原始预计工期**: 8-12 周  
 > **当前进度**: Phase 3 已完成，Phase 5 核心功能已大幅完成，Phase 1/2 进行中，四轮代码评审已完成
@@ -15,7 +20,7 @@
 2. [进度总览](#2-进度总览)
 3. [Phase 1: Qlog 测试与验证](#phase-1-qlog-测试与验证2-3周)
 4. [Phase 2: Metrics 测试与监控](#phase-2-metrics-测试与监控2-3周)
-5. [Phase 3: 性能分析与优化](#phase-3-性能分析与优化火焰图内存分析2-3周)
+5. [Phase 3: 性能分析（火焰图、内存分析）](#phase-3-性能分析火焰图内存分析2-3周)
 6. [Phase 4: Interop 互通性测试](#phase-4-interop-互通性测试3-4周)
 7. [Phase 5: 高级 QUIC 功能](#phase-5-高级-quic-功能4-6周)
 8. [Phase 6: 压力测试与基准](#phase-6-压力测试与基准2-3周)
@@ -89,7 +94,7 @@ example/
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│                  完善计划进度追踪（截至 2026-03-20）                    │
+│                  完善计划进度追踪（历史快照）                    │
 ├──────────────────────────────────────────────────────────────────────┤
 │                                                                       │
 │  Phase 1: Qlog 测试与验证          [████████░░] 85%  → 进行中        │
@@ -346,7 +351,7 @@ example/
 - 接入官方 QUIC Interop Runner
 - 与 17+ 主流 QUIC 实现互通
 
-### 4.2 现状分析（更新于 2026-03-19）
+### 4.2 现状分析
 
 根据 `test/interop/manifest.json` 最新声明：
 
@@ -422,7 +427,7 @@ example/
 
 补全当前缺失的高级 QUIC 功能，提升协议完整性。
 
-### 5.2 功能实现状态（更新于 2026-03-19）
+### 5.2 功能实现状态
 
 | 功能 | RFC | 优先级 | 状态 | 备注 |
 |------|-----|--------|------|------|
@@ -709,7 +714,7 @@ example/
 
 ### A. 相关文档
 
-- `test/interop/INTEROP_improvement_plan.md` - Interop 详细计划
+- `docs/internal/improvement_plan.md` - 跨领域改进计划（含 Interop 详细计划）
 - `CLAUDE.md` - 项目完整上下文
 - `TODO.md` - 已完成功能清单
 - `docs/internal/code_review_report.md` - 第一轮代码评审
@@ -732,7 +737,7 @@ example/
 本文档应随项目进展持续更新，标记任务完成状态。
 
 **更新记录**:
-- **v1.0** (2026-02-05): 初始版本，规划 6 个 Phase
-- **v2.0** (2026-03-19): 更新实际进展——四轮代码评审完成（84 问题修复），Phase 5 核心功能 80% 完成（Key Update、Version Negotiation、连接迁移、ECN 全部实现），Phase 4 Interop 从 7/14 提升至 13/14，测试文件从 140 增长至 156，修订剩余工作计划
-- **v2.1** (2026-03-20): Phase 1 qlog 端到端验证 85% 完成（覆盖率报告更新 + qvis 验证脚本）；Phase 2 Metrics 65% 完成（综合单元测试 42 用例、性能基准 15 项、Grafana 仪表板、Prometheus 导出器已有）
-- **v2.2** (2026-03-20): Phase 3 性能分析基础设施 100% 完成——火焰图生成脚本（Linux perf + macOS dtrace/sample）、CPU 热点分析（8 场景 33 基准测试）、内存分析集成（ASan/LSan/TSan CMake 选项 + 分析脚本）、内存池效率分析（PoolAlloter 6-13x vs malloc）、性能回归检测 CI 脚本、性能基准线文档
+- **v1.0**: 初始版本，规划 6 个 Phase
+- **v2.0**: 更新实际进展——四轮代码评审完成（84 问题修复），Phase 5 核心功能 80% 完成（Key Update、Version Negotiation、连接迁移、ECN 全部实现），Phase 4 Interop 从 7/14 提升至 13/14，测试文件从 140 增长至 156，修订剩余工作计划
+- **v2.1**: Phase 1 qlog 端到端验证 85% 完成（覆盖率报告更新 + qvis 验证脚本）；Phase 2 Metrics 65% 完成（综合单元测试 42 用例、性能基准 15 项、Grafana 仪表板、Prometheus 导出器已有）
+- **v2.2**: Phase 3 性能分析基础设施 100% 完成——火焰图生成脚本（Linux perf + macOS dtrace/sample）、CPU 热点分析（8 场景 33 基准测试）、内存分析集成（ASan/LSan/TSan CMake 选项 + 分析脚本）、内存池效率分析（PoolAlloter 6-13x vs malloc）、性能回归检测 CI 脚本、性能基准线文档

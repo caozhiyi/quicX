@@ -16,32 +16,32 @@
 
 | 字段名称 / 类型 | 默认值 | 全局意义与调优建议 |
 | :--- | :--- | :--- |
-| `thread_mode_`<br>`ThreadMode` | `kSingleThread` | **核心**：控制引擎的多线程架构。<br/>- `kSingleThread`：极致的单核低延迟，无锁切换开销。<br/>- `kMultiThread`：适合现代多核 CPU 的高并发服务器。底层的 UDP 包会被哈希分配到不同的 Worker 上。 |
+| `thread_mode_`<br>`ThreadMode` | `kMultiThread` | **核心**：控制引擎的多线程架构。<br/>- `kSingleThread`：极致的单核低延迟，无锁切换开销。<br/>- `kMultiThread`：适合现代多核 CPU 的高并发服务器。底层的 UDP 包会被哈希分配到不同的 Worker 上。 |
 | `worker_thread_num_`<br>`uint16_t` | `2` | 当模式为 `kMultiThread` 时，启动多少个 Worker 线程。建议设置为 `CPU核数 - 1`，留一个核给操作系统调度网络中断。 |
 | `log_level_`<br>`LogLevel` | `kNull` | 日志级别控制。为了极限性能默认静默。调试时可设为 `kInfo` 或 `kDebug`。 |
 | `quic_version_`<br>`uint32_t` | `kQuicVersion2` | 优先协商的协议版本。默认直接采用最新的 QUIC v2 (RFC 9369)。你可以手动降级为 v1。 |
 | `enable_0rtt_`<br>`bool` | `false` | **性能**：开启后，如果客户端以前和服务器连过且持有票据，它可以**在握手完成前**就把第一个 HTTP 请求发出去！省去 1RTT 延迟，极其适合无连接感知的 API (例如 REST 接口)。 |
-| `keylog_file_`<br>`std::string` | `""` | **极度重要调试选项**：开启后（传入文件路径）， `quicX` 会把对每个客户端加密用的 TLS 密钥倒出这个日志文件。可以结合 Wireshark 实现明文解析和流溯源。 |
+| `keylog_file_`<br>`std::string` | `""` | **极度重要调试选项**：开启后（传入文件路径）， `quicX` 会把对每个客户端加密用的 TLS 密钥导出到这个日志文件。可以结合 Wireshark 实现明文解析和流溯源。 |
 
 ### 2. `QlogConfig`：网络跟踪与诊断分析
-在 `QuicConfig` 中，`qlog_config_` 是一个极其重要的内核诊断开关。开启后，程序将按照 RFC 9001 规范将每一帧数据流转输出为结构化日志（兼容前端可视化工具 `qvis` 和 `Wireshark`）。
+在 `QuicConfig` 中，`qlog_config_` 是一个极其重要的内核诊断开关。开启后，程序将按照 RFC 9254 规范将每一帧数据流转输出为结构化日志（兼容前端可视化工具 `qvis` 和 `Wireshark`）。
 
 | 字段名称 / 类型 | 默认值 | 功能意义与调优建议 |
 | :--- | :--- | :--- |
-| `enabled` | `false` | 是否开启 qlog 搜集。由于此选项极度拉低极限吞吐量，建议仅在排查丢包或者拥塞控制算法行为时打开。 |
-| `output_dir` | `"./qlogs"` | 日志文件输出的根目录。 |
-| `format` | `kSequential` | 文件格式。默认使用 `kSequential`（单行 JSON）以支持流式写入和防止爆内存。 |
-| `batch_write` | `true` | 是否开启批处理异步写盘。生产环境下需要抓包**必须开启**以防磁盘 I/O 阻塞核心事件循环。 |
-| `flush_interval_ms` | `100` | 如果 `batch_write` 开启，则每隔多少毫秒将缓冲池里的日志强制落盘。 |
-| `max_file_size_mb` | `100` | 单个 Qlog 文件的上限大小。超过此阈值将自动拆分新文件（以防撑爆硬盘）。 |
-| `max_file_count` | `10` | 系统内保留的历史文件总数，超出则自动滚动删除。 |
+| `enabled_` | `false` | 是否开启 qlog 收集。由于此选项极度拉低极限吞吐量，建议仅在排查丢包或者拥塞控制算法行为时打开。 |
+| `output_dir_` | `"./qlogs"` | 日志文件输出的根目录。 |
+| `format_` | `kSequential` | 文件格式。默认使用 `kSequential`（单行 JSON）以支持流式写入和防止爆内存。 |
+| `batch_write_` | `true` | 是否开启批处理异步写盘。生产环境下**务必保持开启**，以防同步磁盘 I/O 阻塞核心事件循环。 |
+| `flush_interval_ms_` | `100` | 如果 `batch_write_` 开启，则每隔多少毫秒将缓冲池里的日志强制落盘。 |
+| `max_file_size_mb_` | `100` | 单个 Qlog 文件的上限大小。超过此阈值将自动拆分新文件（以防撑爆硬盘）。 |
+| `max_file_count_` | `10` | 系统内保留的历史文件总数，超出则自动滚动删除。 |
 
 ### 3. `QuicServerConfig` 扩展：防 DDoS 与 Retry 机制
 如果你实例化的是 Server (`IQuicServer` 或 `quicx::IServer`)，你可以通过 `QuicServerConfig` 配置 `quicX` 的防御护城河。基于 RFC 9000 规范，`Retry` 包旨在防御源地址伪造的 UDP 放大攻击。
 
 | 字段名称 | 默认值 | 功能意义与调优建议 |
 | :--- | :--- | :--- |
-| `retry_policy_` | `SELECTIVE` | **防御测略**：<br/>- `NEVER`: 永远不发送 Retry（性能最好，适合纯内网可信环境）。<br/>- `SELECTIVE`: (推荐) 当发现新连接频率陡增或某个 IP 请求频繁时，动态开启防伪造验证。<br/>- `ALWAYS`: 永远要求任何连入的客户端进行额外一轮握手验证（最安全但增加了 1-RTT 延迟）。 |
+| `retry_policy_` | `SELECTIVE` | **防御策略**：<br/>- `NEVER`: 永远不发送 Retry（性能最好，适合纯内网可信环境）。<br/>- `SELECTIVE`: (推荐) 当发现新连接频率陡增或某个 IP 请求频繁时，动态开启防伪造验证。<br/>- `ALWAYS`: 永远要求任何连入的客户端进行额外一轮握手验证（最安全但增加了 1-RTT 延迟）。 |
 | `retry_token_lifetime_` | `60` (秒) | 派发给客户端用于证明 "它真的是这个IP" 的令牌的有效时间。 |
 | `selective_retry_config_.rate_threshold_` | `1000` | (仅 `SELECTIVE` 模式生效) 全局新连接速率阈值 (连接/秒)。如果系统一秒内收到了极多新连接导致超过此速率，开始全局派发 Retry 进行清洗。 |
 | `selective_retry_config_.ip_rate_threshold_` | `100` | (仅 `SELECTIVE` 模式生效) 单一 IP 速率阈值 (连接/分钟)。超过此速率的 IP 会被记录，单独拉出来强制验证真实性。 |
@@ -89,8 +89,8 @@ HTTP/3 的这部分配置位于 `Http3Config`、`Http3ServerConfig` 与 `Http3Cl
 
 | 字段定义 | 默认值 | 作用解析 |
 | :--- | :--- | :--- |
-| `enable_push_` | `false` | 是否开启 HTTP/3 Server Push 机制（RFC 9114）。开启后服务端可通过 `Response::AppendPush` 向客户端塞入未请求的静态资源（如 `style.css`、大图片）。在带宽抢占期有可能会产生副作用，目前处于试验开放阶段。 |
-| `qpack_max_table_capacity` | `0` (动态表关闭) | 被存在于 `Http3Settings` 中。HTTP/3 头部压缩字典的大小。设置为 0 时系统使用纯静态字典（性能最好、内存完全无额外分配）；如果你传输的请求中带有海量长字符串自定义 Header（如各种 TraceID/Cookie），则应该把这个调大（以增加内存换取网络带宽节省）。 |
+| `enable_push_` | `false` | 是否开启 HTTP/3 Server Push 机制（RFC 9114）。开启后服务端可通过 `Response::AppendPush` 向客户端塞入未请求的静态资源（如 `style.css`、大图片）。高负载时可能引发队头资源竞争，目前处于试验开放阶段。 |
+| `qpack_max_table_capacity` | `4096` | 被存在于 `Http3Settings` 中。HTTP/3 头部压缩动态表的大小（RFC 9204）。设置为 0 时系统使用纯静态字典（性能最好、内存完全无额外分配）；默认 4096 是兼顾内存占用与压缩收益的保守值，如果你传输的请求中带有海量长字符串自定义 Header（如各种 TraceID/Cookie），则应该把这个调大（以增加内存换取网络带宽节省）。 |
 
 ### 3. Metrics 端点
 
@@ -98,10 +98,12 @@ QUIC 栈会搜集非常详尽的关键统计信息（丢包率、重传数、缓
 
 ```cpp
 quicx::Http3ServerConfig server_config;
-server_config.metrics_.prometheus_export = true;        // 是否使用 Prometheus 格式输出
-server_config.metrics_.prometheus_endpoint = "/metrics"; // 直接在你的 quicX 进程开启 /metrics 路由
+server_config.metrics_.enable_ = true;           // 全局开启指标搜集（默认已开启）
+server_config.metrics_.http_enable_ = true;      // 开启内置 HTTP/3 指标端点（默认关闭）
+server_config.metrics_.http_path_ = "/metrics";  // 指标端点路径（默认 /metrics）
+server_config.metrics_.http_port_ = 8828;        // 独立指标服务端口（默认 8828）
 ```
-通过上述配置后，你的运维监控系统即可直连 `/metrics` 来观测 `quicX` 的运行情况了。
+通过上述配置后，你的运维监控系统即可直连 `/metrics` 来观测 `quicX` 的运行情况了（指标以 Prometheus 格式输出，也可通过 `Metrics::ExportPrometheus()` 主动导出）。
 
 ---
 
@@ -116,7 +118,7 @@ server_config.metrics_.prometheus_endpoint = "/metrics"; // 直接在你的 quic
 | 常量名称 | 默认值 | 作用解析 |
 | :--- | :--- | :--- |
 | `kMaxDataFramePayload` | `1350` | HTTP/3 层 DATA 帧单次投递给传输层的最大切片大小。1350 是为了完美塞入标准 1500 MTU（减去 IP头/UDP头/QUIC头/AEAD Tag/H3 帧头）。 |
-| `kServerPushWaitTimeMs` | `30000` | 客户端等待服务端 Push 流到达的最长忍耐毫秒数（30秒）。 |
+| `kServerPushWaitTimeMs` | `10` | 客户端等待服务端 Push 流到达的最长忍耐毫秒数。 |
 | `kClientConnectionTimeoutMs` | `60000` | 客户端 HTTP/3 会话层的空闲超时时间（60秒）。 |
 
 ### 2. QUIC 层编译期配置 (`src/quic/config.h`)
@@ -135,7 +137,8 @@ server_config.metrics_.prometheus_endpoint = "/metrics"; // 直接在你的 quic
 | `kPacketPoolSize` | `256` | 数据包内存池**预分配**数量，推荐保持 2 的幂次。如果是在网关节点，可以加大到 1024/2048 来减少运行时的分配导致抖动。 |
 | `kPacketBufferSize` | `1500` | 内存池发包 Buffer 大小，严格贴合典型以太网 MTU。千万不要改大，会引发 IP 层报文分片导致性能暴跌。 |
 | **握手与协议** | |
-| `kHandshakeTimeoutMs` | `5000` (5秒) | TLS 握手最大容忍耗时，防慢速攻击。 |
-| `kDefaultTlsVerifyPeer` | `false` | **切记**：这里写死控制了默认不校验 TLS 对端证书的真实性（为了方便你本地直接起测试跑）。如果要推上生产环境，记得改 `true` 或者通过运行时覆写。 |
+| `kHandshakeTimeoutMs` | `30000` (30秒) | TLS 握手最大容忍耗时，防慢速攻击。在高丢包恶劣网络下 PTO 退避（0.75s/1.5s/3s/6s/12s...）需要远超 5 秒的重试才能穿透，因此对齐客户端的 30 秒超时。 |
+| **TLS 对端校验（运行时）** | |
+| `QuicClientConfig::verify_peer_` | `true` | **注意**：证书校验由运行时配置控制而非编译期常量。客户端默认**校验** TLS 对端证书；本地自签名测试时可设为 `false`，或配合 `ca_file_` 指定 CA。 |
 
 当你修改了上述头文件的配置后，请记得重新执行 `cmake --build` 重新编译底层库才会生效！

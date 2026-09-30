@@ -1,6 +1,6 @@
 # QUIC Interop Runner 深度解析与标准规范
 
-本文档面向开发者详细解析 [quic-interop-runner](https://github.com/marten-seemann/quic-interop-runner) 的工作原理和测试标准。它不涉及语言对比，而是关注测试框架本身的机制。
+本文档面向开发者详细解析 [quic-interop-runner](https://github.com/marten-seemann/quic-interop-runner) 的工作原理和测试标准。它不涉及 QUIC 实现之间的横向对比，而是关注测试框架本身的机制。
 
 ## 1. 架构原理 (Architecture)
 
@@ -31,7 +31,7 @@ Runner 不依赖不可靠的公网，而是使用 `ns-3` (或者简单的 Linux 
 *   **延迟 (RTT)**: 例如 20ms。
 *   **丢包率**: 例如 1%。
 *   **队列大小**: 模拟 Bufferbloat。
-*   **Reordering**:乱序发送。
+*   **Reordering**: 乱序发送。
 
 这使得它能测试复杂的拥塞控制算法和丢包恢复机制。
 

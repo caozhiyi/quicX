@@ -1,6 +1,6 @@
 # ns-3 仿真（sim）模式跑不通的原因分析
 
-> **2026-05-20 更新：sim 模式已经在本机跑通**（详情见文末「附录 A：2026-05-20 实测复盘与最终修复」）。
+> **更新：sim 模式已经在本机跑通**（详情见文末「附录 A：实测复盘与最终修复」）。
 > 本文上半部分是首轮诊断结果（保留作为历史参考），下半的附录 A 给出与首轮不同的真实根因和当前已落地的解决方案。
 >
 > 简短结论：
@@ -235,9 +235,9 @@ python3 interop_runner.py --matrix --implementations quicx,ngtcp2 --use-local-bi
 
 ---
 
-## 附录 A：2026-05-20 实测复盘与最终修复
+## 附录 A：实测复盘与最终修复
 
-第 1～6 节的诊断（写于更早时间）有一处对当前云开发机不再成立。本附录记录 2026-05-20 重新打开这个问题、逐项复测、最终把 sim 模式跑通的全过程，是当前仓库内 sim 模式的**最新可信状态**。
+第 1～6 节的诊断（写于更早时间）有一处对当前云开发机不再成立。本附录记录重新打开这个问题、逐项复测、最终把 sim 模式跑通的全过程，是当前仓库内 sim 模式的**最新可信状态**。
 
 ### A.1 路由表实测：193.167.0.0/16 不再被占用
 
@@ -338,7 +338,7 @@ server exited with code 0
 
 ### A.5 与首轮诊断（本文 1～6 节）的对照
 
-| 首轮断言 | 2026-05-20 实测 | 备注 |
+| 首轮断言 | 复测结果 | 备注 |
 |---|---|---|
 | 宿主占用 193.167/16 致命 | ❌ 现已无此专用路由，default 兜底无害 | 该断言对当前云机已不成立；其他云机视情况可能仍致命 |
 | sim 容器 eth0/eth1 名硬编码 | ✅ 仍硬编码，但 `interface_name` 已显式指定 | 修了 |
@@ -351,7 +351,7 @@ server exited with code 0
 
 ---
 
-## 附录 B：2026-05-20 矩阵复盘 + neqo 互通修复
+## 附录 B：矩阵复盘 + neqo 互通修复
 
 接附录 A 后，对 12 个对端跑了一次完整 `handshake + transfer` 矩阵（46 个测试），定位并修复了一个真实的协议解析 bug。
 
@@ -443,7 +443,7 @@ decode packet failed                                          ← 整个 datagra
 
    假设：quicx 的 hq-interop server 在 stream `Close()` 后没把 STREAM 帧的 FIN bit / 整连接的 CONNECTION_CLOSE 帧送达；或者 ACK 路径在大批量数据末尾出了顺序问题，导致 aioquic 一直认为有几个 packet 在飞。
 
-   > **2026-05-21 更新**：根因找到并修复（详见附录 C "Selective ACK byte-range tracking"）。修完后 server 端 5MB 文件正确发完且 FIN+CC 都到达 aioquic client（client qlog 显示 stream 0/4 都收到了 FIN，最大 offset 与文件大小完全一致）。docker compose run timeout 仍存在，但属于 aioquic application/容器层退出问题（client connection 已 TERMINATED 但 Python 进程未 exit），**不再是 quicx 协议层 bug**，留作 v0.2.0 issue。
+   > **更新**：根因找到并修复（详见附录 C "Selective ACK byte-range tracking"）。修完后 server 端 5MB 文件正确发完且 FIN+CC 都到达 aioquic client（client qlog 显示 stream 0/4 都收到了 FIN，最大 offset 与文件大小完全一致）。docker compose run timeout 仍存在，但属于 aioquic application/容器层退出问题（client connection 已 TERMINATED 但 Python 进程未 exit），**不再是 quicx 协议层 bug**，留作 v0.2.0 issue。
 
 2. **`quicx ↔ quinn` 双向 handshake/transfer**：connection 建立 + Send request 后 quinn 主动 CLOSE，error_code=9 (`STREAM_LIMIT_ERROR`)。怀疑 hq-interop 客户端选用的 stream id 与 quinn 期望不一致。
 
@@ -465,7 +465,7 @@ decode packet failed                                          ← 整个 datagra
 
 ---
 
-## 附录 C：2026-05-21 修复 — Selective ACK byte-range tracking
+## 附录 C：修复 — Selective ACK byte-range tracking
 
 > 解决 §B.3.1 `quicx-server ↔ aioquic-client transfer` 的核心 quicx 侧根因。
 

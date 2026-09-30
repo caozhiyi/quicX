@@ -1,9 +1,10 @@
 # quicX 性能基准线文档
 
-> **日期**: 2026-03-22
-> **平台**: macOS ARM64 (Apple Silicon M3 Pro, 14 cores)
-> **编译**: CMake RelWithDebInfo, Clang, -O2 -g
-> **框架**: Google Benchmark v1.8.3
+**平台**: macOS ARM64 (Apple Silicon M3 Pro, 14 cores)
+
+**编译**: CMake RelWithDebInfo, Clang, -O2 -g
+
+**框架**: Google Benchmark v1.8.3
 
 ---
 
@@ -154,7 +155,7 @@
 
 ## 4. 性能阈值定义
 
-以下阈值用于 CI/CD 性能回归检测（`scripts/ci/perf_regression.sh`）：
+以下阈值可作为性能回归检测的参考标准（对比两次运行的 JSON 报告偏差）：
 
 | 指标类别 | 阈值 | 说明 |
 |---------|------|------|
@@ -194,14 +195,17 @@ cmake --build build -j
 # 输出 JSON 报告
 ./build/bin/perf/cpu_hotspot_test --benchmark_format=json --benchmark_out=perf_results/cpu_hotspot.json
 
-# 保存为性能基准线
-./scripts/ci/perf_regression.sh --save-baseline
+# 保存 JSON 报告作为性能基准线（下次运行结果与此对比）
+./build/bin/perf/cpu_hotspot_test --benchmark_format=json --benchmark_out=baseline/cpu_hotspot.json
 
-# 生成火焰图
-./scripts/perf/generate_flamegraph.sh -d 30 ./build/bin/perf/cpu_hotspot_test
+# 采样剖析 30 秒并生成火焰图（collapsed 栈可直接喂给 flamegraph.pl）
+./build/bin/perf/profile_decode_packets --seconds 30 --out /tmp/decode_stacks.raw
+python3 test/perf/tools/resolve_stacks.py /tmp/decode_stacks.raw
 
-# 运行 ASan 内存分析
-./scripts/perf/run_memory_analysis.sh -m asan ./build/bin/quicx_utest
+# ASan 内存分析（用 -DSANITIZER=asan 单独构建后运行单测）
+cmake -B build-asan -DSANITIZER=asan -DCMAKE_BUILD_TYPE=RelWithDebInfo
+cmake --build build-asan -j
+./build-asan/bin/quicx_utest
 ```
 
 ---
@@ -210,8 +214,7 @@ cmake --build build -j
 
 | 选项 | 默认值 | 说明 |
 |------|--------|------|
-| `ENABLE_PERF_TESTS` | ON | 构建性能分析测试 |
-| `ENABLE_PROFILING` | OFF | 启用分析友好编译标志（-g -fno-omit-frame-pointer） |
-| `ENABLE_ASAN` | OFF | 启用 AddressSanitizer |
-| `ENABLE_LSAN` | OFF | 启用 LeakSanitizer |
-| `ENABLE_TSAN` | OFF | 启用 ThreadSanitizer |
+| `ENABLE_PERF_TESTS` | ON | 构建性能分析测试（test/perf，含采样 profiler 工具） |
+| `SANITIZER` | (空) | 取值 `asan` / `ubsan` / `tsan`，启用对应 sanitizer 构建 |
+
+> 注：perf 目标自带分析友好编译标志（`-O2 -g -fno-omit-frame-pointer`），无需单独的分析开关。

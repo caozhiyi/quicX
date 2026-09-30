@@ -7,7 +7,7 @@ quicX 的执行骨架是 **一个 master + N 个 worker**，每个 worker 内部
 - 既然 worker 都是干活的，为什么**不用线程池**而要把每条连接绑死在一个 worker 上；
 - 单线程 + 多线程**两种部署模式**共用同一套类层次时，哪些地方用了 `*_with_thread.h`、哪些地方退化为同线程。
 
-阅读时建议同时打开 `src/quic/quicx/master.h` / `master_with_thread.h` / `worker.h` / `worker_with_thread.h` 五个头文件——它们一共 < 350 行，是整张图最值得花时间的部分。
+阅读时建议同时打开 `src/quic/quicx/master.h` / `master_with_thread.h` / `worker.h` / `worker_with_thread.h` 四个头文件——它们一共 < 350 行，是整张图最值得花时间的部分。
 
 ---
 
@@ -89,6 +89,7 @@ protected:
     std::shared_ptr<IReceiver> receiver_;
     std::unordered_map<uint64_t, std::string> cid_worker_map_;       // CID hash → worker
     std::unordered_map<std::string, std::shared_ptr<IWorker>> worker_map_;
+    mutable std::mutex cid_map_mutex_;                               // 保护 cid_worker_map_
 };
 ```
 
@@ -97,30 +98,42 @@ protected:
 | 职责 | 实现位置 | 关键点 |
 | :--- | :--- | :--- |
 | 持有 UDP socket、批量收包 | `IReceiver`（封装 `recvmmsg`/`recvfrom`） | 由 `EventLoop::RegisterFd` 挂在 master 自己的 loop 上 |
-| 路由（CID → worker） | `Master::OnPacket`（`master.cpp:73-99`） | 哈希查表→分发；查不到时 `rand()` 选一个 worker（仅 Initial 包，见 §2.3） |
-| 维护路由表 | `cid_worker_map_` | worker 在收到 NEW_CONNECTION_ID / RETIRE_CONNECTION_ID 时**反向通知** master 更新表 |
+| 路由（CID → worker） | `Master::OnPacket`（`master.cpp:94-139`） | 哈希查表→分发；查不到时按包 DCID 哈希确定性选一个 worker（仅 Initial 包，见 §2.2） |
+| 维护路由表 | `cid_worker_map_`（`cid_map_mutex_` 保护） | worker 在收到 NEW_CONNECTION_ID / RETIRE_CONNECTION_ID 时**反向通知** master 更新表 |
 
-### 2.2 路由：`Master::OnPacket` 的 7 行核心逻辑
+### 2.2 路由：`Master::OnPacket` 的核心逻辑
 
 ```cpp
 void Master::OnPacket(std::shared_ptr<NetPacket>& pkt) {
     // ...
     PacketParseResult packet_info;
     if (MsgParser::ParsePacket(pkt, packet_info)) {
-        auto iter = cid_worker_map_.find(packet_info.cid_.Hash());
-        if (iter != cid_worker_map_.end()) {
-            worker_map_[iter->second]->HandlePacket(packet_info);   // 已知连接：精确路由
-        } else {
-            // random pick: 仅命中"陌生 CID"分支（典型为 server 收到 Initial）
-            auto it = worker_map_.begin();
-            std::advance(it, rand() % worker_map_.size());
-            it->second->HandlePacket(packet_info);
+        std::shared_ptr<IWorker> worker;
+        {
+            std::lock_guard<std::mutex> lock(cid_map_mutex_);
+            auto iter = cid_worker_map_.find(packet_info.cid_.Hash());
+            if (iter != cid_worker_map_.end()) {
+                auto w = worker_map_.find(iter->second);
+                if (w != worker_map_.end()) worker = w->second;   // 已知连接：精确路由
+            }
         }
+
+        if (!worker) {
+            // deterministic pick：按包 DCID 哈希取模选 worker（典型为 server 收到 Initial）
+            size_t idx = packet_info.cid_.Hash() % worker_map_.size();
+            auto iter = worker_map_.begin();
+            std::advance(iter, idx);
+            worker = iter->second;
+        }
+        worker->HandlePacket(packet_info);
     }
 }
 ```
 
-注意 `MsgParser::ParsePacket` 不解密、不解 frame，只剥短/长包头取出 DCID。**完整解密在 worker 内做**——即 master 永不接触加密 keys。这是把 keys 全部留在 worker 的关键约束，§5 会再讨论它的影响。
+注意两点：
+
+- `MsgParser::ParsePacket` 不解密、不解 frame，只剥短/长包头取出 DCID。**完整解密在 worker 内做**——即 master 永不接触加密 keys。这是把 keys 全部留在 worker 的关键约束，§5 会再讨论它的影响。
+- 陌生 CID 分支**不是随机挑选**，而是按包 DCID 哈希确定性路由：同一连接的 Initial 重传（复用同一 DCID）必须落在同一个 worker。曾经的 `rand()` 实现在多 worker 下让重传 Initial 落到不同 worker、创建出重复 `ServerConnection`，直接破坏握手。
 
 ### 2.3 路由表更新：worker → master 的反向通道
 
@@ -151,7 +164,7 @@ void MasterWithThread::DoUpdateConnectionID() {
 }
 ```
 
-这意味着 `cid_worker_map_` **从不被多线程并发读写**——只有 master 线程读它（`OnPacket`）也只有 master 线程写它（`DoUpdateConnectionID`）。worker 侧完全不直接接触这张表，只能通过 `connection_op_queue_` 间接更新。
+这意味着多线程模式下 `cid_worker_map_` 的所有更新都被收敛到 master 线程执行。在此之上，`Master` 还用 `cid_map_mutex_` 把每次读写显式加锁（`master.h:50-55`）——这是一道硬保险：一旦有调用方绕过队列直接跨线程调用 `Master::AddConnectionID`，无锁的 unordered_map 并发访问在多 worker 压力下会导致错路由与随机握手失败。worker 侧完全不直接接触这张表，只能通过 `connection_op_queue_` 间接更新。
 
 ---
 
@@ -174,7 +187,7 @@ void MasterWithThread::DoUpdateConnectionID() {
 
 ### 3.2 worker 的核心成员
 
-`worker.h:62-85`：
+`worker.h:83-116`：
 
 ```cpp
 bool do_send_;
@@ -203,7 +216,7 @@ RegisterSocketCallback register_socket_cb_;
 
 ### 3.3 worker 的主循环（多线程模式）
 
-`worker_with_thread.cpp:38-56`：
+`worker_with_thread.cpp:40-58`：
 
 ```cpp
 void WorkerWithThread::Run() {
@@ -227,23 +240,37 @@ void WorkerWithThread::Run() {
 2. `epoll_wait` 至下一定时器 deadline；
 3. dispatch IO 回调 + drain `PostTask` 队列。
 
-`ProcessRecv` 只是一个 `TryPop`（**单次**，非循环 drain）：
+`ProcessRecv` 按**预算批量 drain**（预算 = `kMaxRecvBatch`，即 64 个包）：
 
 ```cpp
-// worker_with_thread.cpp:71
+// worker_with_thread.cpp:73
 void WorkerWithThread::ProcessRecv() {
+    // ...
+    const uint32_t kDrainBudget = kMaxRecvBatch;
     PacketParseResult packet_info;
-    if (packet_queue_.TryPop(packet_info)) {
+    for (uint32_t i = 0; i < kDrainBudget; ++i) {
+        if (!packet_queue_.TryPop(packet_info)) {
+            return;                     // 队列已空：正常返回
+        }
         worker_ptr_->HandlePacket(packet_info);
+    }
+    // 预算用尽但队列非空：主动 Wakeup，下一轮 loop 继续 drain
+    if (!packet_queue_.Empty()) {
+        if (auto loop = event_loop_.lock()) loop->Wakeup();
     }
 }
 ```
 
-为什么不循环 drain？因为如果连续来 1 万个包就会饿死定时器。每轮 loop 只取一个，下一轮再取——`HandlePacket` 进队时调了 `loop->Wakeup()`，所以队列不空时 epoll_wait 几乎立即返回，吞吐没有损失。
+为什么是"预算 + 再唤醒"，而不是两个极端？因为两个极端都被实践否决过：
+
+- **单次 TryPop**（旧实现）会塌缩吞吐：`UdpReceiver::OnRead()` 一批最多收 64 个包并逐个 `Wakeup()`，但 kqueue 的 wakeup pipe 会被一次 `read()` 全部喝掉——64 次生产者唤醒塌缩成 1 次消费者唤醒。实测服务端每 ~1.3s 才处理 64 个包，客户端 Initial 在队列里排 ~9s 后 PTO 三次放弃（已修复）；
+- **无限 drain** 会饿死定时器：连续来 1 万个包时，定时器与 `Worker::Process()` 永远等不到执行机会。
+
+预算 64 恰好对齐收包批量；预算用尽且队列不空时再主动 `Wakeup()`，在"及时清空队列"与"定时器公平"之间取得平衡。
 
 ### 3.4 入口排队：`packet_queue_`
 
-`worker_with_thread.h:45`：
+`worker_with_thread.h:46`：
 
 ```cpp
 common::ThreadSafeBlockQueue<PacketParseResult> packet_queue_;
@@ -255,7 +282,7 @@ common::ThreadSafeBlockQueue<PacketParseResult> packet_queue_;
 - 但即便在 SPSC 下，使用 mutex 的吞吐也已经 > 10⁶ 包/秒，远高于真实 QUIC 包率（万级到十万级）；
 - 节约的复杂度（不需要写 lock-free 代码、不需要处理 ABA）远比省下的几百 ns 重要。
 
-文档的初衷是"学习参考实现"——当你在性能场景下需要把这里换成 SPSC ring buffer 时，**接口边界是清晰的**：只需要替换 `packet_queue_` 的实现类型即可，`HandlePacket` / `ProcessRecv` 调用点都不变。
+当你在生产性能场景下需要把这里换成 SPSC ring buffer 时，**接口边界是清晰的**：只需要替换 `packet_queue_` 的实现类型即可，`HandlePacket` / `ProcessRecv` 调用点都不变。
 
 ---
 
@@ -279,7 +306,7 @@ master 与 worker 共享同一个 EventLoop。worker 通过 `event_loop_->AddFix
 master 与每个 worker 各自跑一个 `Thread + EventLoop`。`Master::OnPacket` 解出包后调用的是 `WorkerWithThread::HandlePacket`：
 
 ```cpp
-// worker_with_thread.cpp:31
+// worker_with_thread.cpp:33
 void WorkerWithThread::HandlePacket(PacketParseResult& packet_info) {
     packet_queue_.Emplace(std::move(packet_info));   // 跨线程入队
     if (auto loop = event_loop_.lock()) loop->Wakeup(); // 唤醒目标 worker
@@ -292,7 +319,7 @@ void WorkerWithThread::HandlePacket(PacketParseResult& packet_info) {
 
 ```cpp
 loop->AddFixedProcess(shared_from_this(),
-                      std::bind(&MasterWithThread::Process, this));
+                      [this]() { Process(); });
 ```
 
 ### 4.3 选择哪种模式
@@ -396,11 +423,10 @@ quicX 当前用的是 `cid.Hash() → worker_id` 直接哈希到字符串，没�
 
 ---
 
-## 7. 不变量
-
+## 7. 关键不变量
 写代码 / 读代码 / 改代码时永远成立的事实：
 
-1. **`cid_worker_map_` 只在 master 线程读写**——worker 必须通过 `connection_op_queue_` 间接更新它，绝不能直接持有 `Master*` 指针调 `AddConnectionID`。
+1. **`cid_worker_map_` 由 `cid_map_mutex_` 保护**——多线程模式下 worker 必须通过 `connection_op_queue_` 间接更新它（更新被收敛到 master 线程执行）；绝不能在不持锁的前提下直接持有 `Master*` 指针调 `AddConnectionID`。
 2. **每条连接终身绑定一个 worker**——CID 路由表只追加 / 删除条目，不"迁移"条目（连接迁移在 QUIC 协议层是地址迁移，不是 worker 迁移）。
 3. **worker 内无锁** —— `Worker::conn_map_` / `BaseConnection` / `Stream` 三层都假设单线程访问。任何想从 worker 外触达连接状态的代码必须走 `EventLoop::PostTask`。
 4. **EventLoop 的所有权属于宿主**——`QuicClient` / `QuicServer` 创建并独占 `shared_ptr<IEventLoop>`，master/worker/connection/stream 全用 `weak_ptr` 引用。这避免循环引用。

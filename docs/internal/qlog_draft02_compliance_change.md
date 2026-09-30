@@ -1,6 +1,6 @@
 # Qlog Output Refactor — draft-02 / qvis Compliance
 
-**Date**: 2026-05-23  
+
 **Scope**: `src/common/qlog/**`  
 **Goal**: Make `quicX` produce qlog files that are upload-and-parse compliant with [qvis](https://qvis.quictools.info), conforming to `draft-ietf-quic-qlog-main-schema-02` (a.k.a. *draft-02*) over **JSON-Text-Sequences** (RFC 7464).
 

@@ -1,5 +1,11 @@
 # Qlog 事件覆盖报告
 
+  
+**Qlog 版本**：draft-02 (draft-ietf-quic-qlog-main-schema-02)  
+**格式**：JSON-SEQ（RFC 7464；记录分隔符 `0x1E`，换行结束）  
+**文件扩展名**：`.sqlog`  
+**兼容性**：可直接上传至 [qvis](https://qvis.quictools.info)
+
 ## 概览
 
 | 类别 | 规范定义事件数 | 已实现 | 覆盖率 |
@@ -32,7 +38,7 @@
 | `quic:packet_sent` | ✅ | `QLOG_PACKET_SENT` | `send_control.cpp` | 1 | 携带 packet_number、type、size、frames |
 | `quic:packet_received` | ✅ | `QLOG_PACKET_RECEIVED` | `connection_base.cpp` | 1 | 携带 packet_number、type、size、frames |
 | `quic:packets_acked` | ✅ | `QLOG_EVENT`（通用） | `send_control.cpp` | 1 | 携带 ack_ranges、ack_delay |
-| `quic:packet_dropped` | ✅ | `QLOG_PACKET_DROPPED` | `connection_base.cpp` | 5 | 关闭状态下解密失败、密钥不可用、draining 状态、版本协商降级、解密失败 |
+| `quic:packet_dropped` | ✅ | `QLOG_PACKET_DROPPED` | `connection_base.cpp`、`version_negotiator.cpp` | 7 | `closing_state_decrypt_failure`、`key_unavailable`×2、`draining_state`、`unsupported_version`、`decryption_failed`、`version_negotiation_downgrade` |
 | `quic:stream_state_updated` | ✅ | `QLOG_STREAM_STATE_UPDATED` | `connection_stream_manager.cpp` | 1 | 流状态变更 |
 | `quic:packet_buffered` | ⬜ N/A | `QLOG_PACKET_BUFFERED` | — | 0 | 宏已定义；当前架构无真正的包缓冲场景 |
 
@@ -49,8 +55,8 @@
 
 | 事件 | 状态 | 宏 | 源文件 | 调用次数 | 备注 |
 |------|------|----|--------|----------|------|
-| `security:key_updated` | ✅ | `QLOG_KEY_UPDATED` | `connection_crypto.cpp` | 6 | 安装读 / 写密钥（initial / handshake / 1-RTT / key_update） |
-| `security:key_discarded` | ✅ | `QLOG_KEY_DISCARDED` | `connection_server.cpp`、`connection_client.cpp` | 4 | handshake_done 后丢弃 initial 与 handshake 密钥 |
+| `security:key_updated` | ✅ | `QLOG_KEY_UPDATED` | `connection_crypto.cpp` | 9 | `SetReadSecret`(1)、`SetWriteSecret`(1)、v2 版本协商重装 Initial secrets(2)、`RekeyInitialForVersion`(2)、发起 key update(1)、对端 key update 应答(2) |
+| `security:key_discarded` | ✅ | `QLOG_KEY_DISCARDED` | `connection_base.cpp` | 2 | handshake_done 后丢弃 initial 与 handshake 密钥 |
 
 ### ✅ HTTP/3 事件（2/2）—— 100%
 
@@ -83,10 +89,10 @@
 | 宏 | 调用次数 | 文件 |
 |----|----------|------|
 | `QLOG_CONGESTION_STATE_UPDATED` | 22 | reno(3)、cubic(6)、bbr_v1(4)、bbr_v2(4)、bbr_v3(5) |
-| `QLOG_KEY_UPDATED` | 6 | `connection_crypto.cpp` |
-| `QLOG_PACKET_DROPPED` | 5 | `connection_base.cpp` |
+| `QLOG_KEY_UPDATED` | 9 | `connection_crypto.cpp` |
+| `QLOG_PACKET_DROPPED` | 7 | `connection_base.cpp`(6)、`version_negotiator.cpp`(1) |
 | `QLOG_CONNECTION_ID_UPDATED` | 4 | `connection_frame_processor.cpp`(2)、`connection_id_coordinator.cpp`(2) |
-| `QLOG_KEY_DISCARDED` | 4 | `connection_server.cpp`(2)、`connection_client.cpp`(2) |
+| `QLOG_KEY_DISCARDED` | 2 | `connection_base.cpp` |
 | `QLOG_EVENT`（通用） | 4 | `send_control.cpp`(1)、`connection_base.cpp`(3) |
 | `QLOG_HTTP3_FRAME_CREATED` | 3 | `req_resp_base_stream.cpp` |
 | `QLOG_CONNECTION_STARTED` | 2 | `connection_client.cpp`、`connection_server.cpp` |
@@ -100,7 +106,7 @@
 | `QLOG_HTTP3_FRAME_PARSED` | 1 | `frame_decoder.cpp` |
 | `QLOG_SERVER_LISTENING` | 1 | `quic_server.cpp` |
 | `QLOG_PACKET_BUFFERED` | 0 | —（N/A：暂无适用场景） |
-| **合计** | **57** | **13 个文件** |
+| **合计** | **63** | **13 个文件** |
 
 ## 性能影响
 
@@ -177,7 +183,8 @@ QlogManager（单例）
 
 ## 变更记录
 
-| 日期 | 变更 | 影响 |
+| 轮次 | 变更 | 影响 |
 |------|------|------|
-| 2026-03-19 | 首次发布 | 12/19 事件（63%） |
-| 2026-03-20 | **重大更新**：覆盖率从 63% 修正为 94.7%（18/19） | 新增：connection_id_updated、server_listening、stream_state_updated、packet_dropped、key_updated、key_discarded、marked_for_retransmit、http3:frame_created、http3:frame_parsed。`src/` 下宏调用合计：13 个文件、57 处 |
+| 1 | 首次发布 | 12/19 事件（63%） |
+| 2 | **重大更新**：覆盖率从 63% 修正为 94.7%（18/19） | 新增：connection_id_updated、server_listening、stream_state_updated、packet_dropped、key_updated、key_discarded、marked_for_retransmit、http3:frame_created、http3:frame_parsed。`src/` 下宏调用合计：13 个文件、57 处 |
+| 3 | 数据审计：宏调用汇总表与逐事件明细表、源码计数对账 | KEY_UPDATED 6→9、PACKET_DROPPED 5→7、KEY_DISCARDED 4→2（文件归属一并修正）；合计按 grep 计数修正为 63 |

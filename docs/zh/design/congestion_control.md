@@ -2,7 +2,7 @@
 
 本文档梳理 quicX 中拥塞控制（congestion control，下称 CC）模块的总体设计：**一个 `ICongestionControl` 接口 + 一个 `IPacer` 接口 + 5 个实现（Reno、Cubic、BBR v1/v2/v3）**，以及它们与 `SendControl` 的耦合点。本文尝试回答以下问题：
 
-- "为什么 CC 模块和 Loss Recovery 模块要拆开"——它们同处 `connection/controler/`，但分别活在不同接口背后；
+- "为什么 CC 模块和 Loss Recovery 模块要拆开"——它们同处 `connection/controller/`，但分别活在不同接口背后；
 - 5 种算法的**共同骨架** 和**差异点**，在 cc_simulator 跑出诡异曲线时知道去看哪个文件；
 - 区分**判丢**（loss detection，谁判出来）与**响应**（cwnd 怎么收缩），这两件事在文档里常被混为一谈，源码里它们由两个完全不同的类负责。
 
@@ -15,7 +15,7 @@
 ```text
 ═══════════════════════════════════════ 调用方 ═══════════════════════════════════════
 
-  SendControl                                         src/quic/connection/controler/send_control.cpp
+  SendControl                                         src/quic/connection/controller/send_control.cpp
         │
         ├── 工厂构造（构造函数中读 quic/config.h 的 kDefaultCongestionControl 字符串常量）
         │     字符串("reno"/"cubic"/"bbrv1"/"bbrv2"/"bbrv3") 映射到 CongestionControlType 枚举
@@ -50,7 +50,7 @@
   │     · 慢启动：cwnd += bytes_acked
   │     · 拥塞避免：cwnd += MSS²/cwnd
   │     · 丢包：cwnd *= cfg.beta（默认 0.5）
-  │     · 教学样本，cc_simulator 的对照基准
+  │     · 精简基线，cc_simulator 的对照基准
   │
   ├── cubic_congestion_control.{h,cpp}     Cubic (RFC 9438 + HyStart++ RFC 9406)
   │     · ~380 行
@@ -235,13 +235,13 @@ double w_cubic_pkts = kCubicC * t_k * t_k * t_k + w_max_pkts_;
 
 ### 4.5 ECN 路径
 
-Cubic 的 ECN-CE 路径（`OnPacketAcked` 的 `if (ev.ecn_ce)` 分支）做的事比 Reno 更多：直接乘 `kBetaCubic = 0.7` 收 cwnd + 把 W_max 按 Fast Convergence 处理。这是教学子集的工程取舍——RFC 9438 本身没规定 ECN 行为，CUBIC + ECN 的标准在 RFC 8311 / 9000 §13.4 有更精细的语义。
+Cubic 的 ECN-CE 路径（`OnPacketAcked` 的 `if (ev.ecn_ce)` 分支）做的事比 Reno 更多：直接乘 `kBetaCubic = 0.7` 收 cwnd + 把 W_max 按 Fast Convergence 处理。这是精简实现的工程取舍——RFC 9438 本身没规定 ECN 行为，CUBIC + ECN 的标准在 RFC 8311 / 9000 §13.4 有更精细的语义。
 
 ---
 
 ## 5. BBR：基于"瓶颈带宽 × min-RTT"建模，而不是丢包
 
-BBR 系列在 quicX 中是**教学子集**，不是 draft-cardwell-iccrg-bbr-congestion-control 的完整 transcript。下面以 v1 为基线，再点出 v2 / v3 的差异。
+BBR 系列在 quicX 中是**精简实现**，不是 draft-cardwell-iccrg-bbr-congestion-control 的完整 transcript。下面以 v1 为基线，再点出 v2 / v3 的差异。
 
 ### 5.1 v1：四态机（[BBR-Queue 2016] §3）
 
@@ -404,7 +404,7 @@ v3 已经接近"丢包 + 带宽建模"的混合范式，但仍然保留 BBR 的 
 
 ---
 
-## 11. 关联 RFC / 论文
+## 11. 关联 RFC
 
 - **RFC 9002 §7** *Pluggable Congestion Control*：QUIC 允许任意 CC，事件接口的语义来源。  
   https://datatracker.ietf.org/doc/html/rfc9002#section-7

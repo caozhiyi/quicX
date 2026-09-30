@@ -1,10 +1,10 @@
 # QuicX 功能支持矩阵
 
-> 适用于 **v1.0.x**。本文档是"**QuicX 实际支持哪些能力、哪些是部分支持、哪些刻意不实现**"的权威依据，每个 minor 版本发布时同步更新。
->
-> 配套阅读：[`api_stability.md`](./api_stability.md)（API 稳定性策略）、
-> [`reports/interop_status.md`](../reports/interop_status.md)（互操作性测试结果）、
-> [`../../../CHANGELOG.md`](../../../CHANGELOG.md)（变更日志）。
+适用于 **v1.0.x**。本文档是"**QuicX 实际支持哪些能力、哪些是部分支持、哪些刻意不实现**"的权威依据，每个 minor 版本发布时同步更新。
+
+配套阅读：[`api_stability.md`](./api_stability.md)（API 稳定性策略）、
+[`reports/interop_status.md`](../reports/interop_status.md)（互操作性测试结果）、
+[`../../../CHANGELOG.md`](../../../CHANGELOG.md)（变更日志）。
 
 如果你正在评估"能不能在生产环境用 QuicX"，请直接跳到本文末尾的
 [**已知限制汇总**](#已知限制汇总采纳前请通读) —— 那里列出了你需要知道的所有"红线"。
@@ -94,8 +94,8 @@
 | 客户端主动迁移 | ✅ | |
 | NAT 重绑定检测 | ✅ | |
 | 路径验证（`PATH_CHALLENGE` / `PATH_RESPONSE`） | ✅ | |
-| **迁移过程中的 CID 轮换** | ✅ | RFC 9000 §9.5：迁移成功后自动轮换到新的 remote CID，并触发对端 `RETIRE_CONNECTION_ID`；本端按 §19.16 单 seq 语义退役 + §19.15 批量退役 (retire_prior_to)，退役后自动补充本地池。verified by interop self-test (connectionmigration / rebind-port / rebind-addr 全 PASS) |
-| 服务端发起的 `NEW_CONNECTION_ID` 轮换 | ✅ | 握手期间下发，迁移后/退役后按 `active_connection_id_limit` 自动补充 |
+| **迁移过程中的 CID 轮换** | ✅ | RFC 9000 §9.5：迁移成功后自动轮换到新的 remote CID，并触发对端 `RETIRE_CONNECTION_ID`；本端按 §19.16 单 seq 语义退役 + §19.15 批量退役 (retire_prior_to)，退役后自动补充本地池。Verified by interop self-test（connectionmigration / rebind-port / rebind-addr 全 PASS） |
+| 服务端发起的 `NEW_CONNECTION_ID` 轮换 | ✅ | 握手期间下发；迁移 / 退役后自动补充，保持 `active_connection_id_limit` 始终饱和 |
 | `RETIRE_CONNECTION_ID` 处理 | ✅ | |
 
 ### 其他传输层能力
@@ -188,7 +188,7 @@
 |---|:---:|---|
 | 内置 Metrics 注册表 | ✅ | UDP / QUIC / HTTP/3 / 拥塞控制 / TLS / 迁移 / Retry / 内存 |
 | Metrics HTTP 端点 | ✅ | 可选，通过 `Http3ServerConfig::metrics_` 配置 |
-| QLog（RFC 9001 §A） | ✅ | 编译时加 `-DQUICX_ENABLE_QLOG=ON` |
+| QLog（RFC 9254） | ✅ | 编译时加 `-DQUICX_ENABLE_QLOG=ON` |
 | 分级日志 | ✅ | |
 | OpenTelemetry 导出 | ❌ | 应用可基于 metrics 注册表自行桥接 |
 
@@ -196,7 +196,7 @@
 
 ## 平台
 
-> 这里的"平台支持"指**构建系统支持的目标**。Linux/macOS/Windows 三平台的常态 CI 列在 v0.2.0 路线图；当前是"开发者验证过，但没有持续覆盖"。
+> 这里的"平台支持"指**构建系统支持的目标**。Linux/macOS/Windows 三平台的常态 CI 尚未落地（列入后续版本计划）；当前是"开发者验证过，但没有持续覆盖"。
 
 | 平台 | 构建 | 运行 | 备注 |
 |---|:---:|:---:|---|
@@ -248,24 +248,25 @@
 互操作矩阵每次发布时重新生成，详细报告见
 [`reports/interop_status.md`](../reports/interop_status.md)。
 
-**v0.1.0 概要**：
+**v1.0.0 概要**（24 场景 × 17 对端，通过率 90.60%）：
 
-- **`handshake`** 场景：与主流大多数对端通过（quinn、msquic、ngtcp2、neqo、lsquic、picoquic、quic-go、mvfst、aioquic）。
+- **`handshake` / `transfer` 场景**：与主流对端广泛通过（quinn、msquic、ngtcp2、neqo、lsquic、picoquic、quic-go、mvfst、aioquic 等）。
 - **`transfer`** 场景：与多数对端通过；少量对端的已知问题记录在 [`../../internal/quic_interop_sim_issues.md`](../../internal/quic_interop_sim_issues.md)。
-- 进阶场景（`multiconnect` / `resumption` / `keyupdate` / `chacha20` / `retry` / `zerortt` / `http3`）部分覆盖；逐对结果见互操作状态文档。
+- 进阶场景（`multiconnect` / `resumption` / `keyupdate` / `chacha20` / `retry` / `zerortt` / `http3` / `versionnegotiation` / `ecn` / `connectionmigration` 等，共 24 个）部分覆盖；逐对结果见互操作状态文档。
 
 ---
 
 ## 已知限制汇总（采纳前请通读）
 
 1. **不支持 Multipath / DATAGRAM / ACK Frequency** —— 需要这些能力的应用请关注后续版本。
-2. **公有 API 自 `1.0.0` 起冻结、遵循 SemVer；ABI 稳定不作承诺** —— 详见 [`api_stability.md`](./api_stability.md)。
-3. **安全响应 SLA 仅"尽力而为"** —— 具体口径见 [`../../../SECURITY.md`](../../../SECURITY.md)。
-4. **mTLS / Trailers / 连接池** 有可工作的代码，但端到端验证有限。
+2. **跨平台 CI 缺失** —— Windows / macOS 目前依赖开发者本地验证，缺少持续集成保障。
+3. **ABI 不稳定** —— 公有 C++ API 自 1.0 起遵循 SemVer（补丁版与 minor 版不破坏源码兼容）；但二进制（ABI）稳定不作承诺，请始终基于所链接的 QuicX 版本重新编译 —— 详见 [`api_stability.md`](./api_stability.md)。
+4. **安全响应 SLA 仅"尽力而为"** —— 具体口径见 [`../../../SECURITY.md`](../../../SECURITY.md)。
+5. **mTLS / Trailers / 连接池** 有可工作的代码，但端到端验证有限。
 
 ---
 
 ## 路线图指引
 
-- **v1.0.0（已发布）** —— API 冻结，SemVer 生效；24 场景 × 17 对端互通矩阵通过率 91.22%。
+- **v1.0.0（已发布）** —— 公有 C++ API 自本版本起遵循 SemVer；24 场景 × 17 对端互通矩阵通过率 90.60%。
 - 后续计划与最新互通结果见 [`../../../CHANGELOG.md`](../../../CHANGELOG.md) 与 [`interop_status.md`](../reports/interop_status.md)。

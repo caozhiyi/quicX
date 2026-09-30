@@ -14,7 +14,7 @@
 graph TD
     A[IQuicServer / IQuicClient<br>全局引擎] -->|管理关联多个| B(IQuicConnection<br>端到端连接)
     A -->|持有调度| F[EventLoop / WorkerThreads<br>IO事件循环]
-    B -->|复用通道创建无数| C(IQuicStream<br>数据流)
+    B -->|复用通道创建| C(IQuicStream<br>数据流)
     C --> D[IQuicBidirectionStream 双向流]
     C --> E[IQuicSendStream / IQuicRecvStream 单向流]
     
@@ -43,7 +43,7 @@ config.worker_thread_num_ = 4; // 启动 4 个 Worker 线程
 // --- 高级网络与安全特性 ---
 config.enable_0rtt_ = true;        // 开启 0-RTT（需要之前有过连接留下了 session ticket）
 config.enable_key_update_ = false; // 密钥自动轮换 (RFC 9001)
-config.quic_version_ = quic::kQuicVersion2; // 使用 QUIC v2 (RFC 9369)
+config.quic_version_ = quicx::kQuicVersion2; // 使用 QUIC v2 (RFC 9369)
 config.keylog_file_ = "keys.log";  // 强烈建议在开发中配置！使用 Wireshark 解密包必需。
 ```
 
@@ -64,7 +64,7 @@ tp.initial_max_streams_bidi_ = 200;
 ```
 
 ### 3. `MigrationConfig`：连接迁移配置
-QUIC 最牛逼的特性之一——哪怕你的 Wi-Fi 切换到了 5G 移动网络（IP/端口变了），连接也不断。
+QUIC 最强的特性之一，哪怕你的 Wi-Fi 切换到了 5G 移动网络（IP/端口变了），连接也不断。
 ```cpp
 quicx::MigrationConfig mc;
 mc.enable_active_migration_ = true;       // 允许客户端主动发起迁移
@@ -102,7 +102,7 @@ server->ListenAndAccept("0.0.0.0", 7001);
 ### 2. The Channel: `IQuicConnection`
 这代表了一个安全的加密端到端连接。**请记住：你不能直接向 Connection 写业务数据！**
 
-它主要有以下妙用：
+它主要有以下作用：
 * **透传用户状态**：通过 `conn->SetUserData(void*)` 将你自己的 `PlayerContext` 绑定在上面。
 * **挂载轻量定时器**：利用 `conn->AddTimer(callback, timeout_ms)` 可以不依赖外部定时器，精准在当前连接的生命周期内执行逻辑。
 * **核心动作——创造流**：

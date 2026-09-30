@@ -1,11 +1,8 @@
 # 握手状态机
 
-> 这篇文档讲 quicX 的连接状态怎么从 `Connecting` 推进到 `Connected`，再到 `Closing / Draining / Closed`；以及在握手期间 `Initial / Handshake / 1-RTT` 三个加密级别如何被 BoringSSL 驱动着依次就绪。
-> 
-> 关联：握手过程产生/丢弃的密钥对应每包加解密，详见 [`packet_lifecycle.md`](packet_lifecycle.md)；握手中 PTO 重传与丢包检测属于 RFC 9002 范畴，详见 [`loss_recovery.md`](loss_recovery.md)；连接级缓冲与生命周期详见 [`ownership_and_memory.md`](ownership_and_memory.md)。
+本文梳理 quicX 的连接状态如何从 `Connecting` 推进到 `Connected`，再到 `Closing / Draining / Closed`；以及握手期间 `Initial / Handshake / 1-RTT` 三个加密级别如何被 BoringSSL 驱动着依次就绪。握手过程产生/丢弃的密钥对应每包加解密，见 [`packet_lifecycle.md`](packet_lifecycle.md)；握手中的 PTO 重传与丢包检测见 [`loss_recovery.md`](loss_recovery.md)；连接级缓冲与生命周期见 [`ownership_and_memory.md`](ownership_and_memory.md)。
 
 ---
-
 ## 1. 两层状态：上层连接状态 + TLS 驱动的加密级别
 
 quicX 把"握手"这件事拆成**正交的两层**，理解这一点是看懂代码的前提：
@@ -215,7 +212,7 @@ ClientConnection() ──┐
 
 ## 5. anti-amplification：握手期间的发送闸门
 
-实现：[`anti_amplification_controller.h`](../../../src/quic/connection/controler/anti_amplification_controller.h)，由 `SendManager` 持有。
+实现：[`anti_amplification_controller.h`](../../../src/quic/connection/controller/anti_amplification_controller.h)，由 `SendManager` 持有。
 
 **意义**：服务端在地址未验证前，对未验证地址发送的字节数 ≤ **3 ×** 收到该地址的字节数（RFC 9000 §8.1）；这是阻止 QUIC 沦为反射放大器的核心机制。
 
@@ -273,8 +270,7 @@ void ConnectionCrypto::SendAlert(EncryptionLevel level, uint8_t alert) {
 
 ---
 
-## 8. 不变量速查（debug 用）
-
+## 8. 关键不变量
 写代码 / 排查 bug 时反复用到的几条硬约束：
 
 1. **HANDSHAKE_DONE 单向**：服务端发，客户端收。客户端绝不能发（`connection_server.cpp:93-100` 验证：服务端收到一律 `PROTOCOL_VIOLATION` 关闭）。

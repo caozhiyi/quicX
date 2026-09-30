@@ -1,22 +1,15 @@
 # Stream 双状态机设计（RFC 9000 §3）
 
-> **本文定位**：把 quicX 的 stream 状态机从 RFC 9000 §3 的"两张图加一堆 SHOULD/MUST"翻译成代码读者能直接对照源码的"一表一图一段"。重点回答四件事：
->
-> 1. 为什么 quicX 要把一条双向 stream 拆成 **两个独立状态机**（`StreamStateMachineSend` + `StreamStateMachineRecv`），而不是合一张大图？
-> 2. 收到 / 发出每一类 frame，**哪些状态接受、哪些拒绝、转到哪**？为什么 `OnFrame()` 与 `CheckCanSendFrame()` 是**两个**方法而不是一个？
-> 3. **终态闭合**条件：发送侧"全部 ACK 才到 Data Recvd"、接收侧"App 读完才到 Data Read"——`BidirectionStream::CheckStreamClose()` 是怎么把两侧扣在一起的？什么 race 会让 stream 永远不释放？
-> 4. **stream id 编码**为什么把 starter / direction 直接打进低两位？peek vs next 的取数差异？
->
-> 与本仓既有文档的分工：
->
-> - 本文 = stream 内部状态转移 + frame 接受/拒绝矩阵 + 双侧闭合（**机制**）。
-> - [`connection_anatomy.md`](connection_anatomy.md) §B-3 = stream 在 connection 内部的归属与生命周期管线（**集成**）。
-> - [`loss_recovery.md`](loss_recovery.md) §3 = `OnDataAcked` 的 selective range 算法与 PN 迁移（**ACK 回流**）。
-> - [`ownership_and_memory.md`](ownership_and_memory.md) §5 = stream 回调的 weak_self 模式（**生命周期安全**）。
-> - [`process_model.md`](process_model.md) = 跨线程 `Send` / `Close` / `Reset` 的 `RunInLoop` 转入路径（**线程模型**）。
+本文把 quicX 的 stream 状态机从 RFC 9000 §3 的"两张图加一堆 SHOULD/MUST"翻译成代码读者能直接对照源码的"一表一图一段"。本文尝试回答以下问题：
+
+1. 为什么 quicX 要把一条双向 stream 拆成 **两个独立状态机**（`StreamStateMachineSend` + `StreamStateMachineRecv`），而不是合一张大图？
+2. 收到 / 发出每一类 frame，**哪些状态接受、哪些拒绝、转到哪**？为什么 `OnFrame()` 与 `CheckCanSendFrame()` 是**两个**方法而不是一个？
+3. **终态闭合**条件：发送侧"全部 ACK 才到 Data Recvd"、接收侧"App 读完才到 Data Read"——`BidirectionStream::CheckStreamClose()` 是怎么把两侧扣在一起的？什么 race 会让 stream 永远不释放？
+4. **stream id 编码**为什么把 starter / direction 直接打进低两位？peek vs next 的取数差异？
+
+相邻文档各管一段：本文覆盖 stream 内部状态转移与双侧闭合（机制）；stream 在 connection 内部的归属与生命周期见 [`connection_anatomy.md`](connection_anatomy.md) §B-3（集成）；`OnDataAcked` 的 selective range 算法见 [`loss_recovery.md`](loss_recovery.md) §3（ACK 回流）；stream 回调的 weak_self 模式见 [`ownership_and_memory.md`](ownership_and_memory.md) §5（生命周期安全）；跨线程 `Send` / `Close` / `Reset` 的 `RunInLoop` 转入路径见 [`process_model.md`](process_model.md)（线程模型）。
 
 ---
-
 ## 1. 总览：为什么是"双状态机"
 
 RFC 9000 §3.1 / §3.2 把 sending stream 和 receiving stream 各画了一张状态图——故意分开的。原因有二：
@@ -563,8 +556,7 @@ if (!loop->IsInLoopThread()) {
 
 ---
 
-## 8. 不变量清单
-
+## 8. 关键不变量
 | # | 不变量 | 违反后果 |
 | :--- | :--- | :--- |
 | 1 | 状态转移**一定**先编码成功后 `OnFrame()`，不能"先转移再发包" | retry 时状态机错位，FIN 重发被拒 |
@@ -591,7 +583,7 @@ if (!loop->IsInLoopThread()) {
 
 ---
 
-## 10. 经典文献
+## 10. 关联 RFC
 
 - **RFC 9000 §3** *Stream States* —— 本文的对照源；`§3.1` 发送侧、`§3.2` 接收侧、`§3.3` Permitted Frame Types、`§3.5` Solicited State Transitions（STOP_SENDING）、`§4.5` Final Size。
 - **RFC 9000 §2.1** *Stream Types and Identifiers* —— stream id 低 2 位编码。

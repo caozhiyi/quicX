@@ -1,6 +1,6 @@
 # HTTP/3 Application Layer API Guide
 
-If you are using `quicX` to provide standard web services, API interfaces, or high-throughput file downloads, then you **DO NOT NEED** to directly use the core interfaces located in `src/quic/`. Instead, simply use the out-of-the-box application-layer API model provided by `src/http3/`.
+If you are using `quicX` to provide standard web services, API interfaces, or high-throughput file downloads, then you **DO NOT NEED** to directly use the core interfaces located in `include/quicx/quic/`. Instead, simply use the out-of-the-box application-layer API model provided by `include/quicx/http3/`.
 
 Here, there are no complex Stream handoffs or varied underlying control frames, only the familiar **Service Engine (IServer/IClient)**, **Handler**, **Request**, and **Response** from traditional web frameworks (like Express.js / Go Gin / Spring Boot).
 
@@ -54,11 +54,12 @@ config.max_concurrent_streams_ = 200;
 config.enable_push_ = true;          
 
 server->Init(config);
-server->Start("0.0.0.0", 7001);       // Blocks the current thread and starts listening
+server->Start("0.0.0.0", 7001);       // Non-blocking: returns immediately after listening starts
+server->Join();                       // Blocks the current thread until the server stops
 ```
 
 ### 1.2 Powerful Routing Dispatch System (Router)
-This is `quicX`'s most business-productive asset. It uses a Trie-tree or high-efficiency Hash-table routing engine, supporting **Exact Match** and **RESTful Match**.
+This is `quicX`'s most business-productive asset. It uses a high-efficiency Trie-tree routing engine (per-method dispatch), supporting **Exact Match** and **RESTful Match**.
 
 > [!TIP]
 > **Route Matching Priority**: Exact Match > Named Parameter Match > Wildcard Match.
@@ -102,7 +103,7 @@ server->AddMiddleware(quicx::HttpMethod::kPost, quicx::MiddlewarePosition::kBefo
 
 ## 2. Modes of Handlers (Complete vs. Async)
 
-HTTP payload sizes differ enormously, ranging from merely a few bytes in JSON up to mult-gigabyte file uploads. To that end, `quicX` provides deeply integrated **Complete Mode** and **Streaming Mode**.
+HTTP payload sizes differ enormously, ranging from merely a few bytes in JSON up to multi-gigabyte file uploads. To that end, `quicX` provides deeply integrated **Complete Mode** and **Streaming Mode**.
 
 ### 2.1 Complete Mode: Ideal for Typical APIs & JSON
 **Key Characteristics:** Packets are tiny, and you wish to access all of the Headers and Body at once, deal with it, and return.
@@ -127,7 +128,7 @@ server->AddHandler(quicx::HttpMethod::kPost, "/api/login",
 ```
 
 ### 2.2 Streaming Mode: Massive Media Uploads
-**Key Characteristics:** The client is uploading a 10GB BlueRay disc, or the server dictates long-polling chunk transmission (SSE / streaming like ChatGPT response behavior).
+**Key Characteristics:** The client is uploading a 10GB Blu-ray disc image, or the server dictates long-polling chunk transmission (SSE / streaming like ChatGPT response behavior).
 **Internal Mechanic:** Inherit `IAsyncServerHandler` or link a Provider up to your Request/Responses. Let the protocol toss in data slices, guaranteeing zero RAM occupancy.
 
 **[Example: Server Side Huge File Receipt]**:
@@ -170,12 +171,12 @@ server->AddHandler(quicx::HttpMethod::kPost, "/upload", std::make_shared<FileUpl
 
 ### IRequest: Argument extraction tools
 * **Query Parameters Extraction**: For `/api?page=1&limit=10`, access these neatly through `GetQueryParams()` formatted as key/value hashmaps.
-* **Custom Configured Push Controllers**:
-  If a client wants to dump a massive volume, **do not** ever execute `AppendBody` fetching massive gigabytes of files, supply a specific Lambda (`body_provider`).
+* **Custom Request Body Providers** (mainly on the client request side):
+  If a client wants to upload a massive file, **do not** ever execute `AppendBody` fetching massive gigabytes of files into memory; supply a specific Lambda (`body_provider`) instead.
   ```cpp
   FILE* upload = fopen("upload.dat", "rb");
   // The system stack comes and asks for chunks when packets run out. Let them feed themselves!  
-  req->SetRequestBodyProvider([upload](uint8_t* buf, size_t size) -> uint32_t {
+  req->SetRequestBodyProvider([upload](uint8_t* buf, size_t size) -> size_t {
       size_t read = fread(buf, 1, size, upload);
       if (read == 0) fclose(upload);
       return read; // Supplying 0 signifies the transmission protocol has wrapped up the broadcast. 

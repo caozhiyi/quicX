@@ -69,11 +69,11 @@ config.quic_config_.config_.worker_thread_num_ = 1; // Set the number of worker 
 
 server->Init(config);
 
-// Bind the port and block waiting
+// Bind the port and start listening (non-blocking); Join() blocks until the server stops
 if (!server->Start("0.0.0.0", 7001)) {
     // Error handling
 }
-server->Join(); 
+server->Join();
 ```
 
 ---
@@ -130,6 +130,9 @@ Whenever you have a specific requirement, you are highly advised to browse these
 | **`load_testing`** | **Simple Internal Load test**, for gauging script optimizations. |
 | **`metrics_monitoring`** | **Observability**, letting users learn to export live dropping packets, congestion latency, and buffer RTT graphs. |
 | **`qlog_integration`** | **Qlog Generation**, seamlessly pairing with Wireshark and Qvis. |
+| **`static_server`** | **Static file server**, demonstrating how to serve file downloads. |
+| **`performance_benchmark`** | **Performance benchmarking**, measuring throughput, latency and other core metrics. |
+| **`upgrade_h3`** | **HTTP/1.1 → HTTP/3 upgrade**, demonstrating Alt-Svc negotiation and the upgrade path. |
 | **`quicx_curl`** | **cURL-like console client**, making manual testing an absolute breeze. |
 
 You are free to navigate any of these directories and inspect the `.cpp` source directly.

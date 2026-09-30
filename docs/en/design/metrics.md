@@ -1,31 +1,12 @@
-# quicX Metrics Monitoring System
+# Metrics Monitoring System
 
-## Overview
+quicX Metrics provides comprehensive observability for the quicX QUIC/HTTP3 implementation: 54+ metrics covering the UDP, QUIC, and HTTP/3 layers, lock-free design, Prometheus format export. Every metric operation is O(1) — atomics avoid lock contention, pre-allocated slots mean zero heap allocation, a single update costs < 10ns; core metrics are auto-instrumented and can be toggled at runtime. This document attempts to answer the following questions:
 
-quicX Metrics is a high-performance, zero-overhead monitoring system that provides comprehensive observability for the quicX QUIC/HTTP3 implementation. The system features a lock-free design, supports Prometheus format export, and enables real-time monitoring of network, transport, and application layer metrics.
+1. **How does the metrics system stay zero-overhead?** — see "System Architecture" and "Performance Guarantees";
+2. **How are the 54+ metrics organized, and what does each cover?** — see the 13 functional categories in "Metric Categories";
+3. **How to integrate and export in a project?** — see "Usage Guide".
 
-## Core Features
-
-### High-Performance Design
-
-- **O(1) Complexity**: All metric operations have constant time complexity
-- **Lock-Free Implementation**: Uses atomic operations to avoid lock contention
-- **Zero Heap Allocation**: Pre-allocated slots, no memory allocation at runtime
-- **Extremely Low Overhead**: Single metric update < 10ns
-
-### Complete Coverage
-
-- **54+ Metrics**: Covers UDP, QUIC, and HTTP/3 layers
-- **Real-Time Updates**: Metrics immediately reflect system state
-- **Clear Categorization**: Metrics organized by functional modules
-
-### Easy to Use
-
-- **Automatic Instrumentation**: Core metrics automatically collected
-- **Runtime Configuration**: Can be dynamically enabled/disabled
-- **Standard Format**: Prometheus text format export
-
-## System Architecture
+## 1. System Architecture
 
 ### Core Components
 
@@ -100,7 +81,7 @@ std::string ExportPrometheus() {
 }
 ```
 
-## Metric Categories
+## 2. Metric Categories
 
 ### 1. UDP Layer Metrics (6 metrics)
 
@@ -135,6 +116,7 @@ std::string ExportPrometheus() {
 | `quic_packets_tx` | Counter | Total QUIC packets sent |
 | `quic_packets_retransmit` | Counter | Total retransmitted packets |
 | `quic_packets_lost` | Counter | Total packets lost |
+| `quic_packets_dropped` | Counter | Total dropped packets |
 | `quic_packets_acked` | Counter | Total packets acknowledged |
 
 **Purpose**: Monitor transport layer reliability, calculate packet loss and retransmission rates.
@@ -163,7 +145,7 @@ std::string ExportPrometheus() {
 
 **Purpose**: Monitor network latency, evaluate connection quality.
 
-### 6. Congestion Control Metrics (7 metrics)
+### 6. Congestion Control Metrics (6 metrics)
 
 | Metric Name | Type | Description |
 |-------------|------|-------------|
@@ -172,6 +154,7 @@ std::string ExportPrometheus() {
 | `slow_start_exits` | Counter | Slow start exits |
 | `bytes_in_flight` | Gauge | Bytes in flight |
 | `pacing_rate_bytes_per_sec` | Gauge | Pacing rate (bytes/second) |
+| `pacing_delay_us` | Histogram | Pacing delay (microseconds) |
 
 **Purpose**: Monitor congestion control algorithm, optimize throughput.
 
@@ -235,16 +218,17 @@ std::string ExportPrometheus() {
 
 **Purpose**: Monitor protocol layer activity, analyze communication patterns.
 
-### 13. ACK Related Metrics (2 metrics)
+### 13. ACK Related Metrics (3 metrics)
 
 | Metric Name | Type | Description |
 |-------------|------|-------------|
-| `ack_delay_us` | Gauge | ACK delay (microseconds) |
-| `ack_ranges_per_frame` | Gauge | ACK ranges per frame |
+| `ack_delay_us` | Histogram | ACK delay (microseconds) |
+| `ack_ranges_per_frame` | Histogram | ACK ranges per frame |
+| `ack_frequency` | Gauge | ACK frequency (ACKs per second) |
 
 **Purpose**: Monitor ACK behavior, optimize acknowledgment strategy.
 
-## Usage Guide
+## 3. Usage Guide
 
 ### Initialization
 
@@ -253,19 +237,19 @@ std::string ExportPrometheus() {
 
 // 1. Configure Metrics
 quicx::MetricsConfig config;
-config.enable = true;              // Enable metrics
-config.initial_slots = 1024;       // Initial slot count
-config.prefix = "quicx_";          // Metric name prefix
+config.enable_ = true;             // Enable metrics
+config.initial_slots_ = 1024;      // Initial slot count
+config.prefix_ = "quicx_";         // Metric name prefix
 
 // 2. Initialize Metrics system
-quicx::common::Metrics::Initialize(config);
+quicx::Metrics::Initialize(config);
 ```
 
 ### Export Prometheus Format
 
 ```cpp
 // Get metrics data in Prometheus format
-std::string metrics_data = quicx::common::Metrics::ExportPrometheus();
+std::string metrics_data = quicx::Metrics::ExportPrometheus();
 
 // Write to file
 std::ofstream file("/var/lib/prometheus/quicx.prom");
@@ -286,12 +270,12 @@ auto server = quicx::IServer::Create(settings);
 
 // Configure server
 quicx::Http3ServerConfig config;
-config.cert_file_ = "server.crt";
-config.key_file_ = "server.key";
+config.quic_config_.cert_file_ = "server.crt";
+config.quic_config_.key_file_ = "server.key";
 
 // Enable metrics endpoint
-config.config_.metrics_.enable = true;
-config.config_.metrics_.path = "/metrics";
+config.metrics_.http_enable_ = true;
+config.metrics_.http_path_ = "/metrics";
 
 // Initialize and start
 server->Init(config);
@@ -304,7 +288,7 @@ Access metrics:
 curl --http3 https://localhost:8443/metrics
 ```
 
-## Performance Guarantees
+## 4. Performance Guarantees
 
 ### Benchmark Results
 
@@ -334,13 +318,13 @@ Per metric slot: ~128 bytes
 Export buffer: ~100 KB (temporary)
 ```
 
-## Best Practices
+## 5. Best Practices
 
 ### 1. Configure Slot Count Appropriately
 
 ```cpp
 // Configure based on expected metric count
-config.initial_slots = expected_metrics * 1.5;  // Leave 50% headroom
+config.initial_slots_ = expected_metrics * 1.5;  // Leave 50% headroom
 ```
 
 ### 2. Export Regularly
@@ -388,7 +372,7 @@ groups:
           summary: "High error rate"
 ```
 
-## Troubleshooting
+## 6. Troubleshooting
 
 ### Issue: Metrics Not Updating
 
@@ -400,7 +384,7 @@ groups:
 Metrics::Initialize(config);
 
 // Ensure enabled
-config.enable = true;
+config.enable_ = true;
 ```
 
 ### Issue: Export Data Empty
@@ -420,10 +404,10 @@ config.enable = true;
 **Solution**:
 ```cpp
 // Increase initial slot count
-config.initial_slots = 2048;  // Or larger
+config.initial_slots_ = 2048;  // Or larger
 ```
 
-## Extension Development
+## 7. Extension Development
 
 ### Adding Custom Metrics
 
@@ -458,7 +442,7 @@ MetricID latency_hist = Metrics::RegisterHistogram(
 Metrics::HistogramObserve(latency_hist, latency_value);
 ```
 
-## References
+## 8. Related RFCs
 
 - [Prometheus Documentation](https://prometheus.io/docs/)
 - [QUIC RFC 9000](https://www.rfc-editor.org/rfc/rfc9000.html)

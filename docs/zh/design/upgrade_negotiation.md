@@ -1,25 +1,17 @@
-# H1/H2 → H3 协商前端：upgrade 模块的"广告牌"哲学
+# H1/H2 → H3 协商前端：upgrade 模块与 Alt-Svc
 
-> 段三第 20 站 · S5-T7f 收官 · 2026-06-02
-
----
-
-## 0. 这一站想钉住什么
-
-`docs/zh/design/` 段三前 19 篇都在讲 **QUIC 数据平面与 H3 控制平面在 UDP 上怎么跑**。但有一个根本盲点没人触碰：**客户端凭什么知道你这个域名提供 H3 服务？** 浏览器拨过来的第一发包永远是 TCP/443 上的 TLS ClientHello，它**不会主动尝试 UDP/443**。如果你只起 quic 服务器、不在 TCP 端发任何信号，客户端就永远不会发现 H3 的存在。
-
-quicX 的 `src/upgrade/` 是这个模块的工程答案。它**不是**一个 H3 服务器，**也不是**一个反向代理——它只是一块挂在 80/443 端口上的"广告牌"，用 HTTP/1.1 或 HTTP/2 向所有 cleartext / TLS 客户端反复回应同一句话：
+本文梳理 quicX 中 `src/upgrade/` 模块的设计：它是 H1/H2 与 H3 之间的**协商前端**——不是 H3 服务器，也不是反向代理，只负责在 TCP 的 80/443 端口上向所有 cleartext / TLS 客户端反复回应同一句话：
 
 ```
 Alt-Svc: h3=":443"; ma=86400
 ```
 
-钉住四个反直觉问题：
+浏览器发出的第一个包永远是 TCP/443 上的 TLS ClientHello，它**不会主动尝试 UDP/443**。如果只启动 QUIC 服务器、不在 TCP 端发出任何信号，客户端就永远不会发现 H3 的存在——这个模块存在的意义就是补上这条服务发现链路。本文尝试回答以下问题：
 
-1. **TCP 端的 ALPN 列表里为什么绝对不能写 `h3`？** —— 把 h3 写进去会让客户端立刻开始往这条 TCP 连接灌 QUIC 字节，而 TCP 跑不动 QUIC（QUIC 必须建在 UDP 上）。h3 协商**只能**通过 Alt-Svc 这条带外路径透露给客户端。
-2. **`ProtocolDetector` 为什么只嗅探 cleartext，不嗅探 TLS？** —— TLS ClientHello 不需要嗅，端口已经决定了：80 → `HttpSmartHandler`，443 → `HttpsSmartHandler`，工厂阶段就分流；嗅探只用来在 cleartext 内部分辨 H1 / H2 prior-knowledge。
-3. **HTTP/2 路径为什么要手搓一段 HPACK literal 编码？** —— 仅为了发一行 `alt-svc` 头就引入整个 hpack 实现是过度工程；这条路径单次 emit、内容固定、长度永远 < 127 字节，于是直接用 RFC 7541 §6.2.2 的 *literal-without-indexing* 形式编进去，零依赖。
-4. **`UpgradeManager::ProcessUpgrade` 里 `result.target_protocol == Protocol::HTTP3` 那条分支为什么是死代码？** —— `Protocol::HTTP3` 在 `Protocol` 枚举里是个"目的地"标签，不是"被检测的输入"——detector 永远不会返回 HTTP3，因为 HTTP3 不可能跑在 TCP 上被检测到。这条死分支是模型清晰度的代价：它在类型系统层面提醒读者"H3 是出口、不是入口"。
+1. **TCP 端的 ALPN 列表里为什么绝对不能写 `h3`？** —— h3 协商只能通过 Alt-Svc 这条带外路径透露给客户端；
+2. **`ProtocolDetector` 为什么只嗅探 cleartext，不嗅探 TLS？** —— 端口已经决定了 TLS 的分流，嗅探只用来在 cleartext 内部分辨 H1 / H2 prior-knowledge；
+3. **HTTP/2 路径为什么要手搓一段 HPACK literal 编码？** —— 单次 emit、内容固定、长度 < 127 字节，不值得引入整个 hpack 实现；
+4. **`UpgradeManager::ProcessUpgrade` 里 `Protocol::HTTP3` 分支为什么是死代码？** —— HTTP3 不可能跑在 TCP 上被检测到，这条分支是在类型系统层面提醒"H3 是出口、不是入口"。
 
 ---
 
@@ -36,7 +28,7 @@ flowchart LR
         Q --> H3C["IConnection (H3)"]
     end
     Client[[浏览器/curl]] -.->|① TCP/443 TLS<br/>ALPN: h2,http/1.1| L443
-    H2 -.->|② 200 OK + Alt-Svc: h3=":443"| Client
+    H2 -.->|② 200 OK + Alt-Svc: h3=&quot;:443&quot;| Client
     Client -.->|③ 重连 UDP/443<br/>QUIC ClientInitial| U443
 
     style TCP_PLANE fill:#fff7e6,stroke:#d48806
@@ -68,7 +60,7 @@ public:
 };
 ```
 
-**没有回调签名、没有 `IEventLoop`/`IFdHandler`、没有连接计数、没有 fd 暴露**。这反映模块定位："广告牌不需要业务逻辑"——它要么挂在端口上发 Alt-Svc，要么没起来；调用者只关心后者。
+**没有回调签名、没有 `IEventLoop`/`IFdHandler`、没有连接计数、没有 fd 暴露**。这反映模块定位：这个模块不需要业务逻辑——它要么在端口上发 Alt-Svc，要么没起来；调用者只关心后者。
 
 唯一的生命周期入口是 `Stop()`（析构函数也会调，幂等）。它做三件事，且**全部发生在模块自己的 loop 线程上**：摘掉 client fd（`ISmartHandler::CloseAllConnections()`）、摘掉并关闭 listen fd、停线程并 join。放在 loop 线程上是硬性要求——`EventLoop::RemoveFd/RegisterFd/AddTimer` 都要过 `AssertInLoopThread()`，从别的线程调就是 `abort()`；旧实现在析构函数里直接 `RemoveFd()`，而析构跑在**调用者**线程上，跨线程 teardown 是这个模块最容易踩的一颗雷。
 
@@ -76,10 +68,11 @@ public:
 
 | 组别 | 字段 | 真实是否被消费 |
 | :--- | :--- | :--- |
-| 监听 | `listen_addr` `http_port` `https_port` `h3_port` | ✅ 全部被 `UpgradeServer::AddListener` 读取 |
-| 协议开关 | `enable_http1` `enable_http2` `enable_http3` | ⚠️ 当前实现**未读取**——decision 由"端口是否非 0 + 是否配了证书"反推 |
-| 优选列表 | `preferred_protocols = {"h3","h2","http/1.1"}` | ⚠️ **未读取**——服务端 ALPN 偏好硬编码在 `HttpsSmartHandler::ALPNSelectCallback` 的 `kPreferred` 数组里 |
-| 凭据/超时 | `cert_file` `key_file` `cert_pem` `key_pem` `detection_timeout_ms` `upgrade_timeout_ms` | ✅ 凭据被读；⚠️ 两个 timeout **未读取**，handler 用 `BaseSmartHandler::kUpgradeNegotiationTimeoutMs = 30000` 硬编码值 |
+| 监听 | `listen_addr_` `http_port_` `https_port_` `h3_port_` | ✅ 全部被 `UpgradeServer::AddListener` 读取 |
+| 协议开关 | `enable_http1_` `enable_http2_` `enable_http3_` | ⚠️ 当前实现**未读取**——decision 由"端口是否非 0 + 是否配了证书"反推 |
+| 优选列表 | `preferred_protocols_ = {"h3","h2","http/1.1"}` | ⚠️ **未读取**——服务端 ALPN 偏好硬编码在 `HttpsSmartHandler::ALPNSelectCallback` 的 `kPreferred` 数组里 |
+| 凭据/超时 | `cert_file_` `key_file_` `cert_pem_` `key_pem_` `detection_timeout_ms_` `upgrade_timeout_ms_` | ✅ 凭据被读；⚠️ 两个 timeout **未读取**，handler 用 `src/upgrade/config.h` 的 `kUpgradeNegotiationTimeoutMs = 30000` 硬编码值 |
+| 日志 | `log_level_ = LogLevel::kInfo` | ⚠️ **未读取**——模块日志级别未与该字段联动 |
 
 **对账诚实度**：把"未读取"字段保留在公共结构里是历史遗留，理论上应当：(1) 把 `preferred_protocols` 注入到 `ALPNSelectCallback`；(2) 把两个 timeout 注入到 `BaseSmartHandler`。短期维持现状的代价是配置 silent ignore，本文档显式记录这个 gap。
 
@@ -184,8 +177,8 @@ std::shared_ptr<ITcpSocket> socket;
 ### 6.1 HTTP/1.1 路径：朴素字符串拼接
 
 ```cpp
-std::string body = "h3 available on :" + std::to_string(settings.h3_port) + "\n";
-std::string alt_svc = "h3=\":" + std::to_string(settings.h3_port) + "\"; ma=86400";
+std::string body = "h3 available on :" + std::to_string(settings.h3_port_) + "\n";
+std::string alt_svc = "h3=\":" + std::to_string(settings.h3_port_) + "\"; ma=86400";
 std::string response =
     "HTTP/1.1 200 OK\r\n"
     "Content-Type: text/plain\r\n"
@@ -197,7 +190,7 @@ std::string response =
 
 为什么用 200 OK 而不是 RFC 7230 §6.7 那种 `101 Switching Protocols + Upgrade: h3`？因为 **绝大多数浏览器不会响应 `Upgrade: h3`**——h3 不是 RFC 7230 意义上的 in-band 升级（switching 后必须在同一 TCP 连接上跑新协议；但 h3 必须换到 UDP）。RFC 9114 §3.3 明确说 h3 的发现路径是 Alt-Svc 或 DNS HTTPS 记录，不走 Upgrade 头。我们这里用 200 OK + Alt-Svc 是符合 RFC 7838 §3 的标准做法。
 
-`Connection: close` 是关键："任务完成、广告牌已亮，请你断开然后用 alt-authority 重新拨"。
+`Connection: close` 是关键："任务完成、Alt-Svc 已发，请你断开然后用 alt-authority 重新拨"。
 
 ### 6.2 HTTP/2 路径：手搓 HPACK literal
 
@@ -219,12 +212,12 @@ std::string response =
 
 1. **零依赖**：upgrade 模块连 hpack 库都不需要 link，连 H2 协议状态机都不需要——它只是按字节顺序往外吐五个固定结构帧。
 2. **HPACK literal-without-indexing（0x00 prefix, RFC 7541 §6.2.2）是最简形式**：`name-len(7bit, H=0) name-bytes value-len(7bit, H=0) value-bytes`，所有字段长度均 < 127 字节，所以 7-bit 前缀单字节即可表示长度，零 varint 复杂度。
-3. **预先发 SETTINGS ACK**：通常 ACK 应在收到对端 SETTINGS 后回，但 RFC 7540 §6.5.3 只要求 "as soon as possible"——我们提前发实际是 *永远不会读对端 SETTINGS* 的简化（反正广告牌发完就 GOAWAY），违反了"先收后 ACK"的语义但被所有实现容忍。这是用 *protocol elasticity* 换 *implementation simplicity*。
+3. **预先发 SETTINGS ACK**：通常 ACK 应在收到对端 SETTINGS 后回，但 RFC 7540 §6.5.3 只要求 "as soon as possible"——我们提前发实际是 *永远不会读对端 SETTINGS* 的简化（反正发完 Alt-Svc 就 GOAWAY），违反了"先收后 ACK"的语义但被所有实现容忍。这是用 *protocol elasticity* 换 *implementation simplicity*。
 4. **路径冷门**：服务端 ALPN 选择策略偏好 `http/1.1`（§4），所以这条 H2 路径**只在客户端 ALPN 列表里没有 `http/1.1`** 时被触发——比如 nghttp / h2load / 某些 gRPC 客户端。给这些极少数客户端单独保留路径，但用最少代码维持 spec compliance。
 
 ### 6.3 双码路径的"等价输出"不变量
 
-**任意客户端经历过 upgrade 模块后，应当看到完全等价的 alt-svc 字段值** `h3=":<h3_port>"; ma=86400`。这是模块的 **contract bisection**：客户端不应当因为走了 H1 还是 H2 路径而对 H3 端点产生不同认知。代码中两条路径都从同一个 `settings.h3_port` 派生 alt_svc 字符串，这条不变量靠"两条路径里 alt_svc 计算公式同源"维持。
+**任意客户端经历过 upgrade 模块后，应当看到完全等价的 alt-svc 字段值** `h3=":<h3_port>"; ma=86400`。这是模块的 **contract bisection**：客户端不应当因为走了 H1 还是 H2 路径而对 H3 端点产生不同认知。代码中两条路径都从同一个 `settings.h3_port_` 派生 alt_svc 字符串，这条不变量靠"两条路径里 alt_svc 计算公式同源"维持。
 
 ---
 
@@ -233,7 +226,7 @@ std::string response =
 ```mermaid
 sequenceDiagram
     participant App
-    participant Loop as IEventLoop<br/>(服务器私有 + 私有线程)
+    participant EvtLoop as IEventLoop<br/>(服务器私有 + 私有线程)
     participant Srv as UpgradeServer
     participant CH as ConnectionHandler<br/>(per-listen-fd)
     participant SH as ISmartHandler<br/>(per-client-fd)
@@ -242,22 +235,22 @@ sequenceDiagram
     App->>Srv: AddListener(settings)
     Note right of Srv: 首次调用时自建 Loop + 线程，<br/>bind/RegisterFd 投递到该线程执行，<br/>调用方阻塞等待结果
     Srv->>Srv: bind_one(80, kHttp)
-    Srv->>Srv: bind_one(443, kHttps) [if cert]
-    Srv->>Loop: RegisterFd(listen_fd, ET_READ, CH)
+    Srv->>Srv: bind_one(443, kHttps) (if cert)
+    Srv->>EvtLoop: RegisterFd(listen_fd, ET_READ, CH)
     Note right of Srv: listeners_ 持强引用<br/>(Loop 内部存 weak_ptr)
-    Loop-->>CH: OnRead(listen_fd)
+    EvtLoop-->>CH: OnRead(listen_fd)
     CH->>CH: accept() → client_fd
     CH->>SH: OnConnect(client_fd, ctx)
-    SH->>Loop: RegisterFd(client_fd, ET_READ, SH)
-    Loop-->>SH: OnRead(client_fd)
+    SH->>EvtLoop: RegisterFd(client_fd, ET_READ, SH)
+    EvtLoop-->>SH: OnRead(client_fd)
     SH->>Ctx: 累积 read_buf
     SH->>SH: ProtocolDetector::Detect or SSL_accept
     SH->>SH: UpgradeManager::ProcessUpgrade
     SH->>Ctx: pending_response 填充
-    Loop-->>SH: OnWrite(client_fd)
+    EvtLoop-->>SH: OnWrite(client_fd)
     SH->>SH: TrySendResponse (partial write)
     SH->>Ctx: state = UPGRADED
-    SH->>Loop: RemoveFd(client_fd)
+    SH->>EvtLoop: RemoveFd(client_fd)
     SH->>Ctx: socket->Close()
 ```
 
@@ -278,10 +271,10 @@ sequenceDiagram
 2. **下次访问该 origin**：客户端发起 HTTP 请求时检查 cache：
    - 如果在 ma 内 → **race**：同时拨 TCP/443 (旧路径) 和 UDP/443 + QUIC + ALPN=h3（新路径），首个完成握手者赢；这就是 Chrome/Firefox 的"happy-eyeballs for H3"行为。
    - 如果 cache 失效或不存在 → 退回纯 TCP 路径，重新触发 §1 流程。
-3. **QUIC 握手**：这一步走的就是段三第 18 站 `crypto_keying.md` 描述的密钥派生 / ALPN=`h3`、然后第 19 站 `h3_connection.md` 的 SETTINGS / control 流装配。**与 upgrade 模块完全无关**——客户端和 quic 服务器直接交互。
+3. **QUIC 握手**：这一步走的就是 `crypto_keying.md` 描述的密钥派生 / ALPN=`h3`、然后 `h3_connection.md` 的 SETTINGS / control 流装配。**与 upgrade 模块完全无关**——客户端和 quic 服务器直接交互。
 4. **失败回退**：如果 UDP/443 被中间盒丢包导致 QUIC 握手超时，客户端回退到 TCP/443 + h2/http1.1，并把 alt-authority 标记为"broken"在一段时间内不再尝试（Chrome 是 5 分钟）。**服务端没有任何信号能介入这个回退**，所以 quic 层的可达性是 H3 部署的硬要求。
 
-**关键不变量**：服务端和客户端在协商上的契约**完全是异步的、单向的、stateless 的**。upgrade 模块发完 Alt-Svc 就忘掉这个客户端；客户端可能从此再也不来，或者立刻在 UDP 上拨过来，或者一周后才来。这种松耦合是 Alt-Svc 设计的精髓——它让你可以把广告牌部署成无状态边缘服务、放在 CDN 前面、用任何负载均衡策略，都不影响 H3 协商正确性。
+**关键不变量**：服务端和客户端在协商上的契约**完全是异步的、单向的、stateless 的**。upgrade 模块发完 Alt-Svc 就忘掉这个客户端；客户端可能从此再也不来，或者立刻在 UDP 上拨过来，或者一周后才来。这种松耦合是 Alt-Svc 设计的精髓——它让你可以把这个模块部署成无状态边缘服务、放在 CDN 前面、用任何负载均衡策略，都不影响 H3 协商正确性。
 
 ---
 
@@ -291,26 +284,25 @@ sequenceDiagram
 
 | 项 | 现状 | 缺口 | 影响 |
 | :--- | :--- | :--- | :--- |
-| `preferred_protocols` 字段 | 公共结构体里有，未消费 | 无法运行时调整 ALPN 偏好 | 需要支持"优先 H2 而非 H1"的部署需手改源码 |
-| `enable_http1` / `enable_http2` / `enable_http3` | 未消费 | 无法关闭某条路径 | 想做"只 H2 + H3，禁 H1"目前做不到 |
-| `detection_timeout_ms` / `upgrade_timeout_ms` | 未消费 | 用 hardcoded 30s | 部署中无法调短超时以提高僵死连接清理 |
+| `preferred_protocols_` 字段 | 公共结构体里有，未消费 | 无法运行时调整 ALPN 偏好 | 需要支持"优先 H2 而非 H1"的部署需手改源码 |
+| `enable_http1_` / `enable_http2_` / `enable_http3_` | 未消费 | 无法关闭某条路径 | 想做"只 H2 + H3，禁 H1"目前做不到 |
+| `detection_timeout_ms_` / `upgrade_timeout_ms_` | 未消费 | 用 hardcoded 30s | 部署中无法调短超时以提高僵死连接清理 |
 | 0-RTT / TLS session ticket | TLS context 默认配置，未启用 ticket 持久化 | 同源重连无法 0-RTT | 客户端每次回到 TCP/443 仍需完整握手 |
 | `Upgrade: h2c` 头解析 | 完全未实现（H2C 已被 RFC 9113 弃用） | cleartext H2 必须 prior-knowledge | 不影响主流客户端 |
 | DNS HTTPS RR 记录（RFC 9460） | 不在 upgrade 模块职责范围 | 无 | 该路径完全靠运维侧 DNS 配置 |
 | Alt-Svc 缓存清除信号 | 未实现 RFC 7838 §3.3 的 `Alt-Svc: clear` | h3 端口下线无法主动通知 | 客户端会按 ma 自然过期 |
 
-**值得收紧的两项**：把 `preferred_protocols` 接到 `ALPNSelectCallback` 是低风险 5 行修改；把两个 timeout 字段读进 `BaseSmartHandler` 是 3 行修改。两者是工作量最小、ROI 最高的紧迫项。
+**值得收紧的两项**：把 `preferred_protocols_` 接到 `ALPNSelectCallback` 是低风险 5 行修改；把两个 timeout 字段读进 `BaseSmartHandler` 是 3 行修改。两者是工作量最小、ROI 最高的紧迫项。
 
 ---
 
-## 10. 关键不变量清单
-
+## 10. 关键不变量
 跨整个 `src/upgrade/`，下列断言**在任何代码路径下都不应当被违反**——任何后续重构都必须维持：
 
 1. **TCP/TLS 端的 ALPN 列表中绝不包含 `h3`**（`https_smart_handler.cpp:362-389`）。
 2. `ProtocolDetector::Detect` **永远不会返回** `Protocol::HTTP3`。
 3. cleartext 字节**永远不会**进入 SSL 状态机：`HttpSmartHandler` 和 `HttpsSmartHandler` 由 `SmartHandlerFactory` 在 listen 阶段就分流，accept 出来的 client_fd 注册到的是哪个 handler，由它的 listen 端点决定，不可中途切换。
-4. **协商响应在两条路径（H1/H2）下的 `alt-svc` 字段值字节级相同**（同源 `settings.h3_port`）。
+4. **协商响应在两条路径（H1/H2）下的 `alt-svc` 字段值字节级相同**（同源 `settings.h3_port_`）。
 5. `pending_response` 一旦填充，必须由 `TrySendResponse` 在多次 `EAGAIN` 之间逐字节写完——**绝不重新生成**（重新生成意味着 `:status` 之类有状态字段错位）。
 6. `UpgradeServer::listeners_` 中每个 `ConnectionHandler` 的 `shared_ptr` **必须存活到对应 fd `RemoveFd` 之后**（EventLoop 内部 weak_ptr 假设）。
 7. 析构时 **`RemoveFd` 必须在 `Close` 之前**，否则 EventLoop 可能在 fd 已关闭后再次 dispatch。
@@ -328,12 +320,12 @@ sequenceDiagram
 
 | 文档 | 职责边界 | 与本文的接口 |
 | :--- | :--- | :--- |
-| `connection_anatomy.md`（第 11 站） | UDP/QUIC 连接结构 | upgrade 在 TCP 端发完 Alt-Svc 后，客户端在此进入 |
-| `handshake_state_machine.md`（第 13 站） | QUIC + TLS 握手流程 | 客户端到达 UDP 后跑这套握手；ALPN=`h3` 即在此协商 |
-| `crypto_keying.md`（第 18 站） | 密钥派生与 Key Update | h3 ALPN 选定后用 RFC 9001 §5 的 secrets 起 1-RTT |
-| `h3_connection.md`（第 19 站） | H3 6 类流的多流协作 | upgrade 把客户端引到 quic，quic 服务器装配本文档描述的 6 类流 |
-| `process_model.md`（第 6 站） | EventLoop 线程模型 | upgrade 共享 quic 的 EventLoop；TCP listen fd 与 UDP fd 同线程 |
-| `ownership_and_memory.md`（第 7 站） | 引用计数与生命周期模式 | `UpgradeServer::listeners_` 强引用 + EventLoop weak_ptr 是该模型的实例 |
+| `connection_anatomy.md` | UDP/QUIC 连接结构 | upgrade 在 TCP 端发完 Alt-Svc 后，客户端在此进入 |
+| `handshake_state_machine.md` | QUIC + TLS 握手流程 | 客户端到达 UDP 后跑这套握手；ALPN=`h3` 即在此协商 |
+| `crypto_keying.md` | 密钥派生与 Key Update | h3 ALPN 选定后用 RFC 9001 §5 的 secrets 起 1-RTT |
+| `h3_connection.md` | H3 6 类流的多流协作 | upgrade 把客户端引到 quic，quic 服务器装配本文档描述的 6 类流 |
+| `process_model.md` | EventLoop 线程模型 | upgrade 自建私有 EventLoop 与驱动线程，与 quic 侧互不共享 |
+| `ownership_and_memory.md` | 引用计数与生命周期模式 | `UpgradeServer::listeners_` 强引用 + EventLoop weak_ptr 是该模型的实例 |
 
 ### 11.2 RFC 索引
 
@@ -348,4 +340,4 @@ sequenceDiagram
 
 ---
 
-> **设计文档完结**：`docs/zh/design/` 目前共 20 篇正文，覆盖主链路、关键决策、基础设施、协议层细节与可观测性五组，构成 quicX 内部从握手到协议入口的完整说明集。文档地图见 [`../README.md`](../README.md) §6。
+> **设计文档完结**：`docs/zh/design/` 目前共 16 篇正文，覆盖主链路、关键决策、基础设施、协议层细节与可观测性五组，构成 quicX 内部从握手到协议入口的完整说明集。文档地图见 [`../README.md`](../README.md) §6。

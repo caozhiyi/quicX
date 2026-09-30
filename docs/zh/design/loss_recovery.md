@@ -95,7 +95,7 @@
 
 ## 2. RTT 估算：`RttCalculator`
 
-实现：[`src/quic/connection/controler/rtt_calculator.h`](../../../src/quic/connection/controler/rtt_calculator.h) / [`rtt_calculator.cpp`](../../../src/quic/connection/controler/rtt_calculator.cpp)（约 130 行，逻辑与 RFC 9002 §5 一一对应）。
+实现：[`src/quic/connection/controller/rtt_calculator.h`](../../../src/quic/connection/controller/rtt_calculator.h) / [`rtt_calculator.cpp`](../../../src/quic/connection/controller/rtt_calculator.cpp)（约 130 行，逻辑与 RFC 9002 §5 一一对应）。
 
 ### 2.1 三个估计量
 
@@ -158,7 +158,7 @@ uint32_t GetPTOWithBackoff(uint32_t max_ack_delay) {
 
 ## 3. 判丢：`SendControl::DetectLostPackets`
 
-实现：[`src/quic/connection/controler/send_control.cpp:556`](../../../src/quic/connection/controler/send_control.cpp)。每收到一个 ACK frame，`OnPacketAck` 在处理完所有 range 后调用一次，把同一 packet number space 内 `pn < largest_acked` 的未确认包扫一遍，按 RFC 9002 §6.1 两把尺子检查：
+实现：[`src/quic/connection/controller/send_control.cpp:556`](../../../src/quic/connection/controller/send_control.cpp)。每收到一个 ACK frame，`OnPacketAck` 在处理完所有 range 后调用一次，把同一 packet number space 内 `pn < largest_acked` 的未确认包扫一遍，按 RFC 9002 §6.1 两把尺子检查：
 
 ### 3.1 包阈值（RFC 9002 §6.1.1）
 
@@ -383,7 +383,7 @@ return SendBuffer(buffer);
 
 ### 5.3 `DiscardPacketNumberSpace`：握手完成后的清场
 
-[`send_control.cpp:508`](../../../src/quic/connection/controler/send_control.cpp)。当 Initial/Handshake keys 被丢弃（RFC 9000 §4.10），那些 PN space 里的 unacked / lost 都失去了重传可能（peer 已无法解密）：
+[`send_control.cpp:508`](../../../src/quic/connection/controller/send_control.cpp)。当 Initial/Handshake keys 被丢弃（RFC 9000 §4.10），那些 PN space 里的 unacked / lost 都失去了重传可能（peer 已无法解密）：
 
 ```cpp
 void SendControl::DiscardPacketNumberSpace(PacketNumberSpace ns) {

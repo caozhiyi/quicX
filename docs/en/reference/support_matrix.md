@@ -1,11 +1,15 @@
 # QuicX Support Matrix
 
-> Applies to **v1.0.x**. This document is the source of truth for "what works,
-> what is partial, and what is intentionally not implemented" in the current
-> release line. It is updated on every minor release.
->
-> See also: [`CHANGELOG.md`](../../../CHANGELOG.md), [`api_stability.md`](./api_stability.md),
-> [`reports/interop_status.md`](../reports/interop_status.md).
+Applies to **v1.0.x**. This document is the source of truth for "what works,
+what is partial, and what is intentionally not implemented" in the current
+release line. It is updated on every minor release.
+
+See also: [`CHANGELOG.md`](../../../CHANGELOG.md), [`api_stability.md`](./api_stability.md),
+[`reports/interop_status.md`](../reports/interop_status.md).
+
+If you are evaluating QuicX for production use, jump straight to the
+[**Known limitations summary**](#known-limitations-summary-read-this-before-adopting)
+at the end of this document — it lists every "red line" you need to know.
 
 ---
 
@@ -186,7 +190,7 @@
 |---|:---:|---|
 | Built-in metrics registry | ✅ | UDP / QUIC / HTTP/3 / congestion / TLS / migration / retry / memory |
 | Metrics HTTP endpoint | ✅ | Optional, configured via `Http3ServerConfig::metrics_` |
-| QLog (RFC 9001 §A) | ✅ | Build with `-DQUICX_ENABLE_QLOG=ON` |
+| QLog (RFC 9254) | ✅ | Build with `-DQUICX_ENABLE_QLOG=ON` |
 | Levelled logging | ✅ | |
 | OpenTelemetry export | ❌ | Application can bridge from the metrics registry |
 
@@ -195,8 +199,8 @@
 ## Platforms
 
 > Platform support is what the **build system targets**. Routine CI for all
-> three platforms is on the v0.2.0 roadmap; today the matrix is "developer
-> validated, no continuous coverage".
+> three platforms is not yet in place (planned for a later release); today the
+> matrix is "developer validated, no continuous coverage".
 
 | Platform | Build | Runtime | Notes |
 |---|:---:|:---:|---|
@@ -248,15 +252,15 @@
 The interop matrix is regenerated per release. The current detailed report is
 [`reports/interop_status.md`](../reports/interop_status.md).
 
-Summary for **v0.1.0**:
+Summary for **v1.0.0** (24 scenarios × 17 peers, 90.60% pass rate):
 
-- **`handshake`** scenario: passes against the majority of mainstream peers
-  (quinn, msquic, ngtcp2, neqo, lsquic, picoquic, quic-go, mvfst, aioquic).
-- **`transfer`** scenario: passes against most peers; a few have known issues
-  documented in `quic_interop_sim_issues.md`.
+- **`handshake` / `transfer`** scenarios: pass broadly against mainstream peers
+  (quinn, msquic, ngtcp2, neqo, lsquic, picoquic, quic-go, mvfst, aioquic, …).
+- A few peers have known issues documented in `quic_interop_sim_issues.md`.
 - Advanced scenarios (`multiconnect`, `resumption`, `keyupdate`, `chacha20`,
-  `retry`, `zerortt`, `http3`) are partially covered; see the interop status
-  document for the per-pair grid.
+  `retry`, `zerortt`, `http3`, `versionnegotiation`, `ecn`,
+  `connectionmigration`, … 24 in total) — see the interop status document for
+  the per-pair grid.
 
 ---
 
@@ -266,8 +270,10 @@ Summary for **v0.1.0**:
    should wait for a future release.
 2. **Cross-platform CI is missing** — Windows and macOS are developer-tested
    but not continuously verified.
-3. **Public API** is frozen as of `1.0.0` and follows SemVer; ABI stability
-   is not promised — see [`api_stability.md`](./api_stability.md).
+3. **No ABI stability** — the public C++ API follows SemVer since 1.0
+   (patch and minor releases preserve source compatibility); binary (ABI)
+   stability is not promised, so always rebuild against the QuicX version
+   you link — see [`api_stability.md`](./api_stability.md).
 4. **No SLA on security response time** beyond the best-effort targets in
    [`SECURITY.md`](../../../SECURITY.md).
 5. **mTLS, Trailers, connection pooling** have working code but limited
@@ -277,7 +283,8 @@ Summary for **v0.1.0**:
 
 ## Roadmap pointers
 
-- **v1.0.0 (released)** — API freeze, SemVer in effect; 24-scenario × 17-peer
-  interop matrix at a 91.22% pass rate.
+- **v1.0.0 (released)** — the public C++ API follows SemVer from this
+  release onward; 24-scenario × 17-peer interop matrix at a 90.60% pass
+  rate.
 - For what's next, see [`../../../CHANGELOG.md`](../../../CHANGELOG.md) and
   [`interop_status.md`](../reports/interop_status.md).

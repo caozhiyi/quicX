@@ -32,7 +32,7 @@ Body: hello world
 Request took: 12 ms
 ```
 
-太棒了！你刚刚完成了基于最新 HTTP/3 协议的加密握手和数据传输。下面让我们潜入代码了解它是怎么运作的。
+你刚刚完成了基于最新 HTTP/3 协议的加密握手和数据传输。下面让我们潜入代码了解它是怎么运作的。
 
 ---
 
@@ -69,11 +69,11 @@ config.quic_config_.config_.worker_thread_num_ = 1; // 设置工作线程数
 
 server->Init(config);
 
-// 绑定端口并阻塞等待
+// 绑定端口启动监听（非阻塞），Join() 阻塞等待服务结束
 if (!server->Start("0.0.0.0", 7001)) {
     // 错误处理
 }
-server->Join(); 
+server->Join();
 ```
 
 ---
@@ -124,12 +124,15 @@ client->DoRequest("https://127.0.0.1:7001/hello", quicx::HttpMethod::kGet, reque
 | **`streaming_api`** | **分块式的流式传输响应**，模拟类似 ChatGPT 的打字机推送效果或音视频流。 |
 | **`bidirectional_comm`** | **纯粹的双向流通信机制**，展示不拘泥于请求/响应，双方自由发送数据的模式。 |
 | **`concurrent_requests`** | **高并发请求处理**，展示 QUIC 的多路复用能力如何同时承载大量请求而不阻塞。 |
-| **`connection_lifecycle`** | **生命周期与优雅关闭**，演示如何监听页面事件并干净地关闭资源退出。 |
+| **`connection_lifecycle`** | **生命周期与优雅关闭**，演示如何监听连接生命周期事件并干净地关闭资源退出。 |
 | **`error_handling`** | **错误抛出与处理最佳实践**，模拟断网、非匹配路由、重传超时的捕获手段。 |
 | **`server_push`** | **HTTP/3 服务器主动推送**，使用 RFC 规定中的 `PUSH_PROMISE` 主动提前把数据下发给客户端缓存。|
 | **`load_testing`** | **简单的内部压测脚本**，适合自测代码优化的效果。 |
 | **`metrics_monitoring`** | **可观测性与监控**，向你演示如何在运行时导出内置的丢包率、RTT 延迟、拥塞窗口等监控数据。 |
 | **`qlog_integration`** | **生成 Qlog**，用以无缝对接 Wireshark 或 qvis 前端实现极致的可视化调试。 |
+| **`static_server`** | **静态文件服务器**，演示如何对外提供文件下载服务。 |
+| **`performance_benchmark`** | **性能基准测试**，测量吞吐、延迟等核心指标。 |
+| **`upgrade_h3`** | **HTTP/1.1 → HTTP/3 协议升级**，演示 Alt-Svc 协商与升级路径。 |
 | **`quicx_curl`** | **类 curl 命令行客户端**，可以直接当作一个 HTTP/3 的命令行测试工具来使用。 |
 
 你可以直接打开上述目录中的 `.cpp` 源码进行阅读。
