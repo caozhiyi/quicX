@@ -134,6 +134,59 @@ TEST_F(DynamicTableTest, SizeCalculation) {
     EXPECT_EQ(table_->GetTableSize(), 113);
 }
 
+// Regression (code-review P1-2): an entry larger than the whole table
+// capacity must be rejected, not trigger an unbounded eviction loop.
+// RFC 9204 §4.3.1: the encoder MUST NOT insert an entry larger than the
+// table capacity.
+TEST_F(DynamicTableTest, EntryLargerThanTableCapacityRejected) {
+    table_->UpdateMaxTableSize(64);
+
+    // name(10) + value(100) + 32 = 142 > 64
+    EXPECT_FALSE(table_->AddHeaderItem("0123456789", std::string(100, 'v')));
+    // Table state unchanged: empty and zero size.
+    EXPECT_EQ(table_->GetEntryCount(), 0);
+    EXPECT_EQ(table_->GetTableSize(), 0);
+    EXPECT_EQ(table_->GetInsertCount(), 0);
+}
+
+// Regression (code-review P1-2): shrinking capacity to zero must drain the
+// table and terminate (empty deque => current_size_ == 0 => loop exits).
+TEST_F(DynamicTableTest, ShrinkToZeroEvictsAllAndTerminates) {
+    EXPECT_TRUE(table_->AddHeaderItem("header1", "value1"));
+    EXPECT_TRUE(table_->AddHeaderItem("header2", "value2"));
+    ASSERT_GT(table_->GetEntryCount(), 0u);
+
+    table_->UpdateMaxTableSize(0);
+
+    EXPECT_EQ(table_->GetEntryCount(), 0);
+    EXPECT_EQ(table_->GetTableSize(), 0);
+    // A zero-capacity table rejects every entry (min entry size is 32).
+    EXPECT_FALSE(table_->AddHeaderItem("header3", "value3"));
+    // Restoring capacity makes the table usable again.
+    table_->UpdateMaxTableSize(200);
+    EXPECT_TRUE(table_->AddHeaderItem("header3", "value3"));
+    EXPECT_EQ(table_->GetEntryCount(), 1);
+}
+
+// Regression (code-review P1-2): eviction loop must terminate even when the
+// new entry alone consumes (nearly) the entire capacity, evicting everything.
+TEST_F(DynamicTableTest, EvictionDrainsWholeTableForLargeEntry) {
+    table_->UpdateMaxTableSize(100);
+
+    EXPECT_TRUE(table_->AddHeaderItem("h1", "v1"));  // 35
+    EXPECT_TRUE(table_->AddHeaderItem("h2", "v2"));  // 35
+    EXPECT_TRUE(table_->AddHeaderItem("h3", "v3"));  // 35 -> evicts h1
+
+    // name(2) + value(61) + 32 = 95 <= 100, forces eviction of all older
+    // entries to make room.
+    EXPECT_TRUE(table_->AddHeaderItem("k1", std::string(61, 'x')));
+
+    EXPECT_EQ(table_->GetEntryCount(), 1);
+    auto item = table_->FindHeaderItem(0);
+    ASSERT_NE(item, nullptr);
+    EXPECT_EQ(item->name_, "k1");
+}
+
 }  // namespace
 }  // namespace http3
 }  // namespace quicx

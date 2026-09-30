@@ -42,26 +42,21 @@ TEST(MultiBlockBufferTest, BasicReadAcrossChunks) {
     SharedBufferSpan span1(chunk1, data1, chunk1->GetLength());
     SharedBufferSpan span2(chunk2, data2, chunk2->GetLength());
 
-    // Write span1: creates first chunk state
+    // Write span1: zero-copy mounts chunk1 as a view state
     EXPECT_EQ(10u, buffer.Write(span1, 10u));
     EXPECT_EQ(10u, buffer.GetDataLength());
 
-    // Write span2: if last chunk has enough space (32-10=22 >= 6), data is copied to last chunk
-    // Otherwise, creates new chunk state. To ensure we get 2 chunks, we need to make sure
-    // the last chunk doesn't have enough space. Let's write more data first to fill the chunk.
-    // Actually, since span1 creates a chunk state with only 10 bytes, the last chunk's
-    // writable space is chunk1->GetLength() - 10 = 32 - 10 = 22, which is >= 6.
-    // So span2 will be copied to the last chunk, resulting in 1 chunk with 16 bytes.
-    // To test across chunks, we need to ensure the second write creates a new chunk.
-    // Let's write a larger second span that exceeds the remaining space.
+    // Write span2: a mounted view state is never used as a memcpy
+    // destination (its chunk's tail beyond write_pos_ belongs to whoever
+    // mounted the view — see ChunkState::writable_owner_), so span2 mounts
+    // chunk2 as a second view state instead of being copied into chunk1's
+    // tail. Two chunk states, 10 + 6 bytes.
     EXPECT_EQ(6u, buffer.Write(span2, 6u));
     EXPECT_EQ(16u, buffer.GetDataLength());
 
-    // GetFreeLength returns only the last chunk's writable space
-    // After writing span2, if it was copied to last chunk: free space = 32 - 16 = 16
-    // If it created new chunk: free space = 32 - 6 = 26
-    // Since 22 >= 6, span2 was copied, so free space = 32 - 16 = 16
-    EXPECT_EQ(32u - 16u, buffer.GetFreeLength());
+    // GetFreeLength returns the last chunk's physically remaining space:
+    // the last state is the chunk2 view (6 bytes used of 32), so 26.
+    EXPECT_EQ(32u - 6u, buffer.GetFreeLength());
     EXPECT_FALSE(buffer.Empty());
 
     std::vector<std::vector<uint8_t>> visited;
@@ -69,15 +64,12 @@ TEST(MultiBlockBufferTest, BasicReadAcrossChunks) {
         visited.emplace_back(data, data + len);
         return true;
     });
-    // Since span2 was copied to the last chunk (not creating new chunk),
-    // VisitData will only visit 1 chunk with 16 bytes
-    ASSERT_EQ(1u, visited.size());
-    ASSERT_GE(visited[0].size(), 16u);
-    EXPECT_EQ(16u, visited[0].size());
-    EXPECT_EQ(1u, visited[0][0]);  // First byte from span1
-    if (visited[0].size() > 10) {
-        EXPECT_EQ(50u, visited[0][10]);  // First byte from span2 (at offset 10)
-    }
+    // span2 mounted as a separate view state: VisitData sees two segments.
+    ASSERT_EQ(2u, visited.size());
+    EXPECT_EQ(10u, visited[0].size());  // span1 data
+    EXPECT_EQ(6u, visited[1].size());   // span2 data
+    EXPECT_EQ(1u, visited[0][0]);      // First byte from span1
+    EXPECT_EQ(50u, visited[1][0]);     // First byte from span2
 
     // Read and verify the data
     std::array<uint8_t, 32> out{};

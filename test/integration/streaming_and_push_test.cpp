@@ -390,7 +390,7 @@ TEST_F(StreamingAndPushTest, ServerPushAccepted) {
     std::string push_body;
 
     // Set push promise handler
-    client->SetPushPromiseHandler([&](std::unordered_map<std::string, std::string>& headers) -> bool {
+    client->SetPushPromiseHandler([&](quicx::HttpFields& headers) -> bool {
         push_promise_received = true;
         return true;  // Accept push
     });
@@ -458,7 +458,7 @@ TEST_F(StreamingAndPushTest, ServerPushCancelled) {
     std::string main_body;
 
     // Set push promise handler that REJECTS push
-    client->SetPushPromiseHandler([&](std::unordered_map<std::string, std::string>& headers) -> bool {
+    client->SetPushPromiseHandler([&](quicx::HttpFields& headers) -> bool {
         push_promise_received = true;
         return false;  // Reject push
     });

@@ -215,13 +215,13 @@ protected:
     struct RequestResult {
         int status_code = 0;
         std::string body;
-        std::unordered_map<std::string, std::string> headers;
+        quicx::HttpFields headers;
         uint32_t error = 0;
         bool completed = false;
     };
 
     RequestResult DoRequest(const std::string& path, quicx::HttpMethod method = quicx::HttpMethod::kGet,
-        const std::string& body = "", const std::unordered_map<std::string, std::string>& headers = {}) {
+        const std::string& body = "", const quicx::HttpFields& headers = {}) {
         auto request = quicx::IRequest::Create();
         if (!body.empty()) {
             request->AppendBody(body);
@@ -323,17 +323,13 @@ TEST_F(AdvancedFeaturesTest, CustomRequestHeaders) {
     EXPECT_EQ(result.body, "headers echoed");
 
     // Verify echoed headers
-    auto it = result.headers.find("x-echo-header");
-    EXPECT_NE(it, result.headers.end());
-    if (it != result.headers.end()) {
-        EXPECT_EQ(it->second, "hello-world");
-    }
+    std::string v_x_echo_header;
+    EXPECT_TRUE(quicx::FindField(result.headers, "x-echo-header", v_x_echo_header));
+    EXPECT_EQ(v_x_echo_header, "hello-world");
 
-    auto auth_it = result.headers.find("x-echo-auth");
-    EXPECT_NE(auth_it, result.headers.end());
-    if (auth_it != result.headers.end()) {
-        EXPECT_EQ(auth_it->second, "secret123");
-    }
+    std::string v_x_echo_auth;
+    EXPECT_TRUE(quicx::FindField(result.headers, "x-echo-auth", v_x_echo_auth));
+    EXPECT_EQ(v_x_echo_auth, "secret123");
 }
 
 TEST_F(AdvancedFeaturesTest, MultipleResponseHeaders) {
@@ -342,17 +338,13 @@ TEST_F(AdvancedFeaturesTest, MultipleResponseHeaders) {
     EXPECT_EQ(result.status_code, 200);
     EXPECT_EQ(result.body, "{\"status\":\"ok\"}");
 
-    auto req_id = result.headers.find("x-request-id");
-    EXPECT_NE(req_id, result.headers.end());
-    if (req_id != result.headers.end()) {
-        EXPECT_EQ(req_id->second, "req-12345");
-    }
+    std::string v_x_request_id;
+    EXPECT_TRUE(quicx::FindField(result.headers, "x-request-id", v_x_request_id));
+    EXPECT_EQ(v_x_request_id, "req-12345");
 
-    auto rate_limit = result.headers.find("x-rate-limit");
-    EXPECT_NE(rate_limit, result.headers.end());
-    if (rate_limit != result.headers.end()) {
-        EXPECT_EQ(rate_limit->second, "100");
-    }
+    std::string v_x_rate_limit;
+    EXPECT_TRUE(quicx::FindField(result.headers, "x-rate-limit", v_x_rate_limit));
+    EXPECT_EQ(v_x_rate_limit, "100");
 }
 
 // ==================== Query Parameter Tests ====================
@@ -413,11 +405,9 @@ TEST_F(AdvancedFeaturesTest, AfterMiddleware) {
     auto result = DoRequest("/middleware-test");
     EXPECT_TRUE(result.completed);
 
-    auto it = result.headers.find("x-after-middleware");
-    EXPECT_NE(it, result.headers.end());
-    if (it != result.headers.end()) {
-        EXPECT_EQ(it->second, "done");
-    }
+    std::string v_x_after_middleware;
+    EXPECT_TRUE(quicx::FindField(result.headers, "x-after-middleware", v_x_after_middleware));
+    EXPECT_EQ(v_x_after_middleware, "done");
 }
 
 // ==================== 404 Not Found Tests ====================

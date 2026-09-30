@@ -42,7 +42,11 @@ TEST(RecvControlTest, AckFrameGeneratedForAckElicitingPackets) {
     ASSERT_NE(ack, nullptr);
 
     EXPECT_EQ(ack->GetLargestAck(), 5u);
-    EXPECT_EQ(ack->GetAckDelay(), 7u);       // (160 - 150) >> 3 with exponent default 3
+    // ACK Delay is clamped to max_ack_delay_ (10ms by default) before the
+    // exponent shift: raw delay was 60ms (160 - 100), clamped to 10ms,
+    // 10 >> 3 = 1. The clamp is defence in depth against runaway delays
+    // poisoning the peer's RTT estimator (kwik interop, 2026-09-16).
+    EXPECT_EQ(ack->GetAckDelay(), 1u);
     EXPECT_EQ(ack->GetFirstAckRange(), 1u);  // packets 5 and 4 contiguous
 
     const auto& ranges = ack->GetAckRange();
@@ -54,6 +58,47 @@ TEST(RecvControlTest, AckFrameGeneratedForAckElicitingPackets) {
     EXPECT_EQ(ranges[0].GetAckRangeLength(), 0u);  // single packet range (packet 2)
 
     EXPECT_EQ(timer->PendingCount(), 0u);  // Timer cancelled when ACK generated
+}
+
+// Regression (L1 handshakeloss 120s deadlock, 2026-09-16): the FIRST packet
+// of a packet number space with pn == 0 never updated largest_recv_time_
+// (the old strict `largest < pn` is false for 0 < 0), so the first ACK[0]
+// reported ack_delay = now - 0 = the host's full steady_clock uptime
+// (2.8e9 ms observed on the interop runner). The peer (kwik) overflowed its
+// int math into a NEGATIVE delay, poisoned smoothed_rtt to ~1477 s, and its
+// loss detection / PTO went silent for the rest of the connection.
+TEST(RecvControlTest, FirstPacketPnZeroRecordsRecvTime) {
+    auto timer = std::make_shared<common::TestTimerScheduler>();
+    RecvControl recv_control(timer);
+
+    // First packet of the Application space is pn 0 (e.g. the server's
+    // HANDSHAKE_DONE packet in the reverse direction). Its receive time MUST
+    // be recorded. Generate the ACK 7ms later: fixed code reports 7 >> 3 = 0;
+    // the unfixed code would report (107 - 0) clamped to 10 >> 3 = 1.
+    recv_control.OnPacketRecv(100, MakePacket(0, FrameTypeBit::kStreamBit));
+    auto frame = recv_control.MayGenerateAckFrame(107, PacketNumberSpace::kApplicationNumberSpace, false);
+    ASSERT_NE(frame, nullptr);
+    auto ack = std::dynamic_pointer_cast<AckFrame>(frame);
+    ASSERT_NE(ack, nullptr);
+    EXPECT_EQ(ack->GetLargestAck(), 0u);
+    EXPECT_EQ(ack->GetAckDelay(), 0u);  // (107 - 100) >> 3 = 0, NOT uptime-clamped
+}
+
+// Regression (same run): the ACK Delay field must never exceed the
+// max_ack_delay we effectively honour, whatever the raw elapsed time is.
+TEST(RecvControlTest, AckDelayClampedToMaxAckDelay) {
+    auto timer = std::make_shared<common::TestTimerScheduler>();
+    RecvControl recv_control(timer);
+
+    recv_control.OnPacketRecv(100, MakePacket(3, FrameTypeBit::kStreamBit));
+    // 3600 s later the raw delay is huge; it must be clamped to the default
+    // max_ack_delay_ (10 ms) before encoding: 10 >> 3 = 1. An unclamped value
+    // (3600000 >> 3) once overflowed the peer's RTT estimator.
+    auto frame = recv_control.MayGenerateAckFrame(3600100, PacketNumberSpace::kApplicationNumberSpace, false);
+    ASSERT_NE(frame, nullptr);
+    auto ack = std::dynamic_pointer_cast<AckFrame>(frame);
+    ASSERT_NE(ack, nullptr);
+    EXPECT_EQ(ack->GetAckDelay(), 1u);
 }
 
 TEST(RecvControlTest, NonAckElicitingPacketsTrackedButNoImmediateAck) {

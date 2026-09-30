@@ -814,5 +814,43 @@ TEST_F(SessionCacheTest, HandshakeDoneAfterNSTYieldsFullTP) {
     EXPECT_EQ(got.initial_max_stream_data_bidi_remote, full.initial_max_stream_data_bidi_remote);
 }
 
+// Code-review P2-4: session ticket files contain resumable TLS key material
+// and must not be world/group readable (umask defaults are often 0644).
+TEST_F(SessionCacheTest, SessionFilePermissionsAreOwnerOnly) {
+    SessionCache& cache = SessionCache::Instance();
+    ASSERT_TRUE(cache.Init(test_cache_dir_.string()));
+
+    const std::string server_name = "perm-test.example.com";
+    SessionInfo info = CreateTestSession(server_name, common::UTCTimeMsec() / 1000, 3600, true);
+    ASSERT_TRUE(cache.StoreSession(CreateTestSessionDER(server_name), info));
+
+    // Locate the session file the same way SessionCache does.
+    SerializedSessionData probe;
+    std::string filepath = probe.GetFilePath(test_cache_dir_.string(), server_name);
+    ASSERT_TRUE(std::filesystem::exists(filepath)) << filepath;
+
+    std::filesystem::perms p = std::filesystem::status(filepath).permissions();
+    EXPECT_NE((p & std::filesystem::perms::owner_read), std::filesystem::perms::none);
+    EXPECT_NE((p & std::filesystem::perms::owner_write), std::filesystem::perms::none);
+    EXPECT_EQ((p & std::filesystem::perms::group_all), std::filesystem::perms::none);
+    EXPECT_EQ((p & std::filesystem::perms::others_all), std::filesystem::perms::none);
+}
+
+// Code-review P2-4: a cache directory created by Init() must be owner-only
+// (0700) for the same reason.
+TEST_F(SessionCacheTest, CreatedCacheDirectoryIsOwnerOnly) {
+    SessionCache& cache = SessionCache::Instance();
+
+    // Let Init() create the directory itself (it does not exist yet).
+    std::filesystem::path fresh_dir = test_cache_dir_ / "fresh_subdir";
+    ASSERT_FALSE(std::filesystem::exists(fresh_dir));
+    ASSERT_TRUE(cache.Init(fresh_dir.string()));
+
+    std::filesystem::perms p = std::filesystem::status(fresh_dir).permissions();
+    EXPECT_EQ((p & std::filesystem::perms::owner_all), std::filesystem::perms::owner_all);
+    EXPECT_EQ((p & std::filesystem::perms::group_all), std::filesystem::perms::none);
+    EXPECT_EQ((p & std::filesystem::perms::others_all), std::filesystem::perms::none);
+}
+
 }  // namespace quic
 }  // namespace quicx

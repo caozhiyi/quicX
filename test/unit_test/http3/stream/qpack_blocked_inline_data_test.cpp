@@ -165,7 +165,7 @@ protected:
                 ++response_invocations_;
             },
             [this](uint64_t /*stream_id*/, uint32_t err) { error_code_ = err; },
-            [](std::unordered_map<std::string, std::string>&, uint64_t) {});
+            [](HttpFields&, uint64_t) {});
         request_stream_->Init();
     }
 
@@ -199,7 +199,7 @@ TEST_F(QpackBlockedInlineDataTest, BlockedHeadersFollowedByDataInSameBatch) {
 
     const std::string body = "the-quick-brown-fox-jumps-over-the-lazy-dog";
 
-    std::unordered_map<std::string, std::string> headers_in{
+    quicx::HttpFields headers_in{
         {":status", "200"},
         {"content-length", std::to_string(body.size())},
         {"x-trace", "abc-123"},  // not in static table → goes to dynamic table
@@ -306,7 +306,7 @@ TEST_F(QpackBlockedInlineDataTest, AdditionalDataWhileBlockedIsAlsoParked) {
 
     const std::string body = "second-batch-body";
 
-    std::unordered_map<std::string, std::string> headers_in{
+    quicx::HttpFields headers_in{
         {":status", "200"},
         {"content-length", std::to_string(body.size())},
         {"x-trace", "v"},

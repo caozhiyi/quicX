@@ -31,7 +31,7 @@ static void BM_Qpack_Insert_And_IndexedDecode(benchmark::State& state) {
         auto hdr = MakeBuffer();
         dec.WriteHeaderPrefix(hdr, 1, 1);
         QpackEncodePrefixedInteger(hdr, 6, 0x80, 0);
-        std::unordered_map<std::string, std::string> headers;
+        std::vector<std::pair<std::string, std::string>> headers;
         bool ok = dec.Decode(hdr, headers);
         benchmark::DoNotOptimize(ok);
         benchmark::DoNotOptimize(headers);

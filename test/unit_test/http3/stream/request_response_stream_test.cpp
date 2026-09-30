@@ -44,20 +44,20 @@ public:
         error_code_ = error;
     }
 
-    void PushPromiseHandler(std::unordered_map<std::string, std::string>& push_promise) {
+    void PushPromiseHandler(HttpFields& push_promise) {
         push_promise_ = push_promise;
     }
 
     void ErrorHandle(uint64_t stream_id, uint32_t error_code) { error_code_ = error_code; }
 
     const std::shared_ptr<IResponse>& GetResponse() { return response_; }
-    const std::unordered_map<std::string, std::string>& GetPushPromise() { return push_promise_; }
+    const HttpFields& GetPushPromise() { return push_promise_; }
     uint32_t GetErrorCode() { return error_code_; }
 
 private:
     uint32_t error_code_;
     std::shared_ptr<IResponse> response_;
-    std::unordered_map<std::string, std::string> push_promise_;
+    HttpFields push_promise_;
     std::shared_ptr<RequestStream> request_stream_;
     std::shared_ptr<QpackBlockedRegistry> blocked_registry_;
 };

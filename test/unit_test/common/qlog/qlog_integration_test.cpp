@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include <memory>
 #include <string>
 
@@ -14,11 +15,14 @@ namespace quicx {
 namespace common {
 namespace {
 
-// Helper function to create a basic config
+// Helper function to create a basic config. Bazel runs tests with a
+// read-only cwd but provides a writable scratch directory via TEST_TMPDIR;
+// without it (CMake) fall back to the build directory.
 QlogConfig CreateTestConfig() {
     QlogConfig config;
     config.enabled_ = true;
-    config.output_dir_ = "./test_qlogs_integration";
+    const char* tmp = std::getenv("TEST_TMPDIR");
+    config.output_dir_ = ((tmp && *tmp) ? std::string(tmp) + "/" : "./") + std::string("test_qlogs_integration");
     config.format_ = QlogFileFormat::kSequential;
     return config;
 }

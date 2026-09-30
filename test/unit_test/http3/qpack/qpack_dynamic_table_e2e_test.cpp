@@ -49,6 +49,15 @@
 
 namespace quicx {
 namespace http3 {
+
+static std::string* FindValue(const std::vector<std::pair<std::string, std::string>>& f,
+    const std::string& name) {
+    static std::string kEmpty;
+    for (const auto& kv : f) {
+        if (kv.first == name) return const_cast<std::string*>(&kv.second);
+    }
+    return &kEmpty;
+}
 namespace {
 
 // ---------------------------------------------------------------------------
@@ -152,7 +161,7 @@ protected:
         client_ = std::make_shared<InspectableClientConnection>(
             "client", client_settings, mock_conn_client_, client_err,
             // We don't exercise PUSH in these tests; provide stubs.
-            [](std::unordered_map<std::string, std::string>&) { return true; },
+            [](HttpFields&) { return true; },
             [](std::shared_ptr<IResponse>, uint32_t) {});
 
         server_ = std::make_shared<InspectableServerConnection>("server", server_settings,
@@ -1402,7 +1411,7 @@ TEST_F(QpackDynamicTableE2ETest, ProbeEncodeEmptyHeadersMap) {
     auto enc = client_->Encoder();
     auto chunk = std::make_shared<common::StandaloneBufferChunk>(64);
     auto buf = std::make_shared<common::SingleBlockBuffer>(chunk);
-    std::unordered_map<std::string, std::string> empty;
+    std::vector<std::pair<std::string, std::string>> empty;
     EXPECT_TRUE(enc->Encode(empty, buf));
     // Must have written *only* the 2-byte header prefix (RIC=0, Δbase=0).
     EXPECT_EQ(buf->GetDataLength(), 2u);
@@ -1411,7 +1420,7 @@ TEST_F(QpackDynamicTableE2ETest, ProbeEncodeEmptyHeadersMap) {
     // an empty map, no errors.
     auto dec = std::make_shared<QpackEncoder>();
     dec->SetMaxTableCapacity(4096);
-    std::unordered_map<std::string, std::string> out;
+    std::vector<std::pair<std::string, std::string>> out;
     EXPECT_TRUE(dec->Decode(buf, out));
     EXPECT_TRUE(out.empty());
 }
@@ -1500,12 +1509,13 @@ TEST_F(QpackDynamicTableE2ETest, ProbeDecodeRicAgainstInsertCountAfterEviction) 
     uint8_t indexed_dynamic = 0x80 | 0x00;  // kIndexedDynamic | rel=0
     hdr_buf->Write(&indexed_dynamic, 1);
 
-    std::unordered_map<std::string, std::string> out;
+    std::vector<std::pair<std::string, std::string>> out;
     EXPECT_TRUE(dec->Decode(hdr_buf, out))
         << "RIC=2 against InsertCount=2 (post-eviction EntryCount=1) must NOT be rejected";
-    auto it = out.find("x-trace-id");
-    ASSERT_NE(it, out.end());
-    EXPECT_EQ(it->second, "trace-B");
+    std::string it_v;
+    bool it_ok = FindField(out, "x-trace-id", it_v);
+    ASSERT_TRUE(it_ok);
+    EXPECT_EQ(it_v, "trace-B");
 }
 
 // PROBE #17: Pseudo-headers must be encoded against the static table where
@@ -1829,9 +1839,9 @@ TEST_F(QpackDynamicTableE2ETest, ProbeDuplicateInsertSurvivesEncoder) {
     uint8_t pb = 0x10;
     hdr_buf->Write(&pb, 1);
 
-    std::unordered_map<std::string, std::string> out;
+    std::vector<std::pair<std::string, std::string>> out;
     EXPECT_TRUE(enc->Decode(hdr_buf, out));
-    EXPECT_EQ(out["x-dup"], "v");
+    EXPECT_EQ(*FindValue(out, "x-dup"), "v");
 }
 
 // PROBE #23: Direct unit-level test — an Insert-Without-Name-Reference
@@ -2108,25 +2118,25 @@ TEST_F(QpackDynamicTableE2ETest, ProbeBlockedRegistryCallbackMutatesOtherStream)
 //            carries ONLY pseudo-headers (mapped to static-table indices).
 TEST_F(QpackDynamicTableE2ETest, ProbeEncodeOnlyPseudoHeaders) {
     QpackEncoder enc;  // dynamic table disabled by default
-    std::unordered_map<std::string, std::string> in;
-    in[":method"] = "GET";
-    in[":path"] = "/";
-    in[":scheme"] = "https";
-    in[":authority"] = "example.com";
+    std::vector<std::pair<std::string, std::string>> in;
+    in.emplace_back(":method", "GET");
+    in.emplace_back(":path", "/");
+    in.emplace_back(":scheme", "https");
+    in.emplace_back(":authority", "example.com");
 
     auto chunk = std::make_shared<common::StandaloneBufferChunk>(256);
     auto buf = std::make_shared<common::SingleBlockBuffer>(chunk);
     EXPECT_TRUE(enc.Encode(in, buf));
     EXPECT_GT(buf->GetDataLength(), 0u);
 
-    std::unordered_map<std::string, std::string> out;
+    std::vector<std::pair<std::string, std::string>> out;
     QpackEncoder dec;
     EXPECT_TRUE(dec.Decode(buf, out));
     EXPECT_EQ(out.size(), 4u);
-    EXPECT_EQ(out[":method"], "GET");
-    EXPECT_EQ(out[":path"], "/");
-    EXPECT_EQ(out[":scheme"], "https");
-    EXPECT_EQ(out[":authority"], "example.com");
+    EXPECT_EQ(*FindValue(out, ":method"), "GET");
+    EXPECT_EQ(*FindValue(out, ":path"), "/");
+    EXPECT_EQ(*FindValue(out, ":scheme"), "https");
+    EXPECT_EQ(*FindValue(out, ":authority"), "example.com");
 }
 
 // PROBE #40: Direct QpackEncoder::Encode round-trip with a NAME containing
@@ -2141,24 +2151,24 @@ TEST_F(QpackDynamicTableE2ETest, ProbeEncodeOnlyPseudoHeaders) {
 //            be flipped to expect the lowercase form.
 TEST_F(QpackDynamicTableE2ETest, ProbeEncodeMixedCaseNameLiteral) {
     QpackEncoder enc;
-    std::unordered_map<std::string, std::string> in;
-    in[":method"] = "GET";
-    in[":path"] = "/";
-    in[":scheme"] = "http";
-    in[":authority"] = "x";
-    in["X-Custom-Mixed"] = "v";
+    std::vector<std::pair<std::string, std::string>> in;
+    in.emplace_back(":method", "GET");
+    in.emplace_back(":path", "/");
+    in.emplace_back(":scheme", "http");
+    in.emplace_back(":authority", "x");
+    in.emplace_back("X-Custom-Mixed", "v");
 
     auto chunk = std::make_shared<common::StandaloneBufferChunk>(256);
     auto buf = std::make_shared<common::SingleBlockBuffer>(chunk);
     EXPECT_TRUE(enc.Encode(in, buf));
 
     QpackEncoder dec;
-    std::unordered_map<std::string, std::string> out;
+    std::vector<std::pair<std::string, std::string>> out;
     EXPECT_TRUE(dec.Decode(buf, out));
     // Current implementation: original case round-trips faithfully.
     // If the encoder is later hardened to lowercase per RFC 9114 §4.2,
     // change this assertion to look up "x-custom-mixed".
-    EXPECT_TRUE(out.count("X-Custom-Mixed") || out.count("x-custom-mixed"));
+    EXPECT_TRUE(!FindValue(out, "X-Custom-Mixed")->empty() || !FindValue(out, "x-custom-mixed")->empty());
 }
 
 // PROBE #41: Encoder-instruction parsing must tolerate fragmented buffers

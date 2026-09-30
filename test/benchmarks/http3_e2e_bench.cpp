@@ -75,7 +75,7 @@ static void BM_H3_E2E_Request_Response(benchmark::State& state) {
     cc.quic_config_.config_.worker_thread_num_ = 1;
     cc.enable_push_ = true;  // Enable client push reception
     client->Init(cc);
-    client->SetPushPromiseHandler([](std::unordered_map<std::string, std::string>&) { return true; });
+    client->SetPushPromiseHandler([](std::vector<std::pair<std::string, std::string>>&) { return true; });
     client->SetPushHandler([](std::shared_ptr<IResponse> /*resp*/, uint32_t /*err*/) {});
 
     for (auto _ : state) {

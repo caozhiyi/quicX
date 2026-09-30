@@ -39,7 +39,7 @@ static std::shared_ptr<common::IBuffer> MakeBuffer(size_t cap = 16 * 1024) {
     return std::make_shared<common::MultiBlockBuffer>(pool);
 }
 
-static std::unordered_map<std::string, std::string> MakeTypicalRequestHeaders() {
+static std::vector<std::pair<std::string, std::string>> MakeTypicalRequestHeaders() {
     return {
         {":method", "GET"},
         {":path", "/api/v1/users?page=1&limit=20"},
@@ -53,20 +53,18 @@ static std::unordered_map<std::string, std::string> MakeTypicalRequestHeaders() 
     };
 }
 
-static std::unordered_map<std::string, std::string> MakeLargeRequestHeaders(int n_cookies) {
+static std::vector<std::pair<std::string, std::string>> MakeLargeRequestHeaders(int n_cookies) {
     auto m = MakeTypicalRequestHeaders();
 
     // Long path (simulate a complex REST call).
-    m[":path"] =
-        "/service/v3/users/0123456789abcdef/orders"
+    m.emplace_back(":path", "/service/v3/users/0123456789abcdef/orders"
         "?fields=id,name,email,address,phone,created_at"
-        "&filter=status:active&sort=-created_at&page=1&limit=100";
+        "&filter=status:active&sort=-created_at&page=1&limit=100");
 
     // Long auth.
-    m["authorization"] =
-        "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+    m.emplace_back("authorization", "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
         "eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IlF1aWNYIn0."
-        "very-long-signature-string-that-does-not-matter-for-this-benchmark";
+        "very-long-signature-string-that-does-not-matter-for-this-benchmark");
 
     // Many cookie entries (tend to hit Huffman + literal encoding heavily).
     std::string cookies;
@@ -75,7 +73,7 @@ static std::unordered_map<std::string, std::string> MakeLargeRequestHeaders(int 
         std::snprintf(buf, sizeof(buf), "sk_%d=abcdef0123456789_%d;", i, i);
         cookies.append(buf);
     }
-    m["cookie"] = cookies;
+    m.emplace_back("cookie", cookies);
     return m;
 }
 
@@ -118,7 +116,7 @@ static void BM_Qpack_Decode_LargeHeaders(benchmark::State& state) {
         buf->Write(wire.data(), static_cast<uint32_t>(wire.size()));
 
         http3::QpackEncoder dec;  // fresh decoder so dynamic table state is clean
-        std::unordered_map<std::string, std::string> out;
+        std::vector<std::pair<std::string, std::string>> out;
         bool ok = dec.Decode(buf, out);
         benchmark::DoNotOptimize(ok);
         benchmark::DoNotOptimize(out.size());
