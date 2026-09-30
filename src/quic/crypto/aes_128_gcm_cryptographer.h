@@ -12,9 +12,9 @@ public:
     Aes128GcmCryptographer();
     virtual ~Aes128GcmCryptographer();
 
-    virtual const char* GetName();
+    virtual const char* GetName() override;
 
-    virtual CryptographerId GetCipherId();
+    virtual CryptographerId GetCipherId() override;
 
 protected:
     // RFC 9001 §5.4.3: AES-128-GCM uses AES-128-ECB for header protection.

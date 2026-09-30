@@ -281,12 +281,23 @@ void ConnectionIDCoordinator::TrackNewConnectionIDFrameDelivery(const std::share
     std::shared_ptr<ConnectionIDManager> mgr = local_conn_id_manager_;
     SendManager* send_mgr = &send_manager_;
 
-    // Self-perpetuating re-emission closure: the handler captures the
-    // shared_ptr holding it, so every re-emitted copy re-arms tracking for
-    // itself. The chain is bounded (one link per loss) and released once a
-    // copy is acknowledged and the packets leave SendControl's tables.
+    // Self-perpetuating re-emission closure: re-armed copies keep the chain
+    // alive while any handler is in flight. NOTE: the closure references
+    // ITSELF only weakly — a strong self-capture would form a reference cycle
+    // that leaks the closure (and everything it captures, including |mgr|)
+    // forever. Strong references live exclusively in the delivery handlers of
+    // in-flight frames; the chain is bounded (one link per loss) and released
+    // once every referencing frame is acked or dropped by SendControl.
     auto resend = std::make_shared<std::function<void(uint64_t)>>();
-    *resend = [mgr, send_mgr, resend](uint64_t seq) {
+    std::weak_ptr<std::function<void(uint64_t)>> weak_resend = resend;
+    *resend = [mgr, send_mgr, weak_resend](uint64_t seq) {
+        // The invoking handler holds a strong reference, so this lock can only
+        // fail if no handler chain exists — in which case nobody needs
+        // re-emission and we can drop the event silently.
+        auto self = weak_resend.lock();
+        if (!self) {
+            return;
+        }
         ConnectionID cid;
         if (!mgr->GetIDBySequence(seq, cid)) {
             return;  // CID retired since the frame was sent — nothing to re-advertise
@@ -302,9 +313,9 @@ void ConnectionIDCoordinator::TrackNewConnectionIDFrameDelivery(const std::share
             return;
         }
         fresh->SetStatelessResetToken(reset_token);
-        fresh->SetDeliveryHandler([resend, seq](FrameDeliveryState state) {
+        fresh->SetDeliveryHandler([self, seq](FrameDeliveryState state) {
             if (state == FrameDeliveryState::kLost) {
-                (*resend)(seq);
+                (*self)(seq);
             }
         });
         // EnqueueFrame (not OnFrameReady) is fine here: the kLost notification
@@ -327,13 +338,22 @@ void ConnectionIDCoordinator::TrackRetireConnectionIDFrameDelivery(
         return;
     }
     SendManager* send_mgr = &send_manager_;
+    // Weak self-reference (see TrackNewConnectionIDFrameDelivery): strong
+    // references to this closure live only in delivery handlers of in-flight
+    // frames, so the closure is freed once the last referencing frame is acked
+    // or dropped instead of leaking via a self-capture cycle.
     auto resend = std::make_shared<std::function<void(uint64_t)>>();
-    *resend = [send_mgr, resend](uint64_t seq) {
+    std::weak_ptr<std::function<void(uint64_t)>> weak_resend = resend;
+    *resend = [send_mgr, weak_resend](uint64_t seq) {
+        auto self = weak_resend.lock();
+        if (!self) {
+            return;
+        }
         auto fresh = std::make_shared<RetireConnectionIDFrame>();
         fresh->SetSequenceNumber(seq);
-        fresh->SetDeliveryHandler([resend, seq](FrameDeliveryState state) {
+        fresh->SetDeliveryHandler([self, seq](FrameDeliveryState state) {
             if (state == FrameDeliveryState::kLost) {
-                (*resend)(seq);
+                (*self)(seq);
             }
         });
         send_mgr->EnqueueFrame(fresh);

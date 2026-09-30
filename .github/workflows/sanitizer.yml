@@ -60,7 +60,6 @@ jobs:
             -DCMAKE_SHARED_LINKER_FLAGS="${{ matrix.flags }}" \
             -DENABLE_TESTING=ON \
             -DENABLE_INTERGRATION=ON \
-            -DENABLE_INTEROP=OFF \
             -DENABLE_FUZZING=OFF
 
       - name: Build

@@ -336,8 +336,21 @@ bool ClientConnection::HandleHandshakeDoneFrame(std::shared_ptr<IFrame> /*frame*
             // is still empty when the task runs, retry briefly instead of
             // giving up forever.
             auto attempts = std::make_shared<int>(3);
+            // The closure references ITSELF only weakly: a strong self-capture
+            // is a reference cycle that leaks the closure (and its captures,
+            // including |loop|) forever. Strong references are held by the
+            // queued/re-delayed task closures, so the chain dies with the last
+            // scheduled retry instead of leaking.
             auto try_migrate = std::make_shared<std::function<void()>>();
-            *try_migrate = [weak_base, this, addr, loop, attempts, try_migrate]() {
+            std::weak_ptr<std::function<void()>> weak_migrate = try_migrate;
+            *try_migrate = [weak_base, this, addr, loop, attempts, weak_migrate]() {
+                // Keep the closure alive for the duration of this invocation so
+                // a scheduled retry below can capture a strong reference. The
+                // invoking task always holds one, so this lock cannot fail.
+                auto migrate_fn = weak_migrate.lock();
+                if (!migrate_fn) {
+                    return;
+                }
                 // lock(), not expired(): checking expired() and then using a
                 // captured raw `this` is a TOCTOU — the last shared_ptr can
                 // drop between the check and the use. Holding the lock keeps
@@ -351,15 +364,17 @@ bool ClientConnection::HandleHandshakeDoneFrame(std::shared_ptr<IFrame> /*frame*
                 if (result == MigrationResult::kFailedNoAvailableCID && (*attempts)-- > 0) {
                     LOG_DEBUG("Deferred migration: CID pool still empty, retrying (%d attempts left)", *attempts);
                     loop->PostDelayed(
-                        [try_migrate]() {
-                            if (*try_migrate) {
-                                (*try_migrate)();
-                            }
+                        [migrate_fn]() {
+                            (*migrate_fn)();
                         },
                         50);
                 }
             };
-            loop->PostTask(*try_migrate);
+            // The task closure owns the sole strong reference; the copy made by
+            // PostTask keeps the chain alive until it runs (and re-delays).
+            loop->PostTask([try_migrate]() {
+                (*try_migrate)();
+            });
         } else {
             migration_controller_->InitiateMigrationToPeer(
                 std::weak_ptr<void>(std::static_pointer_cast<BaseConnection>(shared_from_this())), addr.GetIp(),

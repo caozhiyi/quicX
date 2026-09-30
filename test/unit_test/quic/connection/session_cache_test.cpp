@@ -832,8 +832,13 @@ TEST_F(SessionCacheTest, SessionFilePermissionsAreOwnerOnly) {
     std::filesystem::perms p = std::filesystem::status(filepath).permissions();
     EXPECT_NE((p & std::filesystem::perms::owner_read), std::filesystem::perms::none);
     EXPECT_NE((p & std::filesystem::perms::owner_write), std::filesystem::perms::none);
+#ifndef _WIN32
+    // POSIX-only assertion: Windows has no group/others permission model —
+    // MSVC's std::filesystem reports those bits by mirroring the file's
+    // read-only attribute, so "owner-only" cannot be observed there.
     EXPECT_EQ((p & std::filesystem::perms::group_all), std::filesystem::perms::none);
     EXPECT_EQ((p & std::filesystem::perms::others_all), std::filesystem::perms::none);
+#endif
 }
 
 // Code-review P2-4: a cache directory created by Init() must be owner-only
@@ -848,8 +853,11 @@ TEST_F(SessionCacheTest, CreatedCacheDirectoryIsOwnerOnly) {
 
     std::filesystem::perms p = std::filesystem::status(fresh_dir).permissions();
     EXPECT_EQ((p & std::filesystem::perms::owner_all), std::filesystem::perms::owner_all);
+#ifndef _WIN32
+    // POSIX-only assertion: see SessionFilePermissionsAreOwnerOnly.
     EXPECT_EQ((p & std::filesystem::perms::group_all), std::filesystem::perms::none);
     EXPECT_EQ((p & std::filesystem::perms::others_all), std::filesystem::perms::none);
+#endif
 }
 
 }  // namespace quic

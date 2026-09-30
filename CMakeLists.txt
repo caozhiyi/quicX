@@ -288,12 +288,6 @@ if(ENABLE_INTEGRATION)
     add_subdirectory(test/integration)
 endif()
 
-# interop tests
-option(ENABLE_INTEROP "Enable building interop tests" ON)
-if(ENABLE_INTEROP)
-    add_subdirectory(test/interop)
-endif()
-
 # Performance / baseline tests (CPU hotspots, memory baselines, protocol micro-benchmarks)
 option(ENABLE_PERF_TESTS "Enable building perf (test/perf) targets" ON)
 if(ENABLE_PERF_TESTS)

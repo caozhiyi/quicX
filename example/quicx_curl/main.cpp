@@ -3,6 +3,7 @@
 
 #include <csignal>
 #include <cstdio>
+#include <cstdlib>
 #include <memory>
 
 #include <quicx/http3/if_client.h>  // complete type for unique_ptr<IClient> dtor
@@ -20,7 +21,12 @@ extern "C" void HandleInterrupt(int sig) {
     // Best-effort graceful close (CONNECTION_CLOSE + qlog/keylog flush),
     // then exit with the conventional 128+SIGINT code like curl does.
     if (g_active_session) g_active_session->Close();
-    _exit(128 + sig);
+    // std::_Exit (C++11 <cstdlib>) is the portable spelling of POSIX _exit:
+    // skips atexit handlers and stream flushes, which is async-signal-safe
+    // behavior for a signal handler. Declaring _exit requires <unistd.h>/
+    // <process.h>, which glibc happens to pull in transitively but libc++
+    // (macOS) does not — hence the portable form.
+    std::_Exit(128 + sig);
 }
 
 }  // namespace
