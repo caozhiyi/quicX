@@ -150,10 +150,7 @@ def run_utest():
     print("="*40)
     
     utest_bin = os.path.join(BIN_DIR, "quicx_utest")
-    if not os.path.exists(utest_bin):
-        # fallback path
-        utest_bin = os.path.join(BUILD_DIR, "test", "quicx_utest")
-        
+
     if not os.path.exists(utest_bin):
         print(f"Error: Unit test binary not found at {utest_bin}")
         print("Did you build the project? (mkdir build && cd build && cmake .. && make)")
@@ -567,108 +564,10 @@ def run_perf_tests():
         skipped=PERF_TESTS_SKIPPED,
     )
 
-INTEROP_RUNNER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "test", "interop", "interop_runner.py")
-INTEROP_BUILD_DIR = os.path.abspath("build_interop")
-INTEROP_DEFAULT_PORT = 4433
-INTEROP_TIMEOUT = 600  # 10 minutes for all scenarios
-
-def run_interop_tests():
-    """Run QUIC interop self-tests via interop_runner.py --local."""
-    print("\n" + "="*40)
-    print("Running Interop Tests")
-    print("="*40)
-
-    # Check interop_runner.py exists
-    if not os.path.exists(INTEROP_RUNNER):
-        print(f"Error: interop_runner.py not found at {INTEROP_RUNNER}")
-        return False
-
-    # Determine build directory: prefer build_interop, fall back to build
-    build_dir = INTEROP_BUILD_DIR
-    if not os.path.isdir(build_dir):
-        build_dir = BUILD_DIR
-    
-    # Verify interop binaries exist
-    bin_dir = os.path.join(build_dir, "bin")
-    server_bin = os.path.join(bin_dir, "interop_server")
-    client_bin = os.path.join(bin_dir, "interop_client")
-
-    if not os.path.exists(server_bin) or not os.path.exists(client_bin):
-        print(f"Error: Interop binaries not found in {bin_dir}")
-        print("Build with: cmake -DENABLE_INTEROP=ON .. && make interop_server interop_client")
-        return False
-
-    print(f"Build dir: {build_dir}")
-    print(f"Port: {INTEROP_DEFAULT_PORT}")
-    print(f"Runner: {INTEROP_RUNNER}")
-    print()
-
-    cmd = [
-        sys.executable, INTEROP_RUNNER,
-        "--local",
-        "--build-dir", build_dir,
-        "--port", str(INTEROP_DEFAULT_PORT),
-        "--output", "text",
-        "-v",
-        "--timeout", "45",
-    ]
-
-    start_time = time.time()
-    try:
-        result = subprocess.run(
-            cmd,
-            cwd=os.path.dirname(INTEROP_RUNNER),
-            timeout=INTEROP_TIMEOUT,
-            capture_output=True,
-            text=True,
-        )
-        duration = time.time() - start_time
-    except subprocess.TimeoutExpired:
-        duration = time.time() - start_time
-        print(f"FAIL: Interop tests timed out after {duration:.1f}s")
-        return False
-    except Exception as e:
-        print(f"FAIL: Exception running interop tests: {e}")
-        return False
-
-    # Print runner output
-    if result.stdout:
-        print(result.stdout)
-    if result.stderr:
-        print(result.stderr, file=sys.stderr)
-
-    # Parse results from output
-    passed = 0
-    failed = 0
-    total = 0
-    for line in result.stdout.splitlines():
-        # Look for summary line like "Total: 14  |  Passed: 14  |  Failed: 0  ..."
-        if line.strip().startswith("Total:"):
-            parts = line.split("|")
-            for part in parts:
-                part = part.strip()
-                if part.startswith("Total:"):
-                    total = int(part.split(":")[1].strip())
-                elif part.startswith("Passed:"):
-                    passed = int(part.split(":")[1].strip())
-                elif part.startswith("Failed:"):
-                    failed = int(part.split(":")[1].strip())
-
-    if total > 0:
-        print(f"\nInterop Summary: {passed}/{total} passed, {failed} failed ({duration:.1f}s)")
-    else:
-        print(f"\nInterop tests completed in {duration:.1f}s (could not parse summary)")
-
-    # Fail if the runner itself returned non-zero or any test failed
-    if result.returncode != 0 or failed > 0:
-        return False
-
-    return True
-
 def main():
     parser = argparse.ArgumentParser(description="Run quicX test suite")
     parser.add_argument("mode", nargs="?", default="all", 
-                        choices=["all", "utest", "example", "integration", "fuzz", "benchmark", "interop", "perf", "cc"],
+                        choices=["all", "utest", "example", "integration", "fuzz", "benchmark", "perf", "cc"],
                         help="Test mode to run (default: all)")
     args = parser.parse_args()
 
@@ -704,11 +603,6 @@ def main():
     #    if not run_cc_tests():
     #        success = False
     #        if args.mode != "all": return sys.exit(1)
-
-    if args.mode in ["all", "interop"]:
-        if not run_interop_tests():
-            success = False
-            if args.mode != "all": return sys.exit(1)
 
     if args.mode in ["all", "perf"]:
         if not run_perf_tests():

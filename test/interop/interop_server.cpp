@@ -31,6 +31,7 @@
 #endif
 #include <iostream>
 #include <memory>
+#include <quicx/common/metrics.h>
 #include <quicx/http3/if_request.h>
 #include <quicx/http3/if_response.h>
 #include <quicx/http3/if_server.h>
@@ -63,9 +64,20 @@ public:
 
     bool Init(const std::string& cert_file, const std::string& key_file) {
         QuicTransportParams transport_params;
-        // Use a short idle timeout for interop testing so the connection closes
-        // promptly after all streams are finished, well within container timeout.
-        transport_params.max_idle_timeout_ms_ = 10000;  // 10 seconds
+        // RFC 9000 §10.1: effective idle timeout = min(ours, peer's). Under the
+        // interop corruption/loss scenarios a peer's PTO backoff (with an RTT
+        // inflated by a multi-second corrupted handshake) can legitimately stay
+        // silent for >10 s while it still has unacked data; closing at 10 s kills
+        // those connections one retransmission away from success (quinn C1
+        // probabilistic failure, 2026-09-17). 30 s matches the reasoning in
+        // quic/config.h (kHandshakeConfirmGraceMs) while staying bounded.
+        transport_params.max_idle_timeout_ms_ = 30000;  // 30 seconds
+        // Keep-alive PINGs at max(idle/2, 1s) = 15 s: under the loss/corruption
+        // scenarios a peer's PTO backoff (RTT inflated by a multi-second
+        // corrupted handshake) can exceed the idle window while it still has
+        // unacked data; without a probe from our side both endpoints idle out
+        // and a one-retransmission-away transfer dies.
+        transport_params.enable_keep_alive_ = true;
         // RFC 9000 §9.6: advertise the server's alternate address so the client
         // migrates to it (connectionmigration interop scenario).
         transport_params.preferred_address_v4_ = preferred_address_v4_;
@@ -171,11 +183,22 @@ public:
         }
 
         // QUIC Version
+        // RFC 9368 compatible version negotiation: for the "v2" interop test
+        // case the client sends a v1 Initial whose supported_versions includes
+        // v2, and expects the server to upgrade the connection to v2 (the
+        // runner then requires the server Initial to carry 0x6b3343cf). For
+        // every other test case the runner requires exactly v1, so the
+        // preferred version must stay v1 there. QUIC_VERSION still overrides
+        // both for manual runs.
         const char* quic_version = std::getenv("QUIC_VERSION");
+        const char* testcase_env = std::getenv("TESTCASE");
         if (quic_version) {
             uint32_t version = static_cast<uint32_t>(std::strtoul(quic_version, nullptr, 0));
             config.config_.quic_version_ = version;
             std::cout << "QUIC Version: 0x" << std::hex << version << std::dec << std::endl;
+        } else if (testcase_env && strcmp(testcase_env, "v2") == 0) {
+            config.config_.quic_version_ = 0x6b3343cf;
+            std::cout << "QUIC Version: v2 (0x6b3343cf) [v2 test case]" << std::endl;
         } else {
             config.config_.quic_version_ = 0x00000001;
             std::cout << "QUIC Version: v1 (0x00000001) [default for interop]" << std::endl;
@@ -557,6 +580,29 @@ void crash_handler(int signum) {
 #endif
 
 int main(int argc, char* argv[]) {
+    // Metrics dump at process exit, gated by QUICX_METRICS_DUMP=1 (same
+    // convention as example/file_transfer and interop_client). The bench
+    // script stops the server with SIGTERM -> signal_handler -> Stop() ->
+    // Join() returns -> main returns normally, so the RAII destructor runs
+    // and the dump lands in server.log (stderr is redirected there).
+    struct MetricsDumpAtExit {
+        ~MetricsDumpAtExit() {
+            if (const char* d = std::getenv("QUICX_METRICS_DUMP"); d && d[0] == '1') {
+                std::cerr << "===== METRICS DUMP (interop_server) =====\n"
+                          << quicx::Metrics::ExportPrometheus() << "===== END METRICS DUMP =====\n";
+            }
+        }
+    } metrics_dumper;
+
+    // Same opt-in as interop_client / file_transfer: the raw IQuicServer
+    // path never initializes the Metrics registry, so without this every
+    // counter observe is a no-op and the exit dump is empty.
+    if (const char* d = std::getenv("QUICX_METRICS_DUMP"); d && d[0] == '1') {
+        quicx::MetricsConfig mcfg;
+        mcfg.enable_ = true;
+        quicx::Metrics::Initialize(mcfg);
+    }
+
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
 #ifndef _WIN32
