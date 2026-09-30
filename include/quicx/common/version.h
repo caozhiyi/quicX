@@ -8,17 +8,16 @@
 // defined separately in <quicx/quic/type.h> as
 // `quicx::kQuicVersion1` / `quicx::kQuicVersion2`.
 //
-// QuicX is a *learning reference* implementation of QUIC / HTTP/3.  The
-// `1.0.0` milestone marks completion of the learning-reference goal (the
-// code, docs, and tests are self-consistent end-to-end); it does NOT imply
-// ABI stability or production readiness.  The public C++ API carries no
-// cross-release compatibility promise -- downstream code should pin to an
-// exact patch release and re-validate on every bump.  See `CHANGELOG.md`
+// QuicX is a production-oriented QUIC / HTTP/3 protocol stack.  Since the
+// `1.0.0` release, the public C++ API follows semantic versioning (SemVer):
+// patch and minor releases preserve source compatibility; breaking changes
+// land in major releases only.  Binary (ABI) stability is not promised --
+// rebuild against the exact QuicX version you link.  See `CHANGELOG.md`
 // for the full release notes.
 //
 // The numeric macros here MUST stay in sync with:
 //   - the top-level `CMakeLists.txt` `project(... VERSION X.Y.Z)` line,
-//   - the root `QUICX_VERSION` / `VERSION.txt` files, and
+//   - the root `VERSION.txt` file, and
 //   - the `MODULE.bazel` `version = "..."` field.
 // The CMake build is the single source of truth; this header is updated at
 // the same time when the version is bumped.

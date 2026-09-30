@@ -1,6 +1,7 @@
-# Empty workspace to allow using in-repo third_party code.
+# Legacy WORKSPACE file. Bazel >= 8 ignores it by default (bzlmod-only) and
+# Bazel 9 removes the mechanism entirely; it is kept solely so that Bazel 7
+# users get a named workspace. Do NOT add repositories here — all external
+# dependencies are managed in MODULE.bazel.
 workspace(name = "quicx")
-
-load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 

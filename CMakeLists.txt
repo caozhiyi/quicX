@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 # NOTE: keep the VERSION argument below in sync with:
-#   - the root `QUICX_VERSION` and `VERSION.txt` files
+#   - the root `VERSION.txt` file
 #   - the QUICX_VERSION_MAJOR/MINOR/PATCH macros in
 #     include/quicx/common/version.h
 #   - the `version = "..."` field in MODULE.bazel
