@@ -27,7 +27,7 @@ make metrics_monitoring_server metrics_monitoring_client
 ./bin/metrics_monitoring_server
 ```
 
-The server will start on `https://0.0.0.0:8443` and expose the following endpoints:
+The server will start on `https://0.0.0.0:7010` and expose the following endpoints:
 
 | Endpoint | Description |
 |----------|-------------|
@@ -56,10 +56,10 @@ You can simple use `curl` to fetch the metrics:
 
 ```bash
 # Get Prometheus format metrics
-curl -k https://localhost:8443/metrics
+curl -k https://localhost:7010/metrics
 
 # Get HTML dashboard
-curl -k https://localhost:8443/dashboard > dashboard.html
+curl -k https://localhost:7010/dashboard > dashboard.html
 # Open dashboard.html in your browser
 ```
 
@@ -72,31 +72,31 @@ curl -k https://localhost:8443/dashboard > dashboard.html
 
 // Initialize configuration
 quicx::MetricsConfig config;
-config.enable = true;
-config.prefix = "quicx";
-quicx::common::Metrics::Initialize(config);
+config.enable_ = true;
+config.prefix_ = "quicx";
+quicx::Metrics::Initialize(config);
 ```
 
 ### 2. Register Custom Metrics
 
 ```cpp
 // Counter: Monotonically increasing counter
-quicx::common::MetricID requests_total = 
-    quicx::common::Metrics::RegisterCounter(
+quicx::MetricID requests_total = 
+    quicx::Metrics::RegisterCounter(
         "custom_requests_total",
         "Total number of requests"
     );
 
-// Gauge: Value that can go up and down
-quicx::common::MetricID active_requests = 
-    quicx::common::Metrics::RegisterGauge(
+// Gauge: Value that can go up or down
+quicx::MetricID active_requests = 
+    quicx::Metrics::RegisterGauge(
         "custom_active_requests",
         "Number of active requests"
     );
 
 // Histogram: Statistical distribution
-quicx::common::MetricID request_duration = 
-    quicx::common::Metrics::RegisterHistogram(
+quicx::MetricID request_duration = 
+    quicx::Metrics::RegisterHistogram(
         "custom_request_duration_ms",
         "Request duration in milliseconds",
         {10, 25, 50, 100, 250, 500, 1000}  // Buckets
@@ -107,21 +107,21 @@ quicx::common::MetricID request_duration =
 
 ```cpp
 // Counter: Increment
-quicx::common::Metrics::CounterInc(requests_total);
+quicx::Metrics::CounterInc(requests_total);
 
 // Gauge: Increment/Decrement/Set
-quicx::common::Metrics::GaugeInc(active_requests);
-quicx::common::Metrics::GaugeDec(active_requests);
-quicx::common::Metrics::GaugeSet(active_requests, 10);
+quicx::Metrics::GaugeInc(active_requests);
+quicx::Metrics::GaugeDec(active_requests);
+quicx::Metrics::GaugeSet(active_requests, 10);
 
 // Histogram: Observe value
-quicx::common::Metrics::HistogramObserve(request_duration, 123);
+quicx::Metrics::HistogramObserve(request_duration, 123);
 ```
 
 ### 4. Export to Prometheus Format
 
 ```cpp
-std::string metrics = quicx::common::Metrics::ExportPrometheus();
+std::string metrics = quicx::Metrics::ExportPrometheus();
 // Send 'metrics' string as HTTP response body
 ```
 
@@ -131,15 +131,15 @@ std::string metrics = quicx::common::Metrics::ExportPrometheus();
 class RequestTracker {
 public:
     RequestTracker() {
-        quicx::common::Metrics::GaugeInc(active_requests);
+        quicx::Metrics::GaugeInc(active_requests);
         start_time_ = std::chrono::steady_clock::now();
     }
     
     ~RequestTracker() {
-        quicx::common::Metrics::GaugeDec(active_requests);
+        quicx::Metrics::GaugeDec(active_requests);
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - start_time_).count();
-        quicx::common::Metrics::HistogramObserve(request_duration, duration);
+        quicx::Metrics::HistogramObserve(request_duration, duration);
     }
     
 private:

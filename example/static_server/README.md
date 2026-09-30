@@ -36,14 +36,16 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
   -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
 ```
 
-The cert hard-coded in `hello_world/server.cpp` is **expired (2014-2017)**
+The cert hard-coded in `hello_world/server.cpp` is **expired**
 and has no `localhost` SAN — that's why browsers refuse it.
 
 ## 2. Build & run
 
 ```bash
 # from the repo root, after running cmake:
-./build/example/static_server/static_server ./www ./cert.pem ./key.pem
+./build/bin/static_server
+# defaults: --doc-root ./www --cert ./cert.pem --key ./key.pem --h3-port 7010
+# run `static_server --help` for all options (--http-port/--https-port/--no-upgrade)
 ```
 
 The binary will create `./www/index.html` automatically on first run if the
@@ -81,10 +83,10 @@ Open DevTools → Network → enable the **Protocol** column. You should see
 
 ## Verifying without a browser
 
-If you just want to confirm the server is up, use the bundled `quicx-curl`:
+If you just want to confirm the server is up, use the bundled `quicx_curl`:
 
 ```bash
-./build/example/quicx_curl/quicx-curl https://localhost:7010/index.html
+./build/bin/quicx_curl -k https://localhost:7010/index.html
 ```
 
 or any other HTTP/3-capable curl:

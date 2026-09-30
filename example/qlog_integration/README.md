@@ -25,9 +25,9 @@ quicx::Http3ServerConfig config;
 // ... other config ...
 
 // Enable QLog
-config.config_.qlog_config_.enabled = true;
-config.config_.qlog_config_.output_dir = "./qlog_output";
-config.config_.qlog_config_.flush_interval_ms = 100;
+config.quic_config_.config_.qlog_config_.enabled_ = true;
+config.quic_config_.config_.qlog_config_.output_dir_ = "./qlog_output";
+config.quic_config_.config_.qlog_config_.flush_interval_ms_ = 100;
 
 server->Init(config);
 ```
@@ -43,8 +43,8 @@ quicx::Http3Config config;
 // ... other config ...
 
 // Enable QLog
-config.qlog_config_.enabled = true;
-config.qlog_config_.output_dir = "./qlog_output_client";
+config.quic_config_.qlog_config_.enabled_ = true;
+config.quic_config_.qlog_config_.output_dir_ = "./qlog_output_client";
 
 client->Init(config);
 ```
@@ -63,7 +63,7 @@ This streamlined approach ensures qlog is initialized as part of the standard se
    ```bash
    ./bin/qlog_server
    ```
-   The server will indicate that QLog is enabled and listening on port 7011.
+   The server will indicate that QLog is enabled and listening on port 7012.
 
 3. **Run the client** (in a new terminal):
    ```bash

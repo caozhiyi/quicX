@@ -1,108 +1,65 @@
+// quicx_curl: HTTP/3 command-line tool (curl-like + QUIC feature showcase).
+// Assembly root only: parse options, wire session + orchestrator, run.
+
 #include <csignal>
-#include <cstdlib>
-#include <iostream>
+#include <cstdio>
+#include <memory>
 
-#include "args_parser.h"
-#include "http_client.h"
-#include "output_formatter.h"
+#include <quicx/http3/if_client.h>  // complete type for unique_ptr<IClient> dtor
 
-static volatile std::sig_atomic_t g_interrupted = 0;
+#include "app/orchestrator.h"
+#include "cli/option_table.h"
+#include "obs/tracer.h"
+#include "session/session.h"
 
-static void SignalHandler(int signal) {
-    g_interrupted = 1;
-    std::cerr << "\nInterrupted by user" << std::endl;
-    exit(1);
+namespace {
+
+ClientSession* g_active_session = nullptr;
+
+extern "C" void HandleInterrupt(int sig) {
+    // Best-effort graceful close (CONNECTION_CLOSE + qlog/keylog flush),
+    // then exit with the conventional 128+SIGINT code like curl does.
+    if (g_active_session) g_active_session->Close();
+    _exit(128 + sig);
 }
 
+}  // namespace
+
 int main(int argc, char* argv[]) {
-    // Install signal handler
-    std::signal(SIGINT, SignalHandler);
-    std::signal(SIGTERM, SignalHandler);
-
-    // Parse arguments
-    ArgsParser parser;
-    CurlArgs args;
-
-    if (!parser.Parse(argc, argv, args)) {
-        if (!args.show_help) {
-            std::cerr << "Error: Invalid arguments" << std::endl;
-            std::cerr << "Try '" << argv[0] << " --help' for more information." << std::endl;
-            return 1;
-        }
+    OptionTable table;
+    Options opts;
+    std::string error;
+    if (!table.Parse(argc, argv, opts, error)) {
+        std::fprintf(stderr, "quicx-curl: %s\n", error.c_str());
+        table.PrintHelp(argv[0], stderr);
+        return 3;  // URL malformat (curl: bad option -> exit 2; close enough family)
     }
-
-    if (args.show_help) {
-        ArgsParser::ShowHelp(argv[0]);
+    if (opts.show_help) {
+        table.PrintHelp(argv[0], stdout);
         return 0;
     }
-
-    if (!args.IsValid()) {
-        std::cerr << "Error: URL is required" << std::endl;
-        std::cerr << "Try '" << argv[0] << " --help' for more information." << std::endl;
-        return 1;
+    if (!opts.IsValid()) {
+        std::fprintf(stderr, "quicx-curl: no URL given\n\n");
+        table.PrintHelp(argv[0], stderr);
+        return 2;  // curl: failed to initialize / usage error
     }
 
-    // Determine output mode
-    OutputMode output_mode = OutputMode::kNormal;
-    if (args.silent) {
-        output_mode = OutputMode::kSilent;
-    } else if (args.verbose) {
-        output_mode = OutputMode::kVerbose;
-    } else if (args.include_headers) {
-        output_mode = OutputMode::kInclude;
-    }
+    Tracer tracer(opts.out.verbose, opts.out.show_error || !opts.out.silent);
+    tracer.Info("quicx-curl 1.0 (HTTP/3, quicx)");
 
-    if (args.verbose) {
-        std::cerr << "* URL: " << args.url << std::endl;
-        std::cerr << "* Method: " << args.method << std::endl;
-        if (!args.data.empty()) {
-            std::cerr << "* Data: " << args.data << std::endl;
-        }
-    }
+    auto session = std::make_unique<ClientSession>();
+    if (!session->Init(opts.tp, opts.req.connect_timeout_s, opts.out.verbose)) return 7;  // connection failure
 
-    // Initialize HTTP client
-    HttpClient client;
-    if (!client.Init(args.verbose)) {
-        std::cerr << "Failed to initialize HTTP client" << std::endl;
-        return 1;
-    }
+    g_active_session = session.get();
+    std::signal(SIGINT, HandleInterrupt);
+#ifdef SIGPIPE
+    std::signal(SIGPIPE, SIG_IGN);  // broken pipe on stdout must not kill us silently
+#endif
 
-    // Execute request
-    HttpResponse response;
-    bool success = client.DoRequest(args.url, args.method, args.headers, args.data, response);
+    Orchestrator orch(opts);
+    int code = orch.Run(*session);
 
-    if (!success) {
-        if (!args.silent) {
-            std::cerr << "Request failed";
-            if (response.error != 0) {
-                std::cerr << " with error code: " << response.error;
-            }
-            std::cerr << std::endl;
-        }
-        return 1;
-    }
-
-    // Format and output response
-    OutputFormatter formatter(output_mode);
-
-    if (!args.output_file.empty()) {
-        // Write to file
-        if (!formatter.WriteToFile(response, args.output_file)) {
-            return 1;
-        }
-
-        if (args.verbose) {
-            std::cerr << "* Saved to " << args.output_file << std::endl;
-        }
-    } else {
-        // Write to stdout
-        formatter.WriteResponse(response, std::cout);
-    }
-
-    // Exit with appropriate code
-    if (response.status_code >= 400) {
-        return 22;  // curl's HTTP error exit code
-    }
-
-    return 0;
+    g_active_session = nullptr;
+    session->Close();
+    return code;
 }

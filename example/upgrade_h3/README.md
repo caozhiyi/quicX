@@ -10,7 +10,7 @@ The `upgrade_h3` server listens for incoming connections and advertises HTTP/3 s
 
 - **Multi-Protocol Support**: Simultaneous support for HTTP/1.1, HTTP/2, and HTTP/3.
 - **Protocol Advertisement**: Automatically adds `Alt-Svc` headers to responses to inform clients about HTTP/3 availability.
-- **Unified Event Loop**: Uses `quicx::common::EventLoop` for efficient I/O handling.
+- **Private Event Loop**: The upgrade server owns its event loop and driving thread — the caller never touches event-loop plumbing.
 
 ## Build
 
@@ -45,7 +45,8 @@ The server listens on:
 
 Output:
 ```
-upgrade_h3_server running on 0.0.0.0:8080, advertising h3 on :8443
+upgrade_h3_server running on 0.0.0.0 (http=8080, https=8443), advertising h3 on :8443
+Press Ctrl+C to stop.
 ```
 
 ### Testing with Curl
@@ -68,11 +69,11 @@ The `IUpgrade` interface simplifies the process of setting up a multi-protocol s
 
 ```cpp
 UpgradeSettings settings;
-settings.http_port = 8080;
-settings.h3_port = 8443;
-settings.enable_http1 = true;
-settings.enable_http2 = true;
-settings.enable_http3 = true;
+settings.http_port_ = 8080;
+settings.h3_port_ = 8443;
+settings.enable_http1_ = true;
+settings.enable_http2_ = true;
+settings.enable_http3_ = true;
 
 // Create server and add listener. The server owns a private event loop and
 // the thread that drives it, so no loop (and no thread plumbing) is required

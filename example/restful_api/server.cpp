@@ -338,6 +338,61 @@ int main() {
             std::cout << "  -> Statistics requested" << std::endl;
         });
 
+    // HEAD /users - same metadata as GET, body omitted (RFC 9110 §9.3.2)
+    server->AddHandler(quicx::HttpMethod::kHead, "/users",
+        [db](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
+            std::string json = UsersToJson(db->GetAllUsers());
+            resp->AddHeader("Content-Type", "application/json");
+            resp->AddHeader("Content-Length", std::to_string(json.size()));
+            resp->SetStatusCode(200);
+            std::cout << "  -> HEAD /users" << std::endl;
+        });
+
+    // GET /redirect - 302 to /users (for client redirect-following tests)
+    server->AddHandler(quicx::HttpMethod::kGet, "/redirect",
+        [](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
+            resp->AddHeader("Location", "/users");
+            resp->SetStatusCode(302);
+            std::cout << "  -> Redirecting to /users" << std::endl;
+        });
+
+    // GET /redirect-loop - 302 to self (for --max-redirs exhaustion tests)
+    server->AddHandler(quicx::HttpMethod::kGet, "/redirect-loop",
+        [](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
+            resp->AddHeader("Location", "/redirect-loop");
+            resp->SetStatusCode(302);
+            std::cout << "  -> Redirect loop" << std::endl;
+        });
+
+    // GET /set-cookie - issue Set-Cookie (for cookie jar round-trip tests)
+    server->AddHandler(quicx::HttpMethod::kGet, "/set-cookie",
+        [](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
+            // Two Set-Cookie field lines on purpose: RFC 9110 §5.3 forbids
+            // merging them into one comma-separated value.
+            resp->AddHeader("Set-Cookie", "session=abc123; Path=/");
+            resp->AddHeader("Set-Cookie", "theme=dark; Path=/");
+            resp->AppendBody("{\"ok\":true}");
+            resp->SetStatusCode(200);
+            std::cout << "  -> Cookies issued" << std::endl;
+        });
+
+    // GET /echo-headers - echo all request headers (for -H/-A/-u/-e tests)
+    server->AddHandler(quicx::HttpMethod::kGet, "/echo-headers",
+        [](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
+            std::ostringstream oss;
+            oss << "{";
+            bool first = true;
+            for (const auto& h : req->GetHeaders()) {
+                if (!first) oss << ",";
+                oss << "\"" << h.first << "\":\"" << h.second << "\"";
+                first = false;
+            }
+            oss << "}";
+            resp->AddHeader("Content-Type", "application/json");
+            resp->AppendBody(oss.str());
+            resp->SetStatusCode(200);
+        });
+
     // Response time middleware - runs after all handlers
     server->AddMiddleware(quicx::HttpMethod::kAny, quicx::MiddlewarePosition::kAfter,
         [](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
@@ -366,6 +421,10 @@ int main() {
     std::cout << "  PUT    /users/:id   - Update user" << std::endl;
     std::cout << "  DELETE /users/:id   - Delete user" << std::endl;
     std::cout << "  GET    /stats       - Get statistics" << std::endl;
+    std::cout << "  GET    /redirect    - 302 redirect to /users" << std::endl;
+    std::cout << "  GET    /redirect-loop - 302 redirect loop" << std::endl;
+    std::cout << "  GET    /set-cookie  - Issue Set-Cookie headers" << std::endl;
+    std::cout << "  GET    /echo-headers - Echo selected request headers" << std::endl;
     std::cout << "==================================" << std::endl;
     std::cout << std::endl;
 

@@ -25,6 +25,8 @@ Options:
   --requests <N>     Requests per client (default: 100)
   --rampup <seconds> Ramp-up time (default: 0)
   --duration <seconds> Test duration (default: 60)
+  --timeout <ms>     Per-request timeout (default: 5000)
+  --force            Skip the confirmation prompt
 ```
 
 ## Examples
@@ -32,19 +34,19 @@ Options:
 ### Basic Load Test
 
 ```bash
-./bin/load_tester https://localhost:8443/hello --clients 50 --requests 100
+./bin/load_tester https://localhost:7001/hello --clients 50 --requests 100
 ```
 
 ### Sustained Load Test
 
 ```bash
-./bin/load_tester https://localhost:8443/api --clients 100 --duration 300
+./bin/load_tester https://localhost:7007/users --clients 100 --duration 300
 ```
 
 ### Gradual Ramp-up
 
 ```bash
-./bin/load_tester https://localhost:8443/data --clients 200 --rampup 30
+./bin/load_tester https://localhost:7003/data/1024 --clients 200 --rampup 30
 ```
 
 ## Example Output
