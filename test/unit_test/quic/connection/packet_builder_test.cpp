@@ -147,8 +147,9 @@ TEST_F(PacketBuilderTest, InitialPacketWithToken) {
     ctx.frame_visitor = frame_visitor_.get();
     ctx.local_cid_manager = local_cid_mgr_.get();
     ctx.remote_cid_manager = remote_cid_mgr_.get();
-    ctx.token_data = token_data;
-    ctx.token_length = sizeof(token_data);
+    // ctx.token (std::string) is the single source of truth for the Retry token;
+    // the old token_data/token_length pointer pair was removed.
+    ctx.token.assign(reinterpret_cast<const char*>(token_data), sizeof(token_data));
     ctx.add_padding = false;
 
     auto result = builder_->BuildPacket(ctx);

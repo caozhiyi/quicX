@@ -213,9 +213,7 @@ int main() {
 
             std::string metrics_output = quicx::Metrics::ExportPrometheus();
 
-            std::unordered_map<std::string, std::string> headers;
-            headers["Content-Type"] = "text/plain; version=0.0.4";
-            resp->SetHeaders(headers);
+            resp->SetHeader("Content-Type", "text/plain; version=0.0.4");
             resp->AppendBody(metrics_output);
             resp->SetStatusCode(200);
         });
@@ -247,9 +245,7 @@ int main() {
                  << "<pre>" << metrics_output << "</pre>\n"
                  << "</body></html>";
 
-            std::unordered_map<std::string, std::string> headers;
-            headers["Content-Type"] = "text/html";
-            resp->SetHeaders(headers);
+            resp->SetHeader("Content-Type", "text/html");
             resp->AppendBody(html.str());
             resp->SetStatusCode(200);
         });

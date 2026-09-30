@@ -1,54 +1,53 @@
 # CI 本地调试指南
 
-本项目的 `.github/workflows/*.yml` 与 `scripts/ci-local.sh` 保持**同构设计**：CI 上跑什么，本地就跑什么。你可以完全在本地闭环，只有推镜像到 GHCR / 发 Release 时才需要 GitHub。
+本仓库不依赖额外的本地包装脚本：`.github/workflows/*.yml` 中执行的所有检查，都可以直接用仓库根目录的 `cmake` + `run_tests.py` 在本地复现。你可以完全在本地闭环，只有推镜像到 GHCR / 发 Release 时才需要 GitHub。
+
+`run_tests.py` 支持的模式：`all` / `utest` / `example` / `integration` / `fuzz` / `benchmark` / `perf` / `cc`。
+
+> 注意：`run_tests.py` 硬编码了 `build/` 路径。如果像 CI 一样使用多个构建目录（`build-asan`、`build-cov`、`build-fuzz` 等），需要像 workflow 里那样把 `build` 软链到对应目录：`rm -rf build && ln -s build-asan build`。
 
 ## 快速开始
 
 ```bash
 cd /data/workspace/quicX
 
-# 一键跑所有本地可行的 CI 检查
-./scripts/ci-local.sh all
+# 构建并运行单测 + 集成测试（对应 ci.yml 的 build-and-test job）
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DENABLE_TESTING=ON
+cmake --build build --parallel 4
+python3 run_tests.py utest
+python3 run_tests.py integration
 
-# 或者分步调试：
-./scripts/ci-local.sh build gcc Debug        # 对应 ci.yml 的 build-and-test job
-./scripts/ci-local.sh build clang Release
-./scripts/ci-local.sh sanitize asan          # 对应 sanitizer.yml (asan)
-./scripts/ci-local.sh sanitize ubsan
-./scripts/ci-local.sh sanitize tsan
-./scripts/ci-local.sh coverage               # 对应 coverage.yml
-./scripts/ci-local.sh interop local          # 对应 interop.yml local-selftest
-./scripts/ci-local.sh interop matrix         # 对应 interop.yml cross-matrix
-./scripts/ci-local.sh lint                   # 对应 lint.yml
-./scripts/ci-local.sh fuzz 60                # 对应 fuzz-smoke.yml
-./scripts/ci-local.sh clean                  # 清理所有 build-* 目录
+# 其他常用模式
+python3 run_tests.py example       # 示例
+python3 run_tests.py benchmark     # 基准测试
+python3 run_tests.py perf          # test/perf 性能测试
+python3 run_tests.py cc            # 拥塞控制模拟器测试
 ```
 
-## Workflow 与本地命令对照
+## Workflow 与本地等价命令对照
 
 | Workflow 文件 | 触发时机 | 本地等价命令 | 必须 GitHub？ |
 |---|---|---|---|
-| `ci.yml` | push / PR | `ci-local.sh build gcc Debug` 等 | ❌ |
-| `sanitizer.yml` | push / PR / 每日 | `ci-local.sh sanitize {asan,ubsan,tsan}` | ❌ |
-| `coverage.yml` | push / PR | `ci-local.sh coverage` | ❌ |
-| `interop.yml` 的 local-selftest | push / PR | `ci-local.sh interop local` | ❌ |
-| `interop.yml` 的 cross-matrix | 每日 / 手动 | `ci-local.sh interop matrix` | ❌ |
-| `lint.yml` | push / PR | `ci-local.sh lint` | ❌ |
-| `fuzz-smoke.yml` | PR / 每夜 | `ci-local.sh fuzz 60` | ❌ |
+| `ci.yml` | push / PR | `cmake -S . -B build ... && cmake --build build` + `run_tests.py utest` / `integration` | ❌ |
+| `sanitizer.yml` | push / PR / 每日 | clang + `-fsanitize={address,undefined,thread}` 构建 `build-{asan,ubsan,tsan}` 后跑 `run_tests.py utest` | ❌ |
+| `coverage.yml` | push / PR | gcc + `--coverage` + lcov（见下文） | ❌ |
+| `lint.yml` | push / PR | `clang-format --dry-run --Werror <files>` / `clang-tidy -p build-tidy <files>` | ❌ |
+| `fuzz-smoke.yml` | PR / 每夜 | `-DENABLE_FUZZING=ON` 构建 `build-fuzz` 后短跑每个目标 | ❌ |
 
 ## 三种本地调试姿势
 
-### 姿势 1：直接用 `ci-local.sh`（推荐）
+### 姿势 1：直接用 cmake + run_tests.py（推荐）
 
 这是最接近开发循环的方式 — 直接在宿主机上 build + test，快、无需 Docker。
 
 ```bash
-# 改代码 → 只跑受影响的 job
+# 改代码 → 重建 → 只跑受影响的测试
 vim src/quic/stream/send_stream.cpp
-./scripts/ci-local.sh build gcc Debug
+cmake --build build --parallel 4
+python3 run_tests.py utest
 ```
 
-注意：`run_tests.py` 硬编码了 `build/` 路径，脚本会在每次构建后**把 `build` 软链到对应的 `build-gcc-debug` / `build-san-asan`** 等目录，避免多配置互相覆盖。
+CI 的 `build-and-test` job 矩阵为 `{gcc, clang} × {Debug, Release}` 共 4 个配置；本地建议至少覆盖 `gcc Debug` 和 `clang Release` 两档。CI 配置参数为 `-DENABLE_TESTING=ON -DBUILD_EXAMPLES=ON -DENABLE_INTEROP=OFF -DENABLE_FUZZING=OFF`。
 
 ### 姿势 2：用 `act` 在本地 Docker 里真跑 workflow
 
@@ -58,11 +57,11 @@ vim src/quic/stream/send_stream.cpp
 # 1. 装 act（一次性）
 curl -s https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo bash -s -- -b /usr/local/bin
 
-# 2. 用封装脚本
-./scripts/ci-act.sh list                 # 列出所有 workflow 和 job
-./scripts/ci-act.sh validate             # 只校验 yaml 语法（不执行）
-./scripts/ci-act.sh ci                   # 跑 ci.yml
-./scripts/ci-act.sh run build-and-test   # 跑指定 job
+# 2. 常用命令
+act -l                                   # 列出所有 workflow 和 job
+act -n                                   # dry-run，只校验语法（不执行）
+act -W .github/workflows/ci.yml          # 跑 ci.yml
+act -j build-and-test                    # 跑指定 job
 ```
 
 首次运行会拉取 `catthehacker/ubuntu:full-22.04`（约 1-2 GB），耐心等待。之后会缓存。
@@ -76,7 +75,7 @@ curl -s https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo ba
 完全不依赖脚本：
 
 ```bash
-# build + test (对应 CI 的 build-and-test job)
+# build + test（对应 CI 的 build-and-test job）
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DENABLE_TESTING=ON
 cmake --build build --parallel 4
 python3 run_tests.py utest
@@ -91,31 +90,47 @@ python3 run_tests.py integration
 - 本地建议跑 `gcc Debug` 和 `clang Release` 两档覆盖
 
 ### sanitize (sanitizer.yml)
-- 只用 clang
-- asan: 检查堆溢出 / use-after-free / leak
-- ubsan: 检查 undefined behavior（整数溢出、空指针解引用等）
-- tsan: 检查数据竞争
-- **TSAN 特别重要**：quicX 有大量多线程 worker，本地至少跑一次 `sanitize tsan`
+- 只用 clang，构建到 `build-asan` / `build-ubsan` / `build-tsan`
+- asan: `-fsanitize=address -fno-omit-frame-pointer -O1 -g`，检查堆溢出 / use-after-free / leak
+- ubsan: `-fsanitize=undefined -fno-sanitize-recover=all -fno-omit-frame-pointer -O1 -g`，检查 undefined behavior（整数溢出、空指针解引用等）
+- tsan: `-fsanitize=thread -fno-omit-frame-pointer -O1 -g`，检查数据竞争
+- 构建后把 `build` 软链到对应目录，再跑 `run_tests.py utest`
+- **TSAN 特别重要**：quicX 有大量多线程 worker，本地至少跑一次 tsan
+
+```bash
+cmake -S . -B build-tsan -G Ninja -DCMAKE_BUILD_TYPE=Debug \
+    -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
+    -DCMAKE_C_FLAGS="-fsanitize=thread -fno-omit-frame-pointer -O1 -g" \
+    -DCMAKE_CXX_FLAGS="-fsanitize=thread -fno-omit-frame-pointer -O1 -g" \
+    -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=thread" \
+    -DENABLE_TESTING=ON
+cmake --build build-tsan --parallel 4
+rm -rf build && ln -s build-tsan build
+TSAN_OPTIONS=halt_on_error=1 python3 run_tests.py utest
+```
 
 ### coverage (coverage.yml)
-- gcc + `--coverage` + lcov
-- 排除 `third/`、`build*/`、`test/`
+- gcc + `--coverage -O0 -g -fprofile-update=atomic`，构建到 `build-cov`
+- lcov 排除 `/usr/*`、`third/`、`build*/`、`test/`
 - 生成 HTML 报告：`coverage-html/index.html`
-- Phase A 目标覆盖率 ≥ 75%（非阻塞）
+- 阈值为 60%（当前低于阈值只发 warning，非阻塞）
 
-### interop (interop.yml)
-- **local**：跑 `run_tests.py interop`，即 14 个场景自测
-- **matrix**：跑 `interop_runner.py --matrix`，与 quiche/ngtcp2/quic-go/aioquic 跨实现
-  - 需要 Docker
-  - 镜像首次拉取约 2-5 GB
-  - 超时设置为 60s/场景
+### interop（已移出 CI）
+
+> 自建的 interop 测试环境（`interop_runner.py` 及相关编排文件）已删除，
+> CI 中的 `interop.yml` workflow 一并移除。互操作测试现直接使用官方
+> [quic-interop-runner](https://github.com/quic-interop/quic-interop-runner)
+> 执行（本地构建 `quicx-interop:latest` 镜像后由官方 runner 调度），
+> 完整流程见 [`guide/interop_runbook.md`](./interop_runbook.md)。
 
 ### lint (lint.yml)
 - PR 时只检查**改动文件**（git diff）
-- 本地 `ci-local.sh lint` 检查 `src/` 和 `test/` 全量
-- 当前设为非阻塞（warning），让 v0.1.0 前先统一代码风格
+- clang-format：`clang-format --dry-run --Werror <file>`
+- clang-tidy：先用 `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON` 生成 `build-tidy/compile_commands.json`，再 `clang-tidy -p build-tidy <file>`
+- 当前设为非阻塞（warning）
 
 ### fuzz-smoke (fuzz-smoke.yml)
+- 配置 `-DENABLE_FUZZING=ON -DENABLE_TESTING=OFF -DBUILD_EXAMPLES=OFF` 构建 `build-fuzz`
 - libFuzzer 每个目标跑 60s
 - 发现 crash 会上传到 artifacts
 - 语料保留在 `fuzz-corpus/`（本地运行时）
@@ -124,17 +139,17 @@ python3 run_tests.py integration
 
 ### Q: 本地 build 通过，CI 为啥挂？
 1. **submodules**：CI 用 `submodules: recursive`，本地先 `git submodule update --init --recursive`
-2. **依赖**：CI 用 ubuntu-22.04，本地如果是旧系统可能缺 `ninja-build` / `lcov` / `clang-14`
+2. **依赖**：CI 用 ubuntu-22.04，本地如果是旧系统可能缺 `ninja-build` / `lcov` / `clang-14` / `clang-format-14` / `clang-tidy-14`
 3. **并发**：本地 `run_tests.py` 的 integration 是并发跑的，多连接绑同端口可能冲突 — 本地可改环境变量或串行跑
 
 ### Q: act 太慢/太耗磁盘怎么办？
 - 用 `act -n` 先 dry-run 验证 yaml 语法
-- 用 `ci-local.sh` 代替 — 直接在宿主机 build 快得多
+- 直接用 cmake + `run_tests.py` 在宿主机跑 — 快得多
 - 仅在首次 / 合并前用 act 最终验证
 
 ### Q: 如何只跑某个单测？
 ```bash
-./scripts/ci-local.sh build gcc Debug
+cmake --build build --parallel 4
 ./build/bin/quicx_utest --gtest_filter='*YourTest*' --gtest_color=yes
 ```
 
@@ -146,5 +161,4 @@ python3 run_tests.py integration
 1. 推 `ghcr.io/quicx/quicx-interop` 镜像（需要 `GITHUB_TOKEN`）
 2. 向 [quic-interop/quic-interop-runner](https://github.com/quic-interop/quic-interop-runner) 提 PR 上榜
 
-其余 Phase A 的所有工作都可本地闭环。
-
+其余所有工作都可本地闭环。

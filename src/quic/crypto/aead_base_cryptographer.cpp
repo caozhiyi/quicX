@@ -73,47 +73,41 @@ ICryptographer::Result AeadBaseCryptographer::InstallSecretWithVersion(
     // PERF (P0): the HP context is initialized ONCE per key install. We pick
     // ECB for AES (matches what MakeHeaderProtectMask does on the fast path,
     // so each subsequent EVP_EncryptUpdate just runs one block of AES with
-    // the already-scheduled key). For ChaCha20 we keep the legacy CTR-style
-    // init via cipher_, since the ChaCha20 subclass overrides
-    // MakeHeaderProtectMask and does not consume hp_*_ctx_ on the hot path.
-    const EVP_CIPHER* hp_cipher = nullptr;
-    if (aead_key_length_ == 16) {
-        hp_cipher = EVP_aes_128_ecb();
-    } else if (aead_key_length_ == 32 && cipher_ == EVP_aes_256_ctr()) {
-        hp_cipher = EVP_aes_256_ecb();
-    } else {
-        // ChaCha20-Poly1305 (or any non-AES-GCM future cipher): retain legacy
-        // ctx init using the per-class `cipher_` so we don't crash if the
-        // base-class HP path is ever hit.
-        hp_cipher = cipher_;
-    }
+    // the already-scheduled key).
+    //
+    // The cipher comes from the subclass rather than from `aead_key_length_`:
+    // AES-256-GCM and ChaCha20-Poly1305 both have a 32-byte AEAD key, so the
+    // old length-based test could hand ChaCha20 an AES-256-ECB context. That
+    // never crashes — it just yields the wrong header-protection mask, which
+    // surfaces much later as undecryptable packets.
+    //
+    // null means "this suite does not use a cached EVP context" (ChaCha20
+    // computes its mask with CRYPTO_chacha_20). We then skip the allocation.
+    const EVP_CIPHER* hp_cipher = GetHeaderProtectionCipher();
+
+    auto init_hp_ctx = [hp_cipher, &dest_secret](EVPCIPHERCTXPtr& ctx) {
+        if (!hp_cipher) {
+            ctx.reset();
+            return;
+        }
+        ctx.reset(EVP_CIPHER_CTX_new());
+        if (!ctx.get()) {
+            return;
+        }
+        // Every HP cipher we install is ECB, which takes no IV. Padding is
+        // disabled because ECB is used as a one-shot 16 -> 16 block transform.
+        EVP_EncryptInit_ex(ctx.get(), hp_cipher, NULL, dest_secret.hp_.data(), nullptr);
+        EVP_CIPHER_CTX_set_padding(ctx.get(), 0);
+    };
+
     if (is_write) {
         write_aead_ctx_.reset(
             EVP_AEAD_CTX_new(aead_, dest_secret.key_.data(), dest_secret.key_.size(), aead_tag_length_));
-        hp_write_ctx_.reset(EVP_CIPHER_CTX_new());
-        if (hp_write_ctx_.get() && hp_cipher) {
-            // For ECB: pass NULL iv (ECB has no IV). For CTR / ChaCha20 fallback,
-            // pass kHeaderMask as the IV (kept for backward compatibility with
-            // any code path that might use it).
-            const uint8_t* hp_iv =
-                (hp_cipher == EVP_aes_128_ecb() || hp_cipher == EVP_aes_256_ecb()) ? nullptr : kHeaderMask.data();
-            EVP_EncryptInit_ex(hp_write_ctx_.get(), hp_cipher, NULL, dest_secret.hp_.data(), hp_iv);
-            if (hp_cipher == EVP_aes_128_ecb() || hp_cipher == EVP_aes_256_ecb()) {
-                EVP_CIPHER_CTX_set_padding(hp_write_ctx_.get(), 0);
-            }
-        }
+        init_hp_ctx(hp_write_ctx_);
     } else {
         read_aead_ctx_.reset(
             EVP_AEAD_CTX_new(aead_, dest_secret.key_.data(), dest_secret.key_.size(), aead_tag_length_));
-        hp_read_ctx_.reset(EVP_CIPHER_CTX_new());
-        if (hp_read_ctx_.get() && hp_cipher) {
-            const uint8_t* hp_iv =
-                (hp_cipher == EVP_aes_128_ecb() || hp_cipher == EVP_aes_256_ecb()) ? nullptr : kHeaderMask.data();
-            EVP_EncryptInit_ex(hp_read_ctx_.get(), hp_cipher, NULL, dest_secret.hp_.data(), hp_iv);
-            if (hp_cipher == EVP_aes_128_ecb() || hp_cipher == EVP_aes_256_ecb()) {
-                EVP_CIPHER_CTX_set_padding(hp_read_ctx_.get(), 0);
-            }
-        }
+        init_hp_ctx(hp_read_ctx_);
     }
     return Result::kOk;
 }
@@ -368,7 +362,7 @@ ICryptographer::Result AeadBaseCryptographer::EncryptPacket(uint64_t pkt_number,
 }
 
 ICryptographer::Result AeadBaseCryptographer::DecryptHeader(common::BufferSpan& ciphertext, common::BufferSpan& sample,
-    uint8_t pn_offset, uint8_t& out_packet_num_len, bool is_short) {
+    uint32_t pn_offset, uint8_t& out_packet_num_len, bool is_short) {
     if (read_secret_.hp_.empty()) {
         LOG_ERROR("decrypt header but not install hp secret");
         return Result::kNotInitialized;
@@ -411,7 +405,7 @@ ICryptographer::Result AeadBaseCryptographer::DecryptHeader(common::BufferSpan& 
 }
 
 ICryptographer::Result AeadBaseCryptographer::EncryptHeader(common::BufferSpan& plaintext, common::BufferSpan& sample,
-    uint8_t pn_offset, size_t pkt_number_len, bool is_short) {
+    uint32_t pn_offset, size_t pkt_number_len, bool is_short) {
     if (write_secret_.hp_.empty()) {
         LOG_ERROR("encrypt header but not install hp secret");
         return Result::kNotInitialized;
@@ -450,11 +444,19 @@ ICryptographer::Result AeadBaseCryptographer::EncryptHeader(common::BufferSpan& 
 bool AeadBaseCryptographer::MakeHeaderProtectMask(common::BufferSpan& sample, std::vector<uint8_t>& key,
     uint8_t* out_mask, size_t mask_cap, size_t& out_mask_length, EVP_CIPHER_CTX* cached_hp_ctx) {
     out_mask_length = 0;
-    if (mask_cap < kHeaderProtectMaskLength) return false;
+    if (out_mask == nullptr || mask_cap < kHeaderProtectMaskLength) return false;
+    // The mask is built from a 16-byte sample; callers guarantee it (see the
+    // checks in rtt_1_packet.cpp / init_packet.cpp) but re-checking here keeps
+    // this the single place that reads raw sample bytes.
+    if (!sample.Valid() || sample.GetLength() < kHeaderProtectSampleLength) return false;
 
-    // Decide HP algorithm based on AEAD key length (AES-GCM uses AES-ECB for HP; ChaCha20-Poly1305 uses ChaCha20
-    // stream)
-    if (aead_key_length_ == 16 || aead_key_length_ == 32) {
+    // Decide the HP algorithm by asking the subclass, not by looking at the
+    // AEAD key length: AES-256-GCM and ChaCha20-Poly1305 both use a 32-byte
+    // key, and the old `aead_key_length_ == 32` test therefore chose AES-256-ECB
+    // for ChaCha20 whenever this base implementation was reached.
+    const EVP_CIPHER* hp_cipher = GetHeaderProtectionCipher();
+
+    if (hp_cipher != nullptr) {
         // AES-ECB: mask = AES-ECB(hp_key, sample[16])[0..4]
         //
         // PERF (P0): Use the cached EVP_CIPHER_CTX (already initialized with the
@@ -466,7 +468,8 @@ bool AeadBaseCryptographer::MakeHeaderProtectMask(common::BufferSpan& sample, st
         uint8_t block_out[16] = {0};
         int outlen = 0;
         if (cached_hp_ctx) {
-            if (EVP_EncryptUpdate(cached_hp_ctx, block_out, &outlen, sample.GetStart(), 16) != 1) return false;
+            if (EVP_EncryptUpdate(cached_hp_ctx, block_out, &outlen, sample.GetStart(), kHeaderProtectSampleLength) != 1)
+                return false;
             // Note: deliberately NOT calling EVP_EncryptFinal_ex here. Doing so
             // would emit padding (or fail with padding disabled); we treat ECB
             // as a one-shot 16->16 transform. Padding is already disabled when
@@ -478,12 +481,12 @@ bool AeadBaseCryptographer::MakeHeaderProtectMask(common::BufferSpan& sample, st
 
         // Slow path: no cached ctx (e.g. unit test, or before secret install).
         // Allocate a one-shot ctx as before.
-        const EVP_CIPHER* hp_ecb = (aead_key_length_ == 16) ? EVP_aes_128_ecb() : EVP_aes_256_ecb();
         EVPCIPHERCTXPtr tmp(EVP_CIPHER_CTX_new());
         if (!tmp) return false;
-        if (EVP_EncryptInit_ex(tmp.get(), hp_ecb, nullptr, key.data(), nullptr) != 1) return false;
+        if (EVP_EncryptInit_ex(tmp.get(), hp_cipher, nullptr, key.data(), nullptr) != 1) return false;
         EVP_CIPHER_CTX_set_padding(tmp.get(), 0);
-        if (EVP_EncryptUpdate(tmp.get(), block_out, &outlen, sample.GetStart(), 16) != 1) return false;
+        if (EVP_EncryptUpdate(tmp.get(), block_out, &outlen, sample.GetStart(), kHeaderProtectSampleLength) != 1)
+            return false;
         int fin = 0;
         if (EVP_EncryptFinal_ex(tmp.get(), block_out + outlen, &fin) != 1) return false;
         memcpy(out_mask, block_out, kHeaderProtectMaskLength);
@@ -514,6 +517,14 @@ bool AeadBaseCryptographer::MakeHeaderProtectMask(common::BufferSpan& sample, st
 }
 
 void AeadBaseCryptographer::MakePacketNonce(uint8_t* nonce, std::vector<uint8_t>& iv, uint64_t pkt_number) {
+    // |nonce| is a kPacketNonceLength (12) byte buffer and the QUIC nonce is
+    // always 12 bytes (RFC 9001 §5.3). Guard the copy anyway: an AEAD whose
+    // EVP_AEAD_nonce_length() exceeded 12 would otherwise write past the end
+    // of the caller's stack buffer, and the XOR below would then index
+    // `iv.size() - 8` past the copied region.
+    if (nonce == nullptr || iv.size() < 8 || iv.size() > kPacketNonceLength) {
+        return;
+    }
     memcpy(nonce, iv.data(), iv.size());
     // Convert packet number to big-endian as per RFC 9001
     uint64_t be_pn = ((pkt_number & 0x00000000000000FFull) << 56) | ((pkt_number & 0x000000000000FF00ull) << 40) |

@@ -1,4 +1,6 @@
 #include <algorithm>
+#include <cstring>
+#include <vector>
 
 #include "common/log/log.h"
 
@@ -19,9 +21,9 @@ CryptoStream::CryptoStream(std::weak_ptr<common::IEventLoop> loop,
         next_read_offset_[i] = 0;
         out_order_bytes_[i] = 0;
         send_offset_[i] = 0;
+        acked_offset_[i] = 0;
         read_buffers_[i] =
             std::make_shared<common::MultiBlockBuffer>(GlobalResource::Instance().GetThreadLocalBlockPool());
-        send_buffers_[i] = nullptr;
     }
 }
 
@@ -32,10 +34,11 @@ IStream::TrySendResult CryptoStream::TrySendData(IFrameVisitor* visitor, Encrypt
         return IStream::TrySendResult::kFailed;
     }
 
-    if (!send_buffers_[level] || send_buffers_[level]->GetDataLength() == 0) {
+    auto& outgoing = outgoing_[level];
+    if (outgoing.empty()) {
         // Bug fix (burst-mode handshake stall):
         // The current encryption level has no pending CRYPTO data, but data for
-        // *other* levels (e.g. Handshake EE/Cert/CV/Fin while the caller is
+        // *other* levels (e.g., Handshake EE/Cert/CV/Fin while the caller is
         // still draining Initial) may still be waiting. StreamManager treats
         // kSuccess as "stream finished" and erases it from the active set, so
         // if we silently return here the CryptoStream is dropped even though
@@ -52,10 +55,7 @@ IStream::TrySendResult CryptoStream::TrySendData(IFrameVisitor* visitor, Encrypt
         // still has data, so StreamManager keeps the CryptoStream on the
         // active list for the next round.
         for (uint8_t i = 0; i < kNumEncryptionLevels; i++) {
-            if (i == level) {
-                continue;
-            }
-            if (send_buffers_[i] && send_buffers_[i]->GetDataLength() > 0) {
+            if (i != level && !outgoing_[i].empty()) {
                 ToSend();
                 break;
             }
@@ -63,37 +63,52 @@ IStream::TrySendResult CryptoStream::TrySendData(IFrameVisitor* visitor, Encrypt
         return IStream::TrySendResult::kSuccess;
     }
 
+    auto& seg = outgoing.front();
+    const uint64_t frame_offset = seg.offset;
+
     // make crypto frame
     auto frame = std::make_shared<CryptoFrame>();
-    frame->SetOffset(send_offset_[level]);
+    frame->SetOffset(frame_offset);
     frame->SetEncryptionLevel(level);
 
     // Per-datagram cap: cap CRYPTO frame payload by the current packet
     // buffer's real free space. CRYPTO frame header worst case:
     // type(1B) + offset(<=8B) + length(<=2B) = ~11B; reserve 20B for safety.
-    // Replaces the historical hardcoded 1300 cap which left ~120B unused
-    // on each packet (kMaxFramePayload is 1420).
     constexpr uint32_t kCryptoHeaderReserve = 20;
     uint32_t crypto_pkt_left = visitor->GetPacketLeftSize();
     uint32_t crypto_pkt_cap = crypto_pkt_left > kCryptoHeaderReserve ? crypto_pkt_left - kCryptoHeaderReserve : 0;
 
+    const uint32_t seg_left = static_cast<uint32_t>(seg.end_offset - seg.offset);
     uint32_t write_size = visitor->GetLeftStreamDataSize();
     if (write_size > crypto_pkt_cap) {
         write_size = crypto_pkt_cap;
     }
-    if (write_size == 0) {
-        // Visitor has not declared a stream-level cap yet (typical when
-        // crypto handshake bytes flow before flow control is fully wired up).
-        // Fall back to "as much as the buffer currently holds" so we still
-        // make progress. Cap by the current packet's free space.
-        write_size = std::min<uint32_t>(send_buffers_[level]->GetDataLength(), crypto_pkt_cap);
+    if (write_size == 0 || write_size > seg_left) {
+        // No stream-level cap declared yet (pre-flow-control handshake
+        // bytes), or the cap exceeds what this segment holds: take what fits.
+        write_size = std::min(seg_left, crypto_pkt_cap);
     }
 
-    common::SharedBufferSpan data = send_buffers_[level]->GetFirstChunkReadable(write_size);
-    if (!data.Valid()) {
-        // No readable data despite GetDataLength() > 0 should not happen, but
-        // guard defensively: simply report success and try again next round.
-        LOG_DEBUG("CryptoStream::TrySendData: no readable data, level:%d", level);
+    // #1 (code review round 2, P1): when the packet build buffer is already
+    // full (crypto_pkt_cap == 0), write_size collapses to 0 here. The old
+    // code fell through to the empty-segment branch below and POPPED the
+    // segment — permanently dropping handshake bytes with only a DEBUG log,
+    // hanging the connection until the idle/handshake timeout. Return kBreak
+    // instead: the StreamManager keeps the stream on the active list and the
+    // segment is retried in the next packet.
+    if (write_size == 0 && seg_left > 0) {
+        LOG_INFO("CryptoStream::TrySendData: packet full, deferring segment. level:%d, offset:%llu", level,
+            (unsigned long long)seg.offset);
+        return IStream::TrySendResult::kBreak;
+    }
+
+    common::SharedBufferSpan data(seg.chunk, seg.chunk->GetData() + seg.pos, write_size);
+    if (!data.Valid() || data.GetLength() == 0) {
+        // Defensive: an empty/invalid segment (seg_left == 0 here, or a bad
+        // chunk) should not be queued. Drop the segment and report success so
+        // the loop continues with the next.
+        LOG_DEBUG("CryptoStream::TrySendData: empty segment, level:%d", level);
+        outgoing.pop_front();
         return IStream::TrySendResult::kSuccess;
     }
     frame->SetData(data);
@@ -103,24 +118,53 @@ IStream::TrySendResult CryptoStream::TrySendData(IFrameVisitor* visitor, Encrypt
         return IStream::TrySendResult::kFailed;
     }
 
-    LOG_DEBUG("CryptoStream::TrySendData: sent frame level:%d, offset:%llu, len:%d", level, send_offset_[level],
-        data.GetLength());
+    // First-8-bytes hex: runtime self-attestation of what actually goes onto
+    // the CRYPTO stream. A 1-RTT CRYPTO payload must start with 0x16 (TLS
+    // handshake record, e.g. NewSessionTicket); anything else means the frame
+    // already points at the wrong bytes (chunk lifetime / span ownership)
+    // before the packet encoder is even involved — the split point between
+    // the packet-encoding-layer and stream-layer root-cause branches.
+    uint8_t head[8] = {0};
+    const uint32_t head_n = data.GetLength() < 8 ? data.GetLength() : 8;
+    if (head_n > 0) {
+        std::memcpy(head, data.GetStart(), head_n);
+    }
+    LOG_DEBUG("CryptoStream::TrySendData: sent frame level:%d, offset:%llu, len:%d, "
+              "head:%02x%02x%02x%02x%02x%02x%02x%02x",
+        level, (unsigned long long)frame_offset, data.GetLength(), head[0], head[1], head[2], head[3], head[4],
+        head[5], head[6], head[7]);
 
-    send_buffers_[level]->MoveReadPt(data.GetLength());
-    send_offset_[level] += data.GetLength();
+    // Frame-level delivery wiring: SendControl fires kAcked/kLost on this
+    // frame (see IFrame::SetDeliveryHandler). The handler owns the CRYPTO
+    // reliability — a lost range comes back as a fresh outgoing segment that
+    // the normal send path sizes to the current budget (the build-time
+    // anti-amplification constraint in ComputeSendPolicy), instead of the
+    // old full-datagram re-encode that never fit a starved budget.
+    const uint32_t sent_len = data.GetLength();
+    auto weak_self = weak_from_this();
+    frame->SetDeliveryHandler([weak_self, level, frame_offset, sent_len](FrameDeliveryState state) {
+        if (auto self = weak_self.lock()) {
+            if (auto cs = std::dynamic_pointer_cast<CryptoStream>(self)) {
+                cs->OnFrameDelivery(level, frame_offset, sent_len, state);
+            }
+        }
+    });
+
+    seg.pos += sent_len;
+    seg.offset += sent_len;
+    if (seg.offset >= seg.end_offset) {
+        outgoing.pop_front();
+    }
 
     // Check if we still have data for this level
-    if (send_buffers_[level]->GetDataLength() > 0) {
+    if (!outgoing.empty()) {
         ToSend();
         return IStream::TrySendResult::kSuccess;
     }
 
     // Check if we have data for other levels
     for (uint8_t i = 0; i < kNumEncryptionLevels; i++) {
-        if (i == level) {
-            continue;
-        }
-        if (send_buffers_[i] && send_buffers_[i]->GetDataLength() > 0) {
+        if (i != level && !outgoing_[i].empty()) {
             ToSend();
             break;
         }
@@ -147,8 +191,11 @@ void CryptoStream::ResetForRetry() {
     out_order_frame_[level].clear();
     out_order_bytes_[level] = 0;
 
-    // Reset send state
-    send_buffers_[level] = nullptr;  // Next send will recreate it if needed
+    // Reset send state (frame-delivery model): the Initial-level flight is
+    // dead after a Retry; TLS regenerates it from offset 0.
+    outgoing_[level].clear();
+    retained_[level].clear();
+    acked_offset_[level] = 0;
     send_offset_[level] = 0;
 }
 
@@ -182,22 +229,37 @@ int32_t CryptoStream::Send(uint8_t* data, uint32_t len, uint8_t encryption_level
         return len;
     }
 
-    std::shared_ptr<common::MultiBlockBuffer> buffer = send_buffers_[encryption_level];
-    if (!buffer) {
-        buffer = std::make_shared<common::MultiBlockBuffer>(GlobalResource::Instance().GetThreadLocalBlockPool());
-        send_buffers_[encryption_level] = buffer;
-    }
-    int32_t size = buffer->Write(data, len);
-    if (size != (int32_t)len) {
-        // A partial write silently drops handshake bytes: the flight would
-        // have a gap the peer can never fill and the handshake stalls until
-        // the idle timeout. Loudly fatal-adjacent so it is never missed.
-        LOG_ERROR("CryptoStream::Send PARTIAL WRITE: handshake data dropped. level=%d want=%u wrote=%d",
-            encryption_level, len, size);
+    // Frame-delivery model: copy the bytes into pool chunks that stay alive
+    // via shared_ptr (the old MoveReadPt consumption model recycled the
+    // blocks, which made re-reads for retransmission impossible). Each chunk
+    // becomes one retained + one outgoing segment; oversized Send() calls
+    // simply span several chunks with consecutive offsets.
+    uint32_t remaining = len;
+    uint8_t* src = data;
+    while (remaining > 0) {
+        auto chunk = std::make_shared<common::BufferChunk>(GlobalResource::Instance().GetThreadLocalBlockPool());
+        if (!chunk || !chunk->Valid()) {
+            // A dropped chunk is a gap the peer can never fill: the flight
+            // would stall until the idle timeout. Loudly fatal-adjacent so it
+            // is never missed.
+            LOG_ERROR("CryptoStream::Send PARTIAL WRITE: handshake data dropped. level=%d want=%u wrote=%u",
+                encryption_level, len, len - remaining);
+            return (int32_t)(len - remaining);
+        }
+        const uint32_t n = std::min(remaining, chunk->GetLength());
+        std::memcpy(chunk->GetData(), src, n);
+        const uint64_t seg_offset = send_offset_[encryption_level];
+        LOG_DEBUG("CryptoStream::Send: retain level=%d offset=%llu len=%u",
+            encryption_level, (unsigned long long)seg_offset, n);
+        retained_[encryption_level].push_back(RetainedSegment{seg_offset, n, chunk});
+        outgoing_[encryption_level].push_back(OutgoingSegment{seg_offset, seg_offset + n, 0, chunk});
+        send_offset_[encryption_level] += n;
+        src += n;
+        remaining -= n;
     }
 
     ToSend();
-    return size;
+    return (int32_t)len;
 }
 
 int32_t CryptoStream::Send(uint8_t* data, uint32_t len) {
@@ -232,23 +294,28 @@ int32_t CryptoStream::Send(std::shared_ptr<IBufferRead> data) {
         return data->GetDataLength();
     }
 
+    // Frame-delivery model: flatten the readable bytes into one contiguous
+    // scratch copy, then feed the chunking Send(). (No production caller
+    // passes a multi-chunk buffer here today — TLS hands us raw pointers —
+    // but the interface is public, so handle it correctly.)
     uint8_t level = GetWaitSendEncryptionLevel();
-    std::shared_ptr<common::MultiBlockBuffer> buffer = send_buffers_[level];
-    if (!buffer) {
-        buffer = std::make_shared<common::MultiBlockBuffer>(GlobalResource::Instance().GetThreadLocalBlockPool());
-        send_buffers_[level] = buffer;
+    const uint32_t len = data->GetDataLength();
+    if (len == 0) {
+        return 0;
     }
-    int32_t size = buffer->Write(data);
-
-    ToSend();
-    return size;
+    std::vector<uint8_t> scratch(len);
+    const uint32_t got = data->ReadNotMovePt(scratch.data(), len);
+    if (got == 0) {
+        return 0;
+    }
+    return Send(scratch.data(), got, level);
 }
 
 uint8_t CryptoStream::GetWaitSendEncryptionLevel() {
     uint8_t level = kApplication;
-    if (send_buffers_[kInitial] && send_buffers_[kInitial]->GetDataLength() > 0) {
+    if (!outgoing_[kInitial].empty()) {
         level = kInitial;
-    } else if (send_buffers_[kHandshake] && send_buffers_[kHandshake]->GetDataLength() > 0) {
+    } else if (!outgoing_[kHandshake].empty()) {
         level = kHandshake;
     }
     return level;
@@ -387,6 +454,152 @@ uint64_t CryptoStream::DrainOutOrderFrames(uint8_t level) {
     }
 
     return appended;
+}
+
+void CryptoStream::MarkInitialConsumedByPeer() {
+    if (initial_consumed_by_peer_) {
+        return;
+    }
+    initial_consumed_by_peer_ = true;
+    // The peer cannot acknowledge this flight any more (Initial keys are
+    // gone); keeping the segments would only re-queue them on every PTO.
+    outgoing_[kInitial].clear();
+    retained_[kInitial].clear();
+    LOG_INFO("CryptoStream::MarkInitialConsumedByPeer: dropping Initial send state, peer already consumed the flight");
+}
+
+void CryptoStream::OnFrameDelivery(uint8_t level, uint64_t offset, uint32_t length, FrameDeliveryState state) {
+    if (level >= kNumEncryptionLevels) {
+        return;
+    }
+
+    if (state == FrameDeliveryState::kAcked) {
+        if (offset + length > acked_offset_[level]) {
+            acked_offset_[level] = offset + length;
+        }
+        // A late ACK (the packet was already declared lost and its range
+        // re-queued) retires the re-queued segment so we stop re-sending.
+        PruneAckedSegments(level);
+        // #2 (code review round 2, P2): trim the fully-acked prefix of
+        // retained_. Only kInitial ever had explicit clears, so on
+        // Handshake/1-RTT every retained chunk — one pool block per Send()
+        // slice, e.g. every NewSessionTicket on a long-lived connection —
+        // stayed alive forever. Segments are pushed in strictly increasing
+        // offset order (Send() advances send_offset_), so trimming from the
+        // front bounds the retained set to the un-acked window.
+        auto& retained = retained_[level];
+        while (!retained.empty() && retained.front().offset + retained.front().length <= acked_offset_[level]) {
+            retained.pop_front();
+        }
+        return;
+    }
+
+    // kLost, but already covered by the acked prefix: superseded by a late
+    // ACK (notifications can arrive out of order — OnPacketAck fires kAcked
+    // on packets that were already declared lost). Ignore.
+    if (offset + length <= acked_offset_[level]) {
+        return;
+    }
+
+    // Initial-level loss after the peer consumed our Initial flight: the peer
+    // has dropped its Initial keys and can never ACK this range. Re-queueing
+    // would spin the PTO forever (quinn handshakecorruption: [0,733) re-queued
+    // every 15 s until the handshake timeout).
+    if (level == kInitial && initial_consumed_by_peer_) {
+        return;
+    }
+
+    // #4 (code review round 2): only re-queue the parts of [offset, range_end)
+    // NOT already covered by a queued segment's unread remainder. The old
+    // full-containment check (IsRangeQueued) let a partially-overlapping range
+    // re-queue its already-queued prefix too — duplicated CRYPTO bytes are
+    // legal (the peer reassembles by offset) but pure waste under the §8.1
+    // budget, and it also served as the PTO idempotence guard, which the
+    // difference below subsumes: a fully-covered range yields no gaps.
+    const uint64_t range_end = offset + length;
+    std::vector<std::pair<uint64_t, uint64_t>> gaps;  // uncovered sub-ranges of the lost range
+    {
+        // Queued unread intervals; may be out of order (re-queues push_back),
+        // so collect then sort before subtracting.
+        std::vector<std::pair<uint64_t, uint64_t>> queued;
+        queued.reserve(outgoing_[level].size());
+        for (const auto& qseg : outgoing_[level]) {
+            if (qseg.end_offset > qseg.offset) {
+                queued.emplace_back(qseg.offset, qseg.end_offset);
+            }
+        }
+        std::sort(queued.begin(), queued.end());
+        uint64_t cur = offset;
+        for (const auto& q : queued) {
+            if (q.first >= range_end || cur >= range_end) {
+                break;
+            }
+            if (q.first > cur) {
+                gaps.emplace_back(cur, q.first);
+            }
+            if (q.second > cur) {
+                cur = q.second;
+            }
+        }
+        if (cur < range_end) {
+            gaps.emplace_back(cur, range_end);
+        }
+    }
+    if (gaps.empty()) {
+        return;  // fully covered by queued segments (PTO double-fire); nothing to re-queue
+    }
+
+    // Re-queue each uncovered gap from the retained chunks. Frames are carved
+    // out of single retained segments in the common case; the inner loop
+    // handles a frame straddling a chunk boundary defensively.
+    for (const auto& gap : gaps) {
+        uint64_t cur = gap.first;
+        for (const auto& r : retained_[level]) {
+            if (cur >= gap.second) {
+                break;
+            }
+            const uint64_t r_start = r.offset;
+            // The segment's real extent is the bytes Send() wrote, NOT the chunk
+            // capacity — see RetainedSegment for the bug this field fixes.
+            const uint64_t r_end = r.offset + r.length;
+            if (cur >= r_end || r_start >= gap.second) {
+                continue;  // no overlap with the remaining gap
+            }
+            const uint64_t start_in_r = (cur > r_start) ? cur : r_start;
+            const uint64_t end_in_r = (gap.second < r_end) ? gap.second : r_end;
+            // #3: offset/end_offset are absolute CRYPTO offsets; pos is the
+            // gap's start measured from the CHUNK's start (start_in_r -
+            // r_start), so the span points at the right bytes without the old
+            // offset-pos implicit invariant. (Writing end_in_r - start_in_r
+            // as pos — the pre-#3 footgun — underflowed seg_left in
+            // TrySendData and put uninitialized pool memory on the wire.)
+            outgoing_[level].push_back(
+                OutgoingSegment{start_in_r, end_in_r, (uint32_t)(start_in_r - r_start), r.chunk});
+            cur = end_in_r;
+        }
+        if (cur < gap.second) {
+            // Gap beyond retained data: the segments were cleared (Retry
+            // reset) or the frame predates the retained window. Nothing to
+            // re-send — TLS owns regenerating those bytes if they still matter.
+            LOG_WARN("CryptoStream::OnFrameDelivery: lost range [%llu,%llu) not fully retained at level=%d",
+                (unsigned long long)gap.first, (unsigned long long)gap.second, level);
+        }
+    }
+
+    LOG_DEBUG("CryptoStream::OnFrameDelivery: re-queued lost range [%llu,%llu) at level=%d",
+        (unsigned long long)offset, (unsigned long long)range_end, level);
+    ToSend();
+}
+
+void CryptoStream::PruneAckedSegments(uint8_t level) {
+    auto& outgoing = outgoing_[level];
+    for (auto it = outgoing.begin(); it != outgoing.end();) {
+        if (it->end_offset <= acked_offset_[level]) {
+            it = outgoing.erase(it);
+        } else {
+            ++it;
+        }
+    }
 }
 
 }  // namespace quic

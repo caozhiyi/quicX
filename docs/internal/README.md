@@ -40,6 +40,5 @@ The supported, versioned contract lives in:
   reusable runbook), promote it to `docs/{en,zh}/guide/`.
 - One-off "did this run pass" snapshots that are safe to publish belong in
   `docs/{en,zh}/reports/`, not here.
-- Once `v0.1.0` ships, [`../release_plan_v0.1.0.md`](../release_plan_v0.1.0.md)
-  is archived into this directory and a fresh `RELEASE_PLAN_v0.x.y.md` is
-  created at the `docs/` top level for the next iteration.
+- Superseded release plans are not retained; the release history lives in
+  [`../../CHANGELOG.md`](../../CHANGELOG.md).

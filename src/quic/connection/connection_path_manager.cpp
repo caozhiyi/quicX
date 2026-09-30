@@ -343,7 +343,7 @@ MigrationResult PathManager::InitiateMigrationToAddress(const ::quicx::common::A
     // 6. Store migration state
     // new_local_addr_ is populated by CreateBoundSocket
     is_client_initiated_migration_ = true;
-    migration_start_time_ = common::UTCTimeMsec();
+    migration_start_time_ = common::MonotonicTimeMsec();
 
     // 7. Hand the probe socket to its owner (MigrationController), which
     // installs it on the emitter and registers it with the receiver. We keep no
@@ -436,7 +436,7 @@ MigrationResult PathManager::InitiateMigrationToPeerAddress(const ::quicx::commo
     //    built while the probe is in flight are sent there (GetSendAddress()
     //    prefers the candidate), on the new probe socket.
     is_client_initiated_migration_ = true;
-    migration_start_time_ = common::UTCTimeMsec();
+    migration_start_time_ = common::MonotonicTimeMsec();
     candidate_peer_addr_ = peer_addr;
 
     // Pre-set path_probe_inflight_ BEFORE handing the probe socket to the
@@ -595,7 +595,7 @@ void PathManager::CompleteMigration() {
     info.new_peer_ip_ = peer_addr_.GetIp();
     info.new_peer_port_ = peer_addr_.GetPort();
     info.migration_start_time_ = migration_start_time_;
-    info.migration_end_time_ = common::UTCTimeMsec();
+    info.migration_end_time_ = common::MonotonicTimeMsec();
     info.result_ = MigrationResult::kSuccess;
     info.is_nat_rebinding_ = false;
 
@@ -626,7 +626,7 @@ void PathManager::HandleMigrationFailure(MigrationResult result) {
     info.new_peer_ip_ = peer_addr_.GetIp();
     info.new_peer_port_ = peer_addr_.GetPort();
     info.migration_start_time_ = migration_start_time_;
-    info.migration_end_time_ = common::UTCTimeMsec();
+    info.migration_end_time_ = common::MonotonicTimeMsec();
     info.result_ = result;
     info.is_nat_rebinding_ = false;
 

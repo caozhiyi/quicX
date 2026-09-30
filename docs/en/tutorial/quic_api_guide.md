@@ -43,7 +43,7 @@ config.worker_thread_num_ = 4; // Start 4 Worker threads
 // --- Advanced Network & Security Features ---
 config.enable_0rtt_ = true;        // Enable 0-RTT (requires a previous connection session ticket)
 config.enable_key_update_ = false; // Automatic key rotation (RFC 9001)
-config.quic_version_ = quic::kQuicVersion2; // Use QUIC v2 (RFC 9369)
+config.quic_version_ = quicx::kQuicVersion2; // Use QUIC v2 (RFC 9369)
 config.keylog_file_ = "keys.log";  // Highly recommended during development! Necessary for Wireshark packet decryption.
 ```
 

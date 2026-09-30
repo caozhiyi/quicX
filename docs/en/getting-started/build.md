@@ -75,7 +75,7 @@ When executing `cmake -B build ...`, you can customize your compilation process 
 | `ENABLE_BENCHMARKS` | `ON` | Whether to build performance benchmark tests. |
 | `ENABLE_CC_SIMULATOR` | `ON` | Whether to build the built-in **Congestion Control Simulator**, very helpful for studying BBR/CUBIC algorithms. |
 | `ENABLE_INTEGRATION` | `ON` | Whether to build local integration testing tools. |
-| `QUICX_ENABLE_QLOG` | `ON` | **Key Metric:** When enabled, allows recording `qlog` compliant with RFC 9001. These logs can be imported into visual tools like `qvis` to analyze issues caused by congestion and packet loss.<br/>*Note: Enabling this will affect extreme performance limits.* |
+| `QUICX_ENABLE_QLOG` | `ON` | **Key Metric:** When enabled, allows recording `qlog` compliant with RFC 9254. These logs can be imported into visual tools like `qvis` to analyze issues caused by congestion and packet loss.<br/>*Note: Enabling this will affect extreme performance limits.* |
 
 *(For fuzz testing/security patching, you can also enable `-DENABLE_FUZZING=ON` along with the `Clang` compiler for libFuzzer tests.)*
 
@@ -168,7 +168,7 @@ cmake --install build
 
 ```cmake
 # CMakeLists.txt of your project
-find_package(quicx 0.1.0 REQUIRED)
+find_package(quicx 1.0.0 REQUIRED)
 
 add_executable(my_app main.cpp)
 target_link_libraries(my_app PRIVATE quicx::http3)

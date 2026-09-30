@@ -22,22 +22,42 @@ static std::string ToLowerCase(const std::string& str) {
 }
 
 void Response::AddHeader(const std::string& name, const std::string& value) {
-    // HTTP/2 and HTTP/3 require header names to be lowercase
-    headers_[ToLowerCase(name)] = value;
+    // HTTP/2 and HTTP/3 require header names to be lowercase.
+    // Append (not replace): RFC 9110 §5.3 — repeated names are legal and
+    // Set-Cookie in particular MUST NOT be collapsed into one field line.
+    headers_.emplace_back(ToLowerCase(name), value);
+}
+
+void Response::SetHeader(const std::string& name, const std::string& value) {
+    std::string key = ToLowerCase(name);
+    HttpFields kept;
+    kept.reserve(headers_.size() + 1);
+    for (auto& field : headers_) {
+        if (field.first != key) kept.push_back(field);
+    }
+    kept.emplace_back(key, value);
+    headers_.swap(kept);
 }
 
 bool Response::GetHeader(const std::string& name, std::string& value) const {
-    // Search with lowercase key for case-insensitive matching
-    auto it = headers_.find(ToLowerCase(name));
-    if (it != headers_.end()) {
-        value = it->second;
-        return true;
+    // First matching field line wins (case-insensitive name match).
+    std::string key = ToLowerCase(name);
+    for (const auto& field : headers_) {
+        if (field.first == key) {
+            value = field.second;
+            return true;
+        }
     }
     return false;
 }
 
-void Response::SetHeaders(const std::unordered_map<std::string, std::string>& headers) {
-    headers_ = headers;
+std::vector<std::string> Response::GetAllHeaders(const std::string& name) const {
+    std::string key = ToLowerCase(name);
+    std::vector<std::string> values;
+    for (const auto& field : headers_) {
+        if (field.first == key) values.push_back(field.second);
+    }
+    return values;
 }
 
 std::string Response::GetBodyAsString() const {

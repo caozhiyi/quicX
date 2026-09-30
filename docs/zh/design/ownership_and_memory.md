@@ -431,4 +431,4 @@ void OnStateToClosing() {
 
 ---
 
-*最后更新：2026-05，对应 Exclusive Ownership 重构 + HTTP/3 Connection 两阶段初始化修复完成。*
+*对应 Exclusive Ownership 重构 + HTTP/3 Connection 两阶段初始化修复完成。*

@@ -360,7 +360,7 @@ flamegraph.pl /tmp/decode_stacks.collapsed > /tmp/decode_stacks.svg
 
 ### 4.4 ASan / 生命周期验证
 
-Exclusive Ownership 重构完成后（2026-05），在 ASan 下重复 10–20 轮运行以下场景均通过，**零循环引用 / 零 UAF / 零 heap-UAF**：
+Exclusive Ownership 重构完成后，在 ASan 下重复 10–20 轮运行以下场景均通过，**零循环引用 / 零 UAF / 零 heap-UAF**：
 
 | Benchmark | 验证轮次 |
 |---|---|

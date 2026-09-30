@@ -1,18 +1,13 @@
 # UDP I/O 子系统设计：sendmmsg / GSO / recvmmsg 取舍与降级路径
 
-> **读者前置**：建议先读 `packet_lifecycle.md`（一个 datagram 的完整路径）和 `process_model.md`（EventLoop / Worker 线程模型）。本文专注于**最底层 syscall 层**的工程决策——上面的设计文档讲"一个包从哪里来到哪里去"，这一篇讲"那一刀 syscall 到底是 sendto / sendmmsg 还是 sendmsg+UDP_SEGMENT，以及失败时怎么降级"。
->
-> **代码地图**：`src/quic/udp/`（UdpSender / UdpReceiver / NetPacket / IReceiver / ISender）+ `src/common/network/`（io_handle.h、recv_batch.cpp、linux/macos/windows 三个 io_handle.cpp）。
-
-## 开篇四问（钉死 ROI）
+本文梳理 quicX 最底层 syscall 层的工程决策——上层文档讲"一个包从哪里来、到哪里去"（[`packet_lifecycle.md`](packet_lifecycle.md)）与 EventLoop / Worker 线程模型（[`process_model.md`](process_model.md)），本文讲"那一刀 syscall 到底是 sendto / sendmmsg 还是 sendmsg+UDP_SEGMENT，以及失败时怎么降级"。涉及代码：`src/quic/udp/`（UdpSender / UdpReceiver / NetPacket / IReceiver / ISender）与 `src/common/network/`（io_handle.h、recv_batch.cpp、linux/macos/windows 三个 io_handle.cpp）。本文尝试回答以下问题：
 
 1. **同样在 Linux 上，为什么 QUIC 需要 sendmmsg + UDP_GSO 两层批处理？光 sendmmsg 不够吗？**
 2. **`UdpReceiver::OnRead` 一次最多拉 64 个包（`kMaxRecvBatch`），这数怎么算的？拉太多 / 太少分别会出什么问题？**
-3. **macOS / Windows 上没有 recvmmsg / UDP_SEGMENT，QuicX 怎么在不写一坨 `#ifdef` 的前提下保证语义一致？**
+3. **macOS / Windows 上没有 recvmmsg / UDP_SEGMENT，quicX 怎么在不写一坨 `#ifdef` 的前提下保证语义一致？**
 4. **GSO 在某条路径上不被支持时（旧内核 / 容器 / 特定网卡），代码怎么发现并永久绕开它？两个并发线程同时第一次发现失败会出什么竞争？**
 
 ---
-
 ## 1. 总览：三层管道与降级链
 
 ```mermaid
@@ -69,7 +64,7 @@ flowchart TD
 
 **四张关键关系**：
 
-- **QUIC 层（黄）只决定"该发什么"**——Worker 在 `ProcessSend` 里逐 connection 调 `TrySend()` 把 NetPacket 推入 `thread_local tx_batch`，然后**整批一次 `SendBatch`**（`worker.cpp:131` 的 while 循环 + `:146` 的 `sender_->SendBatch`），不再逐包陷内核。
+- **QUIC 层（黄）只决定"该发什么"**——Worker 在 `ProcessSend` 里逐 connection 调 `TrySend()` 把 NetPacket 推入 `thread_local tx_batch`，然后**整批一次 `SendBatch`**（`worker.cpp:142` 的 while 循环 + `:164` 的 `sender_->SendBatch`），不再逐包陷内核。
 - **UdpSender 层（绿）做三件事**：①precondition 检查；②GSO 前缀扫描；③sendmmsg 尾段处理；任何一步出问题都**全批降级**到逐包 `Send()`，不做"半批 sendmmsg + 半批 sendto"——后者会反转 FIFO。
 - **common::* syscall 抽象层（蓝）封掉所有 `#ifdef`**——Linux 走真 `sendmmsg(2)` / `sendmsg+UDP_SEGMENT cmsg` / `recvmmsg(2)`；macOS/Windows 走 `sendmsg` / `recvmsg` 循环；上层只看到一个统一函数。
 - **接收侧（黄→蓝→黄）一次 drain**：从 N 次 `recvfrom` 改为单次 `recvmmsg` 直接拿 64 个，让 ack-eliciting 包能在一次 wakeup 内堆够 `kAckThreshold=10` 个，触发**ACK 聚合**——这是 loopback 上把吞吐从 22k pkts/s 拉到 ~36 MB/s 的关键单点优化。
@@ -87,7 +82,7 @@ flowchart TD
 3. 走完整个 UDP 协议栈（封 IP/UDP 头、查路由表、走 netfilter、入 qdisc）；
 4. 内核态 → 用户态切换。
 
-`udp_sender.cpp:333` 的 `DiagSendtoLatencyUs` 直方图就是为了量这个。loopback 上典型值 5–15 μs，意味着**单线程 sendto 上限 ~70k pkts/s**。MTU=1452 时只有 ~800 Mbps；千兆以上必须批处理。
+`udp_sender.cpp:327` 的 `DiagSendtoLatencyUs` 直方图就是为了量这个。loopback 上典型值 5–15 μs，意味着**单线程 sendto 上限 ~70k pkts/s**。MTU=1452 时只有 ~800 Mbps；千兆以上必须批处理。
 
 ### 2.2 sendmmsg 解决了第 1、2 步，没解决第 3 步
 
@@ -333,7 +328,7 @@ if (!loop->IsInLoopThread()) {
 
 ---
 
-## 9. 不变量清单（9 条）
+## 9. 关键不变量
 
 1. **`SendBatch` 任何 precondition fail 都全批降级**，不允许"半批 sendmmsg + 半批 sendto"。FIFO 必须保持。
 2. **GSO 段在 sendmmsg 段之前**——这是唯一允许的"部分批化"，因为它不破坏 FIFO。

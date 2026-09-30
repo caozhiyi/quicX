@@ -20,28 +20,29 @@ cd build && cmake .. && make concurrent_server concurrent_client
 ### Server
 
 ```bash
-./bin/concurrent_server [port]
+./bin/concurrent_server
 ```
 
-The server provides three endpoints with different response times:
-- `/api/fast` - Responds immediately
-- `/api/medium` - 100ms simulated delay  
-- `/api/slow` - 200ms simulated delay
-- `/api/stats` - Server statistics in JSON format
+The server listens on port 7003 and provides endpoints with different response times:
+- `/fast` - 5ms simulated delay
+- `/medium` - 20ms simulated delay
+- `/slow` - 50ms simulated delay
+- `/random` - Random delay
+- `/data/:size` - Payload of the given size
+- `/stats` - Server statistics in JSON format
 
 ### Client
 
 ```bash
-./bin/concurrent_client <server_url>
-
-# Example:
-./bin/concurrent_client https://localhost:7003
+./bin/concurrent_client
 ```
+
+The client connects to `https://127.0.0.1:7003` by default and runs 4 test rounds (burst of 15, mixed load of 20, stress of 5, escalating concurrency of 10/25/50).
 
 ## How It Works
 
 1. Client establishes a single QUIC connection to the server
-2. Sends 15 concurrent requests (5 each to fast/medium/slow endpoints)
+2. Sends batches of concurrent requests (first round: 15 requests across fast/medium/slow endpoints)
 3. All requests are multiplexed over the same connection
 4. Results show timing and parallelization efficiency
 
@@ -50,7 +51,7 @@ The server provides three endpoints with different response times:
 ```
 Concurrent Request Test
 =======================
-Sending 15 concurrent requests...
+Sending 15 requests concurrently:
 
 ========================================
 CONCURRENT REQUEST RESULTS
@@ -60,10 +61,10 @@ Individual Requests:
 --------------------------------------------------------------------------------
 ID    Endpoint       Status    Duration(ms) Start(ms)   End(ms)
 --------------------------------------------------------------------------------
-1     /api/fast      200       15          0           15
-2     /api/fast      200       18          0           18
-3     /api/medium    200       115         0           115
-4     /api/slow      200       220         0           220
+1     fast           200       8           0           8
+2     fast           200       9           0           9
+3     medium         200       24          0           24
+4     slow           200       53          0           53
 ...
 
 Statistics:

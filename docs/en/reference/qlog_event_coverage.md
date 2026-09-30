@@ -1,6 +1,6 @@
 # Qlog Event Coverage Report
 
-**Date**: 2026-05-23  
+  
 **Qlog Version**: draft-02 (draft-ietf-quic-qlog-main-schema-02)  
 **Format**: JSON-SEQ (RFC 7464; record separator `0x1E`, line-feed terminated)  
 **File Extension**: `.sqlog`  
@@ -17,7 +17,7 @@
 | HTTP/3 | 2 | 2 | 100% |
 | **Total** | **19** | **18** | **94.7%** |
 
-> **Note**: 19 个事件中 18 个已有宏定义和实际埋点调用。唯一未调用的 `QLOG_PACKET_BUFFERED` 因当前架构无真正的包缓冲场景，标记为 N/A。
+> **Note**: 18 of the 19 events already have macro definitions and actual instrumentation calls. The only uncalled one, `QLOG_PACKET_BUFFERED`, is marked N/A because the current architecture has no genuine packet-buffering scenario.
 
 ## Detailed Event Coverage
 
@@ -25,10 +25,10 @@
 
 | Event | Status | Macro | Source File(s) | Call Count | Notes |
 |-------|--------|-------|----------------|-----------|-------|
-| `quic:connection_started` | ✅ | `QLOG_CONNECTION_STARTED` | `connection_client.cpp`, `connection_server.cpp` | 2 | 客户端/服务端连接建立 |
+| `quic:connection_started` | ✅ | `QLOG_CONNECTION_STARTED` | `connection_client.cpp`, `connection_server.cpp` | 2 | Client / server connection establishment |
 | `quic:connection_closed` | ✅ | `QLOG_CONNECTION_CLOSED` | `connection_base.cpp` | 1 | With error_code, reason, trigger |
 | `quic:connection_id_updated` | ✅ | `QLOG_CONNECTION_ID_UPDATED` | `connection_frame_processor.cpp`, `connection_id_coordinator.cpp` | 4 | NEW_CONNECTION_ID、RETIRE_CONNECTION_ID、pool_replenish、cid_rotation |
-| `quic:server_listening` | ✅ | `QLOG_SERVER_LISTENING` | `quic_server.cpp` | 1 | 服务器开始监听（使用 QlogManager& 而非 trace） |
+| `quic:server_listening` | ✅ | `QLOG_SERVER_LISTENING` | `quic_server.cpp` | 1 | Server starts listening (uses `QlogManager&` rather than a trace) |
 | `quic:connection_state_updated` | ✅ | `QLOG_EVENT` (generic) | `connection_base.cpp` | 3 | handshake→connected, connected→closing, closing→draining |
 
 ### ✅ Transport Events (5/6) — 83%
@@ -38,32 +38,32 @@
 | `quic:packet_sent` | ✅ | `QLOG_PACKET_SENT` | `send_control.cpp` | 1 | With packet_number, type, size, frames |
 | `quic:packet_received` | ✅ | `QLOG_PACKET_RECEIVED` | `connection_base.cpp` | 1 | With packet_number, type, size, frames |
 | `quic:packets_acked` | ✅ | `QLOG_EVENT` (generic) | `send_control.cpp` | 1 | With ack_ranges, ack_delay |
-| `quic:packet_dropped` | ✅ | `QLOG_PACKET_DROPPED` | `connection_base.cpp` | 5 | 关闭状态解密失败、key 不可用、draining 状态、版本协商降级、解密失败 |
-| `quic:stream_state_updated` | ✅ | `QLOG_STREAM_STATE_UPDATED` | `connection_stream_manager.cpp` | 1 | 流状态变更 |
-| `quic:packet_buffered` | ⬜ N/A | `QLOG_PACKET_BUFFERED` | — | 0 | 宏已定义，当前架构无真正的包缓冲场景 |
+| `quic:packet_dropped` | ✅ | `QLOG_PACKET_DROPPED` | `connection_base.cpp`, `version_negotiator.cpp` | 7 | `closing_state_decrypt_failure`, `key_unavailable`×2, `draining_state`, `unsupported_version`, `decryption_failed`, `version_negotiation_downgrade` |
+| `quic:stream_state_updated` | ✅ | `QLOG_STREAM_STATE_UPDATED` | `connection_stream_manager.cpp` | 1 | Stream state change |
+| `quic:packet_buffered` | ⬜ N/A | `QLOG_PACKET_BUFFERED` | — | 0 | Macro defined; no genuine packet-buffering scenario in the current architecture |
 
 ### ✅ Recovery Events (4/4) — 100%
 
 | Event | Status | Macro | Source File(s) | Call Count | Notes |
 |-------|--------|-------|----------------|-----------|-------|
 | `recovery:metrics_updated` | ✅ | `QLOG_METRICS_UPDATED` | `send_control.cpp` | 1 | RTT, cwnd, bytes_in_flight, ssthresh, pacing_rate |
-| `recovery:congestion_state_updated` | ✅ | `QLOG_CONGESTION_STATE_UPDATED` | 5 个 CC 算法文件 | 22 | Reno(3), CUBIC(6), BBRv1(4), BBRv2(4), BBRv3(5) |
-| `recovery:packet_lost` | ✅ | `QLOG_PACKET_LOST` | `send_control.cpp` | 1 | 检测到丢包 |
-| `recovery:marked_for_retransmit` | ✅ | `QLOG_MARKED_FOR_RETRANSMIT` | `send_control.cpp` | 2 | loss_detected 和 pto_expired 触发重传 |
+| `recovery:congestion_state_updated` | ✅ | `QLOG_CONGESTION_STATE_UPDATED` | 5 CC algorithm files | 22 | Reno(3), CUBIC(6), BBRv1(4), BBRv2(4), BBRv3(5) |
+| `recovery:packet_lost` | ✅ | `QLOG_PACKET_LOST` | `send_control.cpp` | 1 | Packet loss detected |
+| `recovery:marked_for_retransmit` | ✅ | `QLOG_MARKED_FOR_RETRANSMIT` | `send_control.cpp` | 2 | Retransmit triggered by loss_detected and pto_expired |
 
 ### ✅ Security Events (2/2) — 100%
 
 | Event | Status | Macro | Source File(s) | Call Count | Notes |
 |-------|--------|-------|----------------|-----------|-------|
-| `security:key_updated` | ✅ | `QLOG_KEY_UPDATED` | `connection_crypto.cpp` | 6 | 安装读/写密钥 (initial/handshake/1-RTT/key_update) |
-| `security:key_discarded` | ✅ | `QLOG_KEY_DISCARDED` | `connection_server.cpp`, `connection_client.cpp` | 4 | handshake_done 后丢弃 initial 和 handshake 密钥 |
+| `security:key_updated` | ✅ | `QLOG_KEY_UPDATED` | `connection_crypto.cpp` | 9 | `SetReadSecret`(1), `SetWriteSecret`(1), v2 version-negotiation Initial reinstall(2), `RekeyInitialForVersion`(2), initiating key update(1), peer key-update response(2) |
+| `security:key_discarded` | ✅ | `QLOG_KEY_DISCARDED` | `connection_base.cpp` | 2 | Discard initial & handshake keys after handshake_done |
 
 ### ✅ HTTP/3 Events (2/2) — 100%
 
 | Event | Status | Macro | Source File(s) | Call Count | Notes |
 |-------|--------|-------|----------------|-----------|-------|
-| `http3:frame_created` | ✅ | `QLOG_HTTP3_FRAME_CREATED` | `req_resp_base_stream.cpp` | 3 | DATA 帧、HEADERS 帧、批量 DATA 帧发送 |
-| `http3:frame_parsed` | ✅ | `QLOG_HTTP3_FRAME_PARSED` | `frame_decoder.cpp` | 1 | H3 帧解码完成 |
+| `http3:frame_created` | ✅ | `QLOG_HTTP3_FRAME_CREATED` | `req_resp_base_stream.cpp` | 3 | DATA frames, HEADERS frames, batched DATA frame sends |
+| `http3:frame_parsed` | ✅ | `QLOG_HTTP3_FRAME_PARSED` | `frame_decoder.cpp` | 1 | H3 frame decoding completed |
 
 ## Congestion State Tracking Coverage
 
@@ -88,10 +88,10 @@
 | Macro | Call Count | Files |
 |-------|-----------|-------|
 | `QLOG_CONGESTION_STATE_UPDATED` | 22 | reno(3), cubic(6), bbr_v1(4), bbr_v2(4), bbr_v3(5) |
-| `QLOG_KEY_UPDATED` | 6 | connection_crypto.cpp |
-| `QLOG_PACKET_DROPPED` | 5 | connection_base.cpp |
+| `QLOG_KEY_UPDATED` | 9 | connection_crypto.cpp |
+| `QLOG_PACKET_DROPPED` | 7 | connection_base.cpp(6), version_negotiator.cpp(1) |
 | `QLOG_CONNECTION_ID_UPDATED` | 4 | connection_frame_processor.cpp(2), connection_id_coordinator.cpp(2) |
-| `QLOG_KEY_DISCARDED` | 4 | connection_server.cpp(2), connection_client.cpp(2) |
+| `QLOG_KEY_DISCARDED` | 2 | connection_base.cpp |
 | `QLOG_EVENT` (generic) | 4 | send_control.cpp(1), connection_base.cpp(3) |
 | `QLOG_HTTP3_FRAME_CREATED` | 3 | req_resp_base_stream.cpp |
 | `QLOG_CONNECTION_STARTED` | 2 | connection_client.cpp, connection_server.cpp |
@@ -104,8 +104,8 @@
 | `QLOG_STREAM_STATE_UPDATED` | 1 | connection_stream_manager.cpp |
 | `QLOG_HTTP3_FRAME_PARSED` | 1 | frame_decoder.cpp |
 | `QLOG_SERVER_LISTENING` | 1 | quic_server.cpp |
-| `QLOG_PACKET_BUFFERED` | 0 | — (N/A: 无适用场景) |
-| **Total** | **57** | **13 files** |
+| `QLOG_PACKET_BUFFERED` | 0 | — (N/A: no applicable scenario) |
+| **Total** | **63** | **13 files** |
 
 ## Performance Impact
 
@@ -182,7 +182,8 @@ Macro call chain:
 
 ## Change Log
 
-| Date | Change | Impact |
+| Revision | Change | Impact |
 |------|--------|--------|
-| 2026-03-19 | Initial report | 12/19 events (63%) |
-| 2026-03-20 | **Major update**: Corrected coverage from 63% to 94.7% (18/19) | Added: connection_id_updated, server_listening, stream_state_updated, packet_dropped, key_updated, key_discarded, marked_for_retransmit, http3:frame_created, http3:frame_parsed. Total macros in src/: 57 calls in 13 files |
+| 1 | Initial report | 12/19 events (63%) |
+| 2 | **Major update**: Corrected coverage from 63% to 94.7% (18/19) | Added: connection_id_updated, server_listening, stream_state_updated, packet_dropped, key_updated, key_discarded, marked_for_retransmit, http3:frame_created, http3:frame_parsed. Total macros in src/: 57 calls in 13 files |
+| 3 | Data audit: reconciled the macro-usage summary against the per-event tables and source | KEY_UPDATED 6→9, PACKET_DROPPED 5→7, KEY_DISCARDED 4→2 (file attribution fixed); total 57→63 per grep counts |

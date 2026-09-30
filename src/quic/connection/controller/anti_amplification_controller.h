@@ -122,7 +122,8 @@ public:
      *
      * Returns how many more bytes can be sent before hitting the limit.
      *
-     * @return Remaining bytes that can be sent (0 if budget exhausted or validated)
+     * @return Remaining bytes that can be sent (UINT64_MAX once validated;
+     *         0 only when unvalidated and the 3x budget is exhausted)
      */
     uint64_t GetRemainingBudget() const;
 

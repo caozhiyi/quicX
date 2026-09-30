@@ -23,39 +23,43 @@ make connection_lifecycle_demo
 ### Demo Application
 
 ```bash
-./bin/connection_lifecycle_demo
+# Optional argument: base URL of a running HTTP/3 server (defaults to https://localhost:7004)
+./bin/connection_lifecycle_demo [base_url]
 
 # The demo will automatically:
-# 1. Create a connection pool
-# 2. Make multiple requests reusing connections
-# 3. Perform health checks
-# 4. Demonstrate graceful shutdown
+# 1. Create a connection pool (max 5 connections per host, 30s idle timeout)
+# 2. Make 5 requests reusing connections
+# 3. Perform a health check (dump per-connection state)
+# 4. Clean up idle connections
+# 5. Demonstrate graceful shutdown
 ```
 
+> Note: point the demo at any running HTTP/3 server (e.g. `hello_world_server` on port 7001)
+> — it issues GET requests against `<base_url>/hello`.
+
 ## Key Concepts
+
+All classes below are defined in `demo.cpp` for demonstration purposes (quicX itself
+does not ship a built-in connection-pool API).
 
 ### 1. Connection Pooling
 
 Reuse connections to avoid handshake overhead:
 
 ```cpp
-ConnectionPool pool;
+ConnectionPool pool(5, 30000);  // max 5 connections per host, 30s idle timeout
 auto conn = pool.GetConnection("https://example.com");
 // Use connection
-pool.ReleaseConnection(conn);
+pool.ReleaseConnection("https://example.com", conn);
 ```
 
 ### 2. Health Checks
 
-Monitor connection health:
+Dump per-connection state (in use / idle, idle time, request count):
 
 ```cpp
-if (pool.IsHealthy(conn)) {
-    // Connection is healthy, use it
-} else {
-    // Connection is unhealthy, get a new one
-    conn = pool.GetConnection(host);
-}
+pool.HealthCheck();          // prints [HEALTHY] / [EXPIRED] per connection
+pool.CleanupIdleConnections(); // removes idle-expired connections
 ```
 
 ### 3. Graceful Shutdown
@@ -74,40 +78,41 @@ pool.GracefulShutdown();  // Close all connections cleanly
 4. **Graceful shutdown** - Always cleanup properly
 5. **Limit pool size** - Prevent resource exhaustion
 
-## Configuration
-
-```cpp
-ConnectionPoolConfig config;
-config.max_connections_per_host = 10;  // Max connections per host
-config.idle_timeout_ms = 30000;        // 30s idle timeout
-config.health_check_interval_ms = 5000; // Check every 5s
-```
-
 ## Output Example
 
 ```
-Connection Lifecycle Demo
-=========================
+╔════════════════════════════════════════╗
+║  Connection Lifecycle Demo            ║
+╚════════════════════════════════════════╝
 
-Creating connection pool...
-Pool created with max 10 connections per host
+Test 1: Connection Reuse
+========================================
 
-Test 1: Making requests with connection reuse
-Request 1: Created new connection to https://localhost:8443
-Request 2: Reused existing connection (saved handshake time!)
-Request 3: Reused existing connection (saved handshake time!)
+Request 1:
+  Created new connection to https://localhost:7004
+    Success: HTTP 200
 
-Test 2: Health check
-Checking connection health...
-Connection is healthy ✓
+Request 2:
+  Reused existing connection (saved handshake time!)
+    Total requests on this connection: 2
+    Success: HTTP 200
+...
 
-Test 3: Idle timeout
-Waiting for idle timeout (30s)...
-Connection closed due to idle timeout
+Test 2: Health Check
+========================================
+  Host: https://localhost:7004
+    Connection 0: IDLE, idle for 210ms, 5 requests [HEALTHY]
 
-Test 4: Graceful shutdown
-Shutting down connection pool...
-All connections closed gracefully ✓
+Test 3: Idle Connection Cleanup
+========================================
+Waiting 2 seconds...
+Cleaning up idle connections...
+
+Test 4: Graceful Shutdown
+========================================
+Initiating graceful shutdown...
+  Closing 1 connections...
+  All connections closed gracefully ✓
 
 Demo completed!
 ```

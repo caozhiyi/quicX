@@ -10,6 +10,7 @@
 #include "quic/crypto/tls/type.h"
 #include "quic/frame/handshake_done_frame.h"
 #include "quic/frame/if_frame.h"
+#include "quic/frame/ping_frame.h"
 #include "quic/frame/type.h"
 
 namespace quicx {
@@ -129,6 +130,24 @@ void ServerConnection::OnTlsHandshakeComplete() {
     // SendHandshakeDoneFrame); the wider idle timeout keeps the window
     // open while the peer's own PTO retries land.
     timer_coordinator_->EnterHandshakeConfirmGrace();
+
+    // RFC 9000 §10.1.2 keep-alive (opt-in via transport parameters). Under the
+    // interop loss/corruption scenarios a peer's loss recovery can legitimately
+    // stay silent for longer than the negotiated idle timeout: its PTO is
+    // computed from an RTT inflated by a multi-second (corrupted) handshake, so
+    // the probe backoff can exceed the idle window while data is still
+    // outstanding. Both endpoints then idle out and a transfer that was one
+    // retransmission away from completing dies (quinn handshakecorruption,
+    // 2026-09-17). A periodic PING keeps the peer's idle timer alive while its
+    // recovery runs; the peer's ACK in turn refreshes ours.
+    if (transport_param_.GetEnableKeepAlive()) {
+        timer_coordinator_->StartKeepAliveTimer([this]() {
+            LOG_DEBUG("Keep-alive: sending PING frame");
+            auto ping = std::make_shared<PingFrame>();
+            OnFrameReady(ping);
+            OnConnectionActive();
+        });
+    }
 
     // Stop PTO probing, drop Initial/Handshake number spaces (RFC 9000
     // §4.10), qlog key_discarded events — shared with the client's

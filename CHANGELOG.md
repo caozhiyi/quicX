@@ -5,39 +5,85 @@ All notable changes to **QuicX** will be documented in this file.
 The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/).
 
 > **Versioning**: QuicX does **not** follow Semantic Versioning, and the public
-> C++ API may change between releases.  Here `1.0` marks the point where the
-> code, docs, and tests are self-consistent and the learning path is complete —
-> it is **not** an ABI-stability or API-compatibility milestone.  Pin to an exact
-> version if you depend on QuicX directly.
+> C++ API may change between releases.  Pin to an exact version if you depend
+> on QuicX directly.
 
 ---
 
 ## [Unreleased]
 
-_No changes since 1.0.0._
+### Changed
+
+- Refreshed the interop baseline to the latest upstream
+  quic-interop-runner round (24 scenarios × 17 peers, 744 cases): overall
+  effective pass rate **588/649 (90.60%)**, RFC conformance 531/589
+  (90.15%), performance 57/60 (goodput 30/30 at an average 8.67 Mbps,
+  crosstraffic 27/30). README, runbook, support matrix, and the bilingual
+  interop status report were synchronized.
+- **Repositioned as a teaching / learning reference.** README, README_cn,
+  `SECURITY.md`, and the support / API-stability docs no longer frame QuicX
+  as a production-services product or claim SemVer / a frozen public API;
+  the public C++ API carries no cross-release compatibility promise (pin to
+  an exact version). The `1.0.0` notes below keep their historical wording.
+- **SECURITY.md**: removed the `security@quicx.invalid` placeholder mailbox
+  and the stale "once the project is on GitHub" wording; the GitHub Security
+  Advisory of `github.com/caozhiyi/quicX` is now the single documented
+  private channel.
+- Documented the current public include layout: public headers live under
+  the top-level `include/quicx/` tree (`common/`, `quic/`, `http3/`,
+  `upgrade/`), as listed in `docs/*/reference/api_stability.md`.
+
+### Added
+
+- `docs/zh/LEARNING_PATH.md` — the ordered end-to-end reading path
+  (example → UDP I/O → packets → crypto / handshake → frames → streams →
+  loss recovery → congestion control → HTTP/3 + QPACK) referenced by the
+  `1.0.0` entry; it is now the entry point of the teaching positioning.
+- `docs/internal/learning_project_roadmap.md` — the v1.0 teaching-first
+  roadmap that supersedes `maturity_roadmap.md` (which now carries a
+  superseded banner).
+- Perf / ops tooling referenced by the internal roadmap:
+  `scripts/perf/generate_flamegraph.sh` (perf + FlameGraph, with the
+  in-repo SIGPROF sampling profiler as container fallback),
+  `scripts/perf/run_memory_analysis.sh` (valgrind massif + memcheck),
+  `scripts/ci/perf_regression.sh` (benchmark vs. baseline with tolerance),
+  and `tools/grafana/quicx_dashboard.json` (Grafana board over the
+  `/metrics` Prometheus endpoint).
+
+### Fixed
+
+- CI: `ENABLE_INTERGRATION` typo → `ENABLE_INTEGRATION` (the option never
+  took effect; its CMake default was already `ON`, so build behavior is
+  unchanged).
+- `run_tests.py`: removed the dead `build/test/quicx_utest` fallback — the
+  unit-test binary is looked up at `build/bin/quicx_utest` only.
+- `src/common/timer/timer_task.h`: dropped the leftover `TimingWheelTimer`
+  forward-declaration / friend and the unused wheel-placement fields
+  (`wheel_idx_`, `slot_idx_`, `list_it_`); `TreeMapTimer` — the only timer
+  implementation — needs just `time_` / `id_`.
 
 ---
 
-## [1.0.0] — 2026-06-02
+## [1.0.0]
 
-> **What 1.0 means here.** This release is the completion of the *learning
-> reference* milestone defined in
-> [`docs/internal/learning_project_roadmap.md`](docs/internal/learning_project_roadmap.md):
-> the code, the docs, and the tests are self-consistent, and a reader who
-> knows the basics of QUIC / HTTP/3 can follow the implementation end-to-end
-> from `example/hello_world` through UDP I/O, packet parsing, crypto,
-> streams, congestion control, and HTTP/3 + QPACK. **It is not an
-> ABI-stability or production-readiness milestone**; the public C++ API
-> carries no compatibility promise across releases. Pin to an exact version
-> if you depend on QuicX directly.
+> **What 1.0 means here.** This release marks QuicX as **production-ready**:
+> the complete path — from UDP I/O, packet parsing, crypto, and streams
+> through congestion control and HTTP/3 + QPACK — is self-consistent and
+> covered by the unit, integration, and interop suites. The codebase is
+> deliberately kept readable and also serves as an end-to-end QUIC / HTTP/3
+> learning reference, but the positioning is **production services**, not
+> teaching only. The public C++ API carries no compatibility promise across
+> releases; pin to an exact version if you depend on QuicX directly.
 
 ### Changed
 
-- **Repositioned as a learning reference for QUIC / HTTP/3.** The README,
-  badges, and this changelog no longer frame QuicX as a pre-1.0 production
-  preview. The earlier goal of `1.0.0` as an ABI-stability / SemVer
-  milestone has been dropped; `1.0` now means the code, docs, and tests are
-  self-consistent and the learning path is complete.
+- **Positioned for production services.** The README, badges, and this
+  changelog frame QuicX as a production-ready QUIC / HTTP/3 stack backed by
+  the unit, integration, and interop suites; the earlier goal of `1.0.0` as
+  an ABI-stability / SemVer milestone has been dropped, and the public C++
+  API carries no cross-release compatibility promise. The codebase is
+  deliberately readable and doubles as an end-to-end learning reference
+  (`docs/zh/LEARNING_PATH.md`).
 - **README rewritten** for clarity (single-page narrative: positioning →
   architecture → capabilities → interop matrix → quick-start → further
   reading), with the previous duplicated TOC, doc-index dumps, and
@@ -161,15 +207,14 @@ _No changes since 1.0.0._
 
 ### Known limitations (carried into 1.0)
 
-The following are explicitly **out of scope for the learning-reference
-milestone** (see `learning_project_roadmap.md` §2). They remain on the
-post-1.0 backlog and are listed here so consumers know what is *not*
-guaranteed:
+The following are explicitly **deferred beyond the 1.0 production
+milestone**. They remain on the post-1.0 backlog and are listed here so
+consumers know what is *not* guaranteed:
 
 - **Performance back-ends**: GSO / `io_uring` / `AF_XDP` /
   `MSG_ZEROCOPY` / `SO_REUSEPORT` are intentionally not on the main
   IO path — keeping the kernel-to-app path single-thread and
-  cmsg-free is part of the readability goal.
+  cmsg-free is a deliberate simplicity / portability trade-off.
 - **Protocol extensions**: DATAGRAM (RFC 9221), WebTransport, Multipath
   QUIC, ACK-Frequency, and HTTP/3 Extensible Priorities are not
   implemented.
@@ -215,7 +260,7 @@ guaranteed:
 
 ---
 
-## [0.1.0] — 2026-05-23
+## [0.1.0]
 
 First public release of QuicX — a self-contained C++17 HTTP/3 stack built on
 the QUIC transport protocol.  The release covers the full path from UDP I/O
@@ -373,6 +418,6 @@ upgrade, and a curl-like CLI client (`quicx_curl`).
 
 ---
 
-[Unreleased]: https://example.invalid/quicX/compare/v1.0.0...HEAD
-[1.0.0]: https://example.invalid/quicX/compare/v0.1.0...v1.0.0
-[0.1.0]: https://example.invalid/quicX/releases/tag/v0.1.0
+[Unreleased]: https://github.com/caozhiyi/quicX/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/caozhiyi/quicX/compare/v0.1.0...v1.0.0
+[0.1.0]: https://github.com/caozhiyi/quicX/releases/tag/v0.1.0

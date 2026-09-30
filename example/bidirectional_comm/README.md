@@ -29,7 +29,7 @@ cd build && cmake .. && make bidirectional_server bidirectional_client
 ./bin/bidirectional_client <server_url>
 
 # Example:
-./bin/bidirectional_client https://localhost:8443
+./bin/bidirectional_client https://127.0.0.1:7002
 ```
 
 ## Use Cases
@@ -43,19 +43,18 @@ cd build && cmake .. && make bidirectional_server bidirectional_client
 ## Example Output
 
 ```
-Bidirectional Client
-====================
-Connected to: https://localhost:8443
+╔════════════════════════════════════════╗
+║  Bidirectional Communication Client   ║
+╚════════════════════════════════════════╝
+
+Enter messages (type 'quit' to exit):
 Heartbeat started (interval: 5s)
-
 > Hello Server!
-[Server]: Message received: Hello Server!
 [Server]: Echo: Hello Server!
-
 > How are you?
-[Server]: Message received: How are you?
 [Server]: Echo: How are you?
 
-Connection lost! Reconnecting...
-Reconnected successfully!
+Heartbeat failed! Connection lost.
+Attempting to reconnect...
+Connected successfully!
 ```

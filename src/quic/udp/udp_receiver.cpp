@@ -391,7 +391,7 @@ int32_t UdpReceiver::DrainBatch(uint32_t fd) {
         buffer->MoveWritePt(bytes);
         pkt->SetAddress(std::move(entries[i].peer_addr_));
         pkt->SetSocket(rx_sock);
-        pkt->SetTime(common::UTCTimeMsec());
+        pkt->SetTime(common::MonotonicTimeMsec());
         pkt->SetEcn(ecn_enabled_ ? entries[i].ecn_ : 0);
 
         Metrics::CounterInc(common::MetricsStd::UdpPacketsRx);

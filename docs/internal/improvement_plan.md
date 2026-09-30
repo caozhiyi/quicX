@@ -1,8 +1,7 @@
 # quicX 工业级成熟度完善计划
 
 > 文档版本：v1.2（根据仓库实情校准）  
-> 创建时间：2026-04-30  
-> 最近更新：2026-04-30（QPack decoder stream 语义修复后）  
+> 最近更新（QPack decoder stream 语义修复后）  
 > 目标：将 quicX 从"协议核心基本完成"推进至"工业级开源 QUIC 库"  
 > 对标对象：Cloudflare quiche / Microsoft msquic / LiteSpeed lsquic / quic-go
 
@@ -335,7 +334,7 @@ while (len > 0) {  // TODO: check max loop times
 
 #### A.3.3 跨实现失败项逐条修复
 
-按 `test/interop/INTEROP_improvement_plan.md` 第 6 阶段记录，当前跨实现仍有明显失败项：
+当前跨实现仍有明显失败项（沿旧版 `INTEROP_improvement_plan.md` 的逐条排查记录，现已并入本计划）：
 
 | 方向 | 场景 | 当前状态 | 排查方向 |
 |---|---|---|---|
@@ -640,13 +639,13 @@ ssize_t         quicx_stream_read (quicx_stream_t*, uint8_t*, size_t, int* fin);
 
 ## 六、里程碑与版本规划
 
-| 版本 | 目标日期 | Phase | 主题 |
-|---|---|---|---|
-| `v0.1.0` | 2026-06 | A 完成 | alpha 可试用、CI 全绿、官方互通榜可见 |
-| `v0.2.0` | 2026-08 | B 完成 | 协议扩展齐、性能对齐、C ABI |
-| `v0.3.0` | 2026-10 | C 部分 | WebTransport + 2 个语言绑定 |
-| `v0.9.0-rc` | 2026-12 | C 部分 | curl / nginx 集成合并 |
-| `v1.0.0` | 2027-Q1 | C 完成 | ABI 稳定承诺、长期维护版 |
+| 版本 | Phase | 主题 |
+|---|---|---|
+| `v0.1.0` | A 完成 | alpha 可试用、CI 全绿、官方互通榜可见 |
+| `v0.2.0` | B 完成 | 协议扩展齐、性能对齐、C ABI |
+| `v0.3.0` | C 部分 | WebTransport + 2 个语言绑定 |
+| `v0.9.0-rc` | C 部分 | curl / nginx 集成合并 |
+| `v1.0.0` | C 完成 | ABI 稳定承诺、长期维护版 |
 
 ---
 
@@ -794,5 +793,5 @@ ssize_t         quicx_stream_read (quicx_stream_t*, uint8_t*, size_t, int* fin);
 ---
 
 **文档维护者**：quicX maintainers  
-**最近更新**：2026-04-30（v1.2：QPack decoder stream 语义修复后）  
-**下次评审**：2026-05-31（每月滚动）
+**最近更新**（v1.2：QPack decoder stream 语义修复后）  
+**下次评审**：每月滚动

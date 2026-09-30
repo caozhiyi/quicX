@@ -35,6 +35,7 @@
 #include <iostream>
 #include <memory>
 #include <mutex>
+#include <quicx/common/metrics.h>
 #include <quicx/http3/if_async_handler.h>
 #include <quicx/http3/if_client.h>
 #include <quicx/http3/if_request.h>
@@ -148,9 +149,13 @@ public:
 
     bool Init() {
         QuicTransportParams transport_params;
-        // Use a short idle timeout for interop testing so the connection closes
-        // promptly after all streams finish, well within container timeout.
-        transport_params.max_idle_timeout_ms_ = 10000;  // 10 seconds
+        // RFC 9000 §10.1: effective idle timeout = min(ours, peer's). 10 s is too
+        // aggressive for the loss/corruption interop scenarios: a peer (or our own
+        // PTO) recovering with an RTT inflated by a multi-second corrupted
+        // handshake can legitimately stay silent >10 s while data is still
+        // outstanding (see quic/config.h kHandshakeConfirmGraceMs). Keep the
+        // advertised value symmetric with the interop server.
+        transport_params.max_idle_timeout_ms_ = 30000;  // 30 seconds
         // Keep-alive PINGs: the interop client is download-only, so after a
         // NAT rebind (rebind-port/rebind-addr) it would otherwise go silent
         // forever and both endpoints idle out. Explicit 300 ms cadence: the
@@ -696,10 +701,37 @@ std::vector<std::string> ParseUrls(const std::string& requests) {
     return urls;
 }
 
+// Dump the full Prometheus metrics snapshot to stderr at process exit.
+// Gated by QUICX_METRICS_DUMP=1 so it only fires during perf/bench runs
+// (same convention as example/file_transfer): the interop runner doesn't
+// want a 200+ line stderr blob per client exit. RAII covers every return
+// path from main(), including the multi-connection and multiconnect ones.
+struct MetricsDumpAtExit {
+    ~MetricsDumpAtExit() {
+        if (const char* d = std::getenv("QUICX_METRICS_DUMP"); d && d[0] == '1') {
+            std::cerr << "===== METRICS DUMP (interop_client) =====\n"
+                      << quicx::Metrics::ExportPrometheus() << "===== END METRICS DUMP =====\n";
+        }
+    }
+};
+
 int main(int argc, char* argv[]) {
 #ifdef _WIN32
     WinsockInit wsInit;
 #endif
+    MetricsDumpAtExit metrics_dumper;
+
+    // Only the HTTP/3 server auto-initializes the global Metrics registry.
+    // The raw IQuicClient path never does, so every CounterInc/
+    // HistogramObserve short-circuits on g_metrics_enabled=false and the
+    // exit dump above would be empty. Opt in when a dump was requested.
+    // Not unconditional: with metrics on, HistogramObserve pays a registry
+    // mutex on the hot path, which the interop runner doesn't want.
+    if (const char* d = std::getenv("QUICX_METRICS_DUMP"); d && d[0] == '1') {
+        quicx::MetricsConfig mcfg;
+        mcfg.enable_ = true;
+        quicx::Metrics::Initialize(mcfg);
+    }
     // Support both environment variables and command-line arguments
     std::string server;
     uint16_t port = 443;

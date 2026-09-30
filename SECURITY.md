@@ -4,26 +4,23 @@ Thank you for taking the time to help keep **QuicX** and its users safe.
 This document describes which versions are eligible for security fixes,
 how to report a vulnerability, and what to expect once you do.
 
-> ⚠️ **Pre-1.0 status.**  QuicX is on the `0.x` series and is intended for
-> evaluation, embedding into experimental products, and contribution.
-> It is **not** marketed as an enterprise-grade, production-SLA product.
-> Security reports are nevertheless taken seriously and patched on a
-> best-effort basis under the timeline below.
+> **Project status.**  QuicX is positioned as a **teaching / learning
+> reference** for QUIC and HTTP/3.  It is an open-source project, not a
+> commercial product, and carries no contractual SLA; security reports are
+> nevertheless taken seriously and patched on a best-effort basis under the
+> timeline below.
 
 ---
 
 ## Supported versions
 
-During the `0.x` series only the most recent minor release receives security
-patches.  Older `0.y` releases are unsupported once `0.(y+1).0` ships.
+The two most recent minor lines receive security patches.
 
 | Version  | Supported          | Notes                                          |
 |----------|--------------------|------------------------------------------------|
-| `0.1.x`  | ✅ Yes (current)   | Receives security fixes as `0.1.(x+1)` patches |
+| `1.0.x`  | ✅ Yes (current)   | Receives security fixes as `1.0.(x+1)` patches |
+| `0.1.x`  | ⚠️ Best effort     | Please upgrade to `1.x`                        |
 | `< 0.1`  | ❌ No              | Pre-release; please upgrade                    |
-
-After `1.0.0` ships, this matrix will be widened to cover at least the two
-most recent minor lines, in line with semantic-versioning expectations.
 
 ---
 
@@ -63,31 +60,19 @@ quickly if the report can be made public.
 
 ## How to report a vulnerability
 
-We support two private channels.  Please use **either one** — duplicating
-across both is unnecessary.
+Please use the project's private reporting channel on GitHub.
 
-### 1. GitHub Security Advisory (preferred, once the project is on GitHub)
+### GitHub Security Advisory (preferred)
 
-Once the QuicX repository is published on GitHub, the preferred reporting
-channel is the repository's
-*Security → Report a vulnerability* page, which creates a private
-**GitHub Security Advisory** that only maintainers can read.  This gives
-you and us a private workspace to discuss the issue, propose a fix, and
-coordinate disclosure.
+Use the repository's
+[*Security → Report a vulnerability*](https://github.com/caozhiyi/quicX/security/advisories/new)
+page, which creates a private **GitHub Security Advisory** that only
+maintainers can read.  This gives you and us a private workspace to discuss
+the issue, propose a fix, and coordinate disclosure.
 
-### 2. Encrypted email
-
-If GitHub is not appropriate (e.g. the project's GitHub home is not yet
-live, or you prefer email), send the report to:
-
-```
-security@quicx.invalid
-```
-
-> 📌 Maintainer note: replace the address above with the real intake mailbox
-> at GA time, and publish the corresponding PGP key under
-> `docs/security/public-key.asc`.  Until then, file the report through the
-> private GitHub Security Advisory channel above.
+> An encrypted-email channel may be added once a dedicated intake mailbox
+> and PGP key are published under `docs/security/`.  Until then, the GitHub
+> Security Advisory above is the supported private channel.
 
 Please include:
 
@@ -128,7 +113,7 @@ QuicX follows a **coordinated-disclosure** model:
 
 1. The reporter contacts us privately via one of the channels above.
 2. We confirm the vulnerability and develop a fix.
-3. A patched release is prepared (usually a `0.y.(z+1)` patch).
+3. A patched release is prepared (usually a patch release).
 4. The patch is published; **simultaneously**, a public advisory is
    issued describing the issue, affected versions, mitigations, and the
    fix.

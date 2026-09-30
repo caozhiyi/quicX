@@ -33,8 +33,29 @@ std::string GetFormatTime(FormatTimeUnit unit = FormatTimeUnit::kMillisecondForm
 void GetFormatTime(char* buf, uint32_t& len, FormatTimeUnit unit = FormatTimeUnit::kMillisecondFormat);
 
 // get utc time
+//
+// Wall-clock (std::chrono::system_clock). Use ONLY for values whose meaning is
+// "a point in real time" that must survive a process restart or be comparable
+// with an external system — e.g. TLS session ticket creation time
+// (SSL_SESSION_get_time), certificate validity, log/qlog timestamps.
+//
+// DO NOT use it for duration or deadline arithmetic: it can step backwards
+// (NTP correction, manual settime, VM resume), which turns "now - then" into a
+// huge unsigned value and silently breaks timers. Use MonotonicTimeMsec().
 uint64_t UTCTimeSec();
 uint64_t UTCTimeMsec();
+
+// Monotonic time in milliseconds, from an arbitrary but process-stable epoch
+// (std::chrono::steady_clock).
+//
+// This is the clock every protocol-timing decision must use: RTT sampling,
+// PTO, loss detection, idle/closing timeouts, pacing, ACK-delay accounting and
+// per-packet send timestamps. It never jumps, so a duration computed from two
+// samples is always the elapsed time.
+//
+// It is NOT comparable across processes and carries no calendar meaning — for
+// anything user- or dashboard-visible, use UTCTimeMsec().
+uint64_t MonotonicTimeMsec();
 
 // sleep interval milliseconds
 void Sleep(uint32_t interval);

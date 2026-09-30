@@ -22,80 +22,7 @@
 
 ---
 
-## 方式一：一键自动化脚本（推荐）
-
-项目提供 `scripts/run_hello_world_load_sanitizer.sh`，自动完成构建、压测、采报告全流程。
-
-### 基本用法
-
-```bash
-cd /data/workspace/quicX
-
-# 单个 sanitizer
-./scripts/run_hello_world_load_sanitizer.sh asan
-./scripts/run_hello_world_load_sanitizer.sh tsan
-./scripts/run_hello_world_load_sanitizer.sh ubsan
-
-# 依次跑全部
-./scripts/run_hello_world_load_sanitizer.sh all
-```
-
-### 可调参数（环境变量）
-
-```bash
-# 修改并发与请求量（默认 4 / 5000，与文档示例一致）
-LOAD_CLIENTS=8 LOAD_REQUESTS=10000 \
-    ./scripts/run_hello_world_load_sanitizer.sh tsan
-
-# 修改服务端口
-SERVER_PORT=7011 ./scripts/run_hello_world_load_sanitizer.sh asan
-
-# 修改每请求超时（毫秒，默认 10000）
-LOAD_TIMEOUT_MS=20000 ./scripts/run_hello_world_load_sanitizer.sh ubsan
-
-# 修改整轮负载的硬超时（秒，默认 600）
-LOAD_RUN_TIMEOUT=1200 ./scripts/run_hello_world_load_sanitizer.sh tsan
-```
-
-### 脚本工作流程
-
-```
-┌───────────────────────────────────────────────────────────┐
-│  1. cmake 配置 (-DSANITIZER=xxx)                          │
-│  2. 构建 hello_world_server / load_tester                 │
-│  3. 启动 hello_world_server (监听 0.0.0.0:7001)           │
-│  4. 运行：                                                │
-│     load_tester https://localhost:7001/hello              │
-│         --clients 4 --requests 5000                       │
-│  5. 优雅停止 server (SIGTERM, 等待 sanitizer 落盘)        │
-│  6. 收集 server / client / *_sanitizer.* 三类日志          │
-│  7. 用精确正则筛 sanitizer 关键字，生成汇总报告            │
-└───────────────────────────────────────────────────────────┘
-```
-
-### 输出结果
-
-报告保存在 `sanitizer-results-helloworld/`：
-
-```
-sanitizer-results-helloworld/
-├── asan_build_config.log       # ASan cmake 配置日志
-├── asan_build.log              # ASan 编译日志
-├── asan_server.log             # server 运行日志（stdout+stderr）
-├── asan_load_tester.log        # load_tester 运行日志
-├── asan_sanitizer.<pid>...     # ASan 写入的原始报告（如有）
-├── asan_report.log             # ★ ASan 最终汇总报告
-├── tsan_report.log             # ★ TSan 最终汇总报告
-└── ubsan_report.log            # ★ UBSan 最终汇总报告
-```
-
-若某个 sanitizer **未检测到问题**，对应 `*_report.log` 内容为 `No issues detected by xxx.`。
-
----
-
-## 方式二：手动构建与测试
-
-需要更细粒度控制（自定义并发数、复现某条竞争、调试特定连接）时按下面流程操作。
+## 方式一：构建与测试
 
 ### 第一步：构建
 
@@ -218,12 +145,13 @@ cat sanitizer-results-helloworld/ubsan_san.*  2>/dev/null
 ### Q: server 启动失败或端口被占用
 
 ```bash
-ss -tlnp | grep 7001
-# 或者换个端口
-SERVER_PORT=7011 ./scripts/run_hello_world_load_sanitizer.sh asan
+ss -ulnp | grep 7001
+# 或者换个端口（argv[1]，client 侧同步改 URL）
+./build-tsan/bin/hello_world_server 7011 &
+./build-tsan/bin/load_tester https://localhost:7011/hello --clients 4 --requests 5000
 ```
 
-注意：换端口仅影响脚本启动的 server 监听口；`hello_world_server` 内部端口固定为 7001。如要真正切换，需要改 `example/hello_world/server.cpp` 里的 `server->Start("0.0.0.0", 7001)`。
+`hello_world_server` 默认监听 7001，可通过第一个命令行参数或 `QUICX_HELLO_WORLD_PORT` 环境变量覆盖。
 
 ### Q: TSan 报数据竞争，但栈在第三方库里
 
@@ -232,7 +160,7 @@ SERVER_PORT=7011 ./scripts/run_hello_world_load_sanitizer.sh asan
 
 ### Q: ASan 报内存泄漏，但都来自 server 退出路径
 
-QUIC server `Stop()` -> `Destroy()` 涉及大量异步资源回收，必须给 server **足够时间** flush。脚本里 `sleep 3` 后再 `wait`，手动跑请保留同样的等待。
+QUIC server `Stop()` -> `Destroy()` 涉及大量异步资源回收，必须给 server **足够时间** flush。启动 server 后先 `sleep 3` 再压测，`kill -TERM` 后务必 `wait`。
 
 ### Q: UBSan 报有符号整数溢出
 
@@ -255,12 +183,12 @@ QUIC 协议的 RTT/拥塞窗口/包号计算非常密集，建议：
 
 ## 与其它 sanitizer 测试的关系
 
-| 场景 | 推荐脚本 |
+| 场景 | 推荐方式 |
 |---|---|
-| 单元测试覆盖 | `./scripts/ci-local.sh sanitize {asan,tsan,ubsan}` |
-| 文件传输 / 大流场景 | `./scripts/run_file_transfer_sanitizer.sh {asan,tsan,ubsan,all}` |
-| **HTTP/3 高并发短请求** | `./scripts/run_hello_world_load_sanitizer.sh {asan,tsan,ubsan,all}` |
-| 发版前全量回归 | 三条脚本各跑一次 |
+| 单元测试覆盖 | `sanitizer.yml`（本地等价：`-DSANITIZER=xxx` 构建 + `run_tests.py utest`） |
+| 文件传输 / 大流场景 | 见 [`sanitizer_file_transfer.md`](sanitizer_file_transfer.md) 手动流程 |
+| **HTTP/3 高并发短请求** | 本文手动流程（`-DSANITIZER=xxx` 构建 + hello_world_server + load_tester） |
+| 发版前全量回归 | 三类场景各跑一轮 |
 
 `hello_world + load_tester` 与 `file_transfer` 互补：前者侧重**短请求 × 高并发**（连接/流生命周期），后者侧重**长流 × 大数据**（流控/重组/拷贝路径）。建议两者都纳入回归。
 
@@ -269,15 +197,17 @@ QUIC 协议的 RTT/拥塞窗口/包号计算非常密集，建议：
 ## 总结
 
 ```bash
-# 最常用命令
-./scripts/run_hello_world_load_sanitizer.sh all
+# 最常用命令：asan / tsan / ubsan 各构建一轮并压测
 
-# 快速验证当前改动是否引入并发 bug
-./scripts/run_hello_world_load_sanitizer.sh tsan
+# 快速验证当前改动是否引入并发 bug（tsan）
+./build-tsan/bin/hello_world_server &
+SERVER_PID=$!
+sleep 3
+./build-tsan/bin/load_tester https://localhost:7001/hello --clients 4 --requests 5000
+kill -TERM $SERVER_PID
 
 # 自定义压力
-LOAD_CLIENTS=8 LOAD_REQUESTS=10000 \
-    ./scripts/run_hello_world_load_sanitizer.sh tsan
+./build-tsan/bin/load_tester https://localhost:7001/hello --clients 8 --requests 10000
 ```
 
 保持 ASan / TSan / UBSan clean 是项目质量底线——hello_world + load_tester 链路上任何一处报告都意味着 QUIC 栈在最常见的"短请求 × 多客户端"场景里存在隐患，必须修。

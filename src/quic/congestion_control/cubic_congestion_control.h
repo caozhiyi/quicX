@@ -38,6 +38,8 @@ public:
     bool InSlowStart() const override { return in_slow_start_; }
     bool InRecovery() const override { return in_recovery_; }
     uint64_t GetSsthresh() const override { return ssthresh_bytes_; }
+    // CUBIC W_max in packets (RFC 9438 §4.1.2); exposed for tests.
+    double GetWMaxPkts() const { return w_max_pkts_; }
 
     void SetQlogTrace(std::shared_ptr<common::QlogTrace> trace) override;
 

@@ -390,7 +390,7 @@ QPACK 在 quicX 中只关心 wire 上的字节和动态表的状态，明确**�
 |---|---|
 | HEADERS 帧的封装/解封 | `headers_frame.{h,cpp}`（HTTP/3 frame 层） |
 | HEADERS 是否 well-formed（必填 pseudo-header、值合法性） | `req_resp_base_stream` + 上层 router |
-| QUIC stream 的拥塞、重传 | `quic/stream/`、`quic/connection/controler/send_control` |
+| QUIC stream 的拥塞、重传 | `quic/stream/`、`quic/connection/controller/send_control` |
 | H3 SETTINGS 协商 | `connection_client/server.cpp` 里的 `HandleSettings` |
 | 大小写归一化 | `qpack_encoder.cpp:91-93` 显式 `std::tolower`，因为静态表是全小写 |
 

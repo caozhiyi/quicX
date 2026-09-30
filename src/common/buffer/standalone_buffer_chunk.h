@@ -38,11 +38,33 @@ public:
     void Unfreeze(uint8_t* end) override;
     uint8_t* GetWriteFloor() const override;
 
+    // Pooled acquire for the coalesce-on-demand hot path
+    // (MultiBlockBuffer::GetCoalescedReadable). Historically each coalesce
+    // did make_shared<StandaloneBufferChunk>(take), i.e. one malloc for the
+    // control block + one new[] for the payload — and the resulting chunk
+    // stays alive until the packet is ACKed (frames outlive the build via
+    // unacked_packets_), so a simple reuse-buffer is unsafe. Instead the
+    // returned shared_ptr carries a recycling deleter: when the last frame
+    // referencing the chunk is destroyed, the object goes back to a
+    // thread-local freelist instead of being freed. Steady state therefore
+    // costs zero allocations. Chunks are reused whenever their capacity
+    // covers the requested size (send sizes are stable in practice, so the
+    // first probe hits). The deleter runs on whichever thread drops the
+    // last reference; since packets are built and retired on the same
+    // worker thread, recycled chunks never migrate in practice — and even
+    // if they did, each pool is only ever touched by its owning thread.
+    static std::shared_ptr<StandaloneBufferChunk> Acquire(uint32_t size);
+
 private:
+    StandaloneBufferChunk() = default;
+
     void Release();
+    // Re-arm a recycled chunk for a new logical size (<= capacity_).
+    void Reuse(uint32_t size);
 
     uint8_t* data_ = nullptr;
     uint32_t length_ = 0;
+    uint32_t capacity_ = 0;  // allocated bytes behind data_; 0 when heap-less
 
     // See BufferChunk for the semantics of write_floor_offset_/freeze_count_.
     uint32_t write_floor_offset_ = 0;

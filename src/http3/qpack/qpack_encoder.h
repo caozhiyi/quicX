@@ -81,8 +81,8 @@ public:
     void SetDynamicTableEnabled(bool enabled) { enable_dynamic_table_ = enabled; }
     bool IsDynamicTableEnabled() const { return enable_dynamic_table_; }
 
-    bool Encode(const std::unordered_map<std::string, std::string>& headers, std::shared_ptr<common::IBuffer> buffer);
-    bool Decode(const std::shared_ptr<common::IBuffer> buffer, std::unordered_map<std::string, std::string>& headers);
+    bool Encode(const std::vector<std::pair<std::string, std::string>>& headers, std::shared_ptr<common::IBuffer> buffer);
+    bool Decode(const std::shared_ptr<common::IBuffer> buffer, std::vector<std::pair<std::string, std::string>>& headers);
     // Returns the Required Insert Count of the most recently decoded header block.
     // RFC 9204 §4.4.1: the decoder MUST NOT emit Section Acknowledgment for header
     // blocks with a Required Insert Count of zero (no dependency on dynamic table).
@@ -159,7 +159,7 @@ private:
     // so the encoding is deterministic regardless of unordered_map iteration
     // order.
     static std::vector<std::pair<std::string, std::string>> OrderHeaders(
-        const std::unordered_map<std::string, std::string>& headers);
+        const std::vector<std::pair<std::string, std::string>>& headers);
 
     // Pass 1 of Encode(): pick the representation for one header — exact
     // static match, static name-ref, acknowledged dynamic entry, or literal.
@@ -184,19 +184,19 @@ private:
     // |headers|. |base| is the block's decoded Base.
 
     bool DecodeIndexedStatic(const std::shared_ptr<common::IBuffer>& buffer, uint8_t first_byte,
-        [[maybe_unused]] int64_t base, std::unordered_map<std::string, std::string>& headers);
+        [[maybe_unused]] int64_t base, std::vector<std::pair<std::string, std::string>>& headers);
     bool DecodeIndexedDynamic(const std::shared_ptr<common::IBuffer>& buffer, uint8_t first_byte, int64_t base,
-        std::unordered_map<std::string, std::string>& headers);
+        std::vector<std::pair<std::string, std::string>>& headers);
     bool DecodeLiteralNameRefStatic(const std::shared_ptr<common::IBuffer>& buffer, uint8_t first_byte,
-        [[maybe_unused]] int64_t base, std::unordered_map<std::string, std::string>& headers);
+        [[maybe_unused]] int64_t base, std::vector<std::pair<std::string, std::string>>& headers);
     bool DecodeLiteralNameRefDynamic(const std::shared_ptr<common::IBuffer>& buffer, uint8_t first_byte, int64_t base,
-        std::unordered_map<std::string, std::string>& headers);
+        std::vector<std::pair<std::string, std::string>>& headers);
     bool DecodeLiteralNoNameRef(const std::shared_ptr<common::IBuffer>& buffer, uint8_t first_byte,
-        [[maybe_unused]] int64_t base, std::unordered_map<std::string, std::string>& headers);
+        [[maybe_unused]] int64_t base, std::vector<std::pair<std::string, std::string>>& headers);
     bool DecodePostBaseIndexed(const std::shared_ptr<common::IBuffer>& buffer, uint8_t first_byte, int64_t base,
-        std::unordered_map<std::string, std::string>& headers);
+        std::vector<std::pair<std::string, std::string>>& headers);
     bool DecodePostBaseLiteralNameRef(const std::shared_ptr<common::IBuffer>& buffer, uint8_t first_byte, int64_t base,
-        std::unordered_map<std::string, std::string>& headers);
+        std::vector<std::pair<std::string, std::string>>& headers);
 
     // ==================== encoder-instruction internals (RFC 9204 §4.3) ====================
 

@@ -66,9 +66,10 @@ public:
         // QUIC version for Long Header packets (0 = use default version)
         uint32_t quic_version;
 
-        // Optional parameters for Initial packets
-        const uint8_t* token_data;  // Token data (for Initial packets)
-        size_t token_length;        // Token length
+        // Optional parameters for Initial packets.
+        // Retry token: the single source of truth (ctx.token_data/token_length
+        // were never assigned and are gone).
+        std::string token;
         bool add_padding;           // Whether to pad Initial packets to 1200 bytes
 
         // Packet number (if 0, packet number assignment is deferred)
@@ -80,8 +81,6 @@ public:
             local_cid_manager(nullptr),
             remote_cid_manager(nullptr),
             quic_version(0),
-            token_data(nullptr),
-            token_length(0),
             add_padding(true),
             packet_number(0) {}
     };
@@ -208,12 +207,18 @@ public:
      * @param output_buffer Output buffer to write encoded packet
      * @param packet_number Packet number manager
      * @param send_control Send control
+     * @param quic_version QUIC version for Long Header packets
+     * @param key_phase Key phase bit (1-RTT only)
+     * @param token Retry token that MUST be echoed in every Initial packet once
+     *              the server has sent a Retry (RFC 9000 §17.2.5.2 / §8.1.2).
+     *              Ignored for non-Initial levels.
      * @return BuildResult with success status and packet info
      */
     BuildResult BuildAckPacket(EncryptionLevel level, const std::shared_ptr<ICryptographer>& cryptographer,
         const std::shared_ptr<IFrame>& ack_frame, ConnectionIDManager* local_cid_mgr,
         ConnectionIDManager* remote_cid_mgr, const std::shared_ptr<common::IBuffer>& output_buffer,
-        PacketNumber& packet_number, SendControl& send_control, uint32_t quic_version = 0, uint8_t key_phase = 0);
+        PacketNumber& packet_number, SendControl& send_control, uint32_t quic_version = 0, uint8_t key_phase = 0,
+        const std::string& token = "");
 
     /**
      * @brief Build a single-frame packet for immediate sending
@@ -234,7 +239,8 @@ public:
     BuildResult BuildImmediatePacket(const std::shared_ptr<IFrame>& frame, EncryptionLevel level,
         const std::shared_ptr<ICryptographer>& cryptographer, ConnectionIDManager* local_cid_mgr,
         ConnectionIDManager* remote_cid_mgr, const std::shared_ptr<common::IBuffer>& output_buffer,
-        PacketNumber& packet_number, SendControl& send_control, uint32_t quic_version = 0, uint8_t key_phase = 0);
+        PacketNumber& packet_number, SendControl& send_control, uint32_t quic_version = 0, uint8_t key_phase = 0,
+        const std::string& token = "");
 
 private:
     /**

@@ -36,8 +36,6 @@ How-to style material — operational guides that are neither contracts nor tuto
 | [`guide/sanitizer_hello_world_load.md`](guide/sanitizer_hello_world_load.md) | Sanitizer scenario: hello_world load generation |
 | [`guide/sanitizer_file_transfer.md`](guide/sanitizer_file_transfer.md) | Sanitizer scenario: file_transfer |
 
-> Note: `perf_testing.md` and `ci_local.md` are currently only available in Chinese; the English versions are placeholder documents pending translation.
-
 ## 4. Reference (`reference/`)
 
 Authoritative documents that downstream projects can rely on, updated infrequently.
@@ -62,8 +60,6 @@ Time-stamped result snapshots, replaced by new versions after each round of test
 | [`reports/interop_status.md`](reports/interop_status.md) | Latest interoperability test results with external QUIC implementations |
 | [`reports/performance_baseline.md`](reports/performance_baseline.md) | Performance baseline (CPU hotspots, Buffer / Frame / Packet throughput) |
 
-> Note: `performance_baseline.md` is currently only available in Chinese; the English version is a placeholder document pending translation.
-
 ## 6. Design Notes (`design/`)
 
 Internal conventions worth knowing when integrating or extending QuicX. This section is not an RFC discussing "what to do in the future", but describes the **existing invariants in the current code**.
@@ -77,7 +73,7 @@ Understand how a datagram / connection / handshake is processed.
 | Document | What question does it answer? |
 | :--- | :--- |
 | [`design/packet_lifecycle.md`](design/packet_lifecycle.md) | The complete path of a datagram from socket input to the upper-layer frame |
-| [`design/connection_anatomy.md`](design/connection_anatomy.md) | Three-layer structure of the Connection subtree (21 cpp files): Skeleton / Coordinator / Controller |
+| [`design/connection_anatomy.md`](design/connection_anatomy.md) | Three-layer structure of the Connection subtree (36 cpp files): Skeleton / Coordinator / Controller |
 | [`design/handshake_state_machine.md`](design/handshake_state_machine.md) | State machine for TLS / Encryption Levels / Key Update |
 | [`design/ownership_and_memory.md`](design/ownership_and_memory.md) | Ownership and lifecycle of Buffer / Connection / Stream |
 
@@ -123,6 +119,6 @@ Protocol details walkthrough by RFC chapters.
 
 Beyond documentation, the source code itself is the best reference:
 
-- **`example/`** and **`test/`** are "executable documentation" — check `example/hello_world` for usage, `test/quic/` for protocol module unit tests, and `tools/cc_simulator/` for congestion control visualization.
+- **`example/`** and **`test/`** are "executable documentation" — check `example/hello_world` for usage, `test/unit_test/quic/` for protocol module unit tests, and `test/congestion_control/` for the congestion control simulator.
 - The repository directory structure itself serves as an index: each subdirectory under `src/quic/` roughly corresponds to chapters of RFC 9000 / 9001 / 9002; simply `cd` into them as needed.
 - The source code at key decision points (congestion control / loss recovery / flow control / handshake / QPACK) contains nearby RFC section-level comments; if you have doubts, directly check the clauses referenced in the comments.

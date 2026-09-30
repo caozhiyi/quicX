@@ -126,6 +126,17 @@ private:
         uint8_t* read_pos_ = nullptr;
         uint8_t* write_pos_ = nullptr;
 
+        // True only for chunks this buffer allocated (EnsureWritableChunk)
+        // and therefore owns the tail space of. Zero-copy mounted views
+        // (Write(span)/CloneReadable) share chunks whose bytes beyond
+        // write_pos_ may still be *unsent source data*: treating their
+        // Writable() tail as append space overwrites the source buffer's
+        // future reads (observed as HTTP/3 DATA frame headers spliced into
+        // response bodies on the metrics send path). Only an owner state may
+        // serve as a memcpy destination; view states must append a new
+        // ChunkState instead (multiple states may reference one chunk).
+        bool writable_owner_ = false;
+
         uint32_t Writable() const { return chunk_->GetLength() - (write_pos_ - chunk_->GetData()); }
         uint32_t Readable() const { return write_pos_ - read_pos_; }
         uint8_t* DataStart() const { return read_pos_; }

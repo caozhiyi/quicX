@@ -68,6 +68,26 @@ public:
     virtual uint64_t GetConnectionIDHash() = 0;
     // Get all local CID hashes for this connection (for cleanup on close)
     virtual std::vector<uint64_t> GetAllLocalCIDHashes() = 0;
+
+    // Whether |cid| is one of THIS endpoint's connection IDs for this
+    // connection, i.e. a Destination Connection ID it will accept.
+    //
+    // Connection routing is keyed on ConnectionID::Hash(), a 64-bit value, so a
+    // routing hit is only a *candidate*: two distinct CIDs can share a hash.
+    // Handing a packet to a connection that never owned the CID would corrupt
+    // connection state and let one peer's traffic be delivered to another's
+    // connection, so the caller must confirm the real bytes before dispatching.
+    //
+    // Default false: an implementation that cannot answer must not claim a
+    // match. BaseConnection overrides it.
+    virtual bool HasLocalConnectionId(const ConnectionID& /*cid*/) const { return false; }
+
+    // Record a local CID that the ConnectionIDManager did not generate —
+    // notably the peer-selected Initial Destination Connection ID, which the
+    // server installs as its routing key before any locally generated CID
+    // exists. Without this, HasLocalConnectionId() could not vouch for the very
+    // CID the handshake arrives on.
+    virtual void RecordLocalConnectionId(const ConnectionID& /*cid*/) {}
     // Main send interface. Emits up to `budget` back-to-back packets in a
     // single call, reusing the per-call setup work (encryption-level scheduler
     // context look-up, cryptographer pointer fetch, packet-builder fixed

@@ -87,9 +87,12 @@ bool QpackDecodePrefixedIntegerFrom(
 }
 
 // Shared tail of the string-literal decoders: reads |len| bytes and Huffman
-// decodes them if needed.
-static bool QpackReadStringBody(
-    const std::shared_ptr<common::IBuffer> buf, uint64_t len, bool huffman, std::string& out) {
+// decodes them if needed. Declared in util.h so QpackEncoder::DecodeString
+// shares it instead of keeping an unbounded copy.
+bool QpackReadStringBody(const std::shared_ptr<common::IBuffer> buf, uint64_t len, bool huffman, std::string& out) {
+    if (buf == nullptr) {
+        return false;
+    }
     if (len == 0) {
         out.clear();
         return true;
@@ -147,34 +150,9 @@ bool QpackDecodeStringLiteral(const std::shared_ptr<common::IBuffer> buf, std::s
     if (!QpackDecodePrefixedInteger(buf, 7, first, len)) {
         return false;
     }
-    bool huffman = (first & 0x80) != 0;
-    if (len == 0) {
-        out.clear();
-        return true;
-    }
-
-    // |len| is whatever the peer wrote. Bound it by what is actually readable
-    // before allocating: a 5-byte header could otherwise request gigabytes.
-    //
-    // This also closes a hole in the old success check, which compared a
-    // uint32_t-truncated read count against an int32_t-truncated length. With
-    // len = 0x100000000 both sides truncated to 0, so it read nothing, compared
-    // 0 == 0, and reported success holding a 4 GiB string. After this check
-    // len <= GetDataLength(), which is a uint32_t, so neither cast can truncate.
-    if (len > static_cast<uint64_t>(buf->GetDataLength())) {
-        return false;
-    }
-
-    if (!huffman) {
-        out.resize(static_cast<size_t>(len));
-        return buf->Read(reinterpret_cast<uint8_t*>(&out[0]), static_cast<uint32_t>(len)) == static_cast<uint32_t>(len);
-    }
-    // Huffman encoded: read into temp buffer then decode
-    std::vector<uint8_t> tmp;
-    tmp.resize(static_cast<size_t>(len));
-    if (buf->Read(tmp.data(), static_cast<uint32_t>(len)) != static_cast<uint32_t>(len)) return false;
-    out = HuffmanEncoder::Instance().Decode(tmp);
-    return true;
+    // The length bound (and the truncated-length comparison hole it closes) now
+    // lives in QpackReadStringBody(); see the note at its definition.
+    return QpackReadStringBody(buf, len, (first & 0x80) != 0, out);
 }
 
 }  // namespace http3

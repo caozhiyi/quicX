@@ -138,6 +138,36 @@ TEST(RouterTest, match_advanced_features_full_set) {
     EXPECT_TRUE(r3.is_match);
 }
 
+// #7 (code review round 2): two same-level dynamic-parameter names whose
+// routes BOTH fully match a one-segment path ("/users/:id" vs "/users/:name"
+// for "/users/42") previously won in unordered_map hash order — the bound
+// parameter key was unspecified. dynamic_param_map_ is now a std::map, so
+// the lexicographically smaller section (":id") must win deterministically.
+TEST(RouterTest, same_level_dynamic_params_match_deterministically) {
+    Router router;
+    http_handler null_handler = nullptr;
+    RouteConfig config(null_handler);
+    ASSERT_TRUE(router.AddRoute(HttpMethod::kGet, "/users/:name", config));
+    ASSERT_TRUE(router.AddRoute(HttpMethod::kGet, "/users/:id", config));
+
+    auto r = router.Match(HttpMethod::kGet, "/users/42");
+    ASSERT_TRUE(r.is_match);
+    EXPECT_NE(r.params.find("id"), r.params.end())
+        << "\":id\" (lexicographically smaller) must win the tie deterministically";
+    EXPECT_EQ(r.params.find("name"), r.params.end());
+
+    // Different param names at the same level for structurally-different
+    // routes keep working (backtrack semantics, not iteration order):
+    ASSERT_TRUE(router.AddRoute(HttpMethod::kGet, "/users/:user_id/posts/:post_id", config));
+    auto r2 = router.Match(HttpMethod::kGet, "/users/5/posts/100");
+    ASSERT_TRUE(r2.is_match);
+    EXPECT_NE(r2.params.find("user_id"), r2.params.end());
+    EXPECT_NE(r2.params.find("post_id"), r2.params.end());
+    auto r3 = router.Match(HttpMethod::kGet, "/users/7");
+    ASSERT_TRUE(r3.is_match);
+    EXPECT_NE(r3.params.find("id"), r3.params.end());
+}
+
 }  // namespace
 }  // namespace http3
 }  // namespace quicx

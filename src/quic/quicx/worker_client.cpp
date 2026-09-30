@@ -30,6 +30,10 @@ void ClientWorker::Connect(const std::string& ip, uint16_t port, const std::stri
     // Inject Sender for direct packet transmission
     conn->SetSender(sender_);
 
+    // Runtime CC selection (code-review P2-5): must happen before any packet
+    // is sent on this connection.
+    conn->SetCongestionControlType(cc_type_);
+
     // Set socket register/unregister callbacks for connection migration
     if (register_socket_cb_) {
         conn->SetRegisterSocketCallback(register_socket_cb_);
@@ -98,11 +102,11 @@ bool ClientWorker::InnerHandlePacket(PacketParseResult& packet_info) {
     // dispatch packet
     auto cid_code = packet_info.cid_.Hash();
     LOG_DEBUG("get packet. dcid:%llu", cid_code);
-    auto conn = conn_map_.find(cid_code);
-    if (conn != conn_map_.end()) {
-        common::LogTagGuard guard("conn:" + std::to_string(cid_code));
-        // Pin the connection with a local shared_ptr copy (see worker_server.cpp).
-        auto connection = conn->second;
+    // FindConnection() confirms the CID bytes, not just the 64-bit hash.
+    auto connection = FindConnection(packet_info.cid_);
+    if (connection) {
+        common::LogTagGuard guard("conn:", cid_code);
+        // |connection| is a local shared_ptr copy (see worker_server.cpp).
         // update socket so GetLocalAddr() works for connection migration
         connection->SetSocket(packet_info.net_packet_->GetSocket());
         // report observed address for path change detection
@@ -200,6 +204,10 @@ void ClientWorker::HandleVersionNegotiation(std::shared_ptr<IConnection> conn, c
 
     // Inject Sender
     new_conn->SetSender(sender_);
+
+    // Runtime CC selection (code-review P2-5): must happen before any packet
+    // is sent on this connection.
+    new_conn->SetCongestionControlType(cc_type_);
 
     // Set socket register/unregister callbacks for connection migration
     if (register_socket_cb_) {

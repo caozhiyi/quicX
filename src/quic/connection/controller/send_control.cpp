@@ -10,6 +10,7 @@
 #include "quic/config.h"
 #include "quic/congestion_control/congestion_control_factory.h"
 #include "quic/connection/controller/send_control.h"
+#include "quic/connection/error.h"
 #include "quic/connection/util.h"
 #include "quic/frame/ack_frame.h"
 
@@ -22,26 +23,30 @@ SendControl::SendControl(std::shared_ptr<common::ITimerScheduler> scheduler):
     memset(pkt_num_largest_sent_, 0, sizeof(pkt_num_largest_sent_));
     memset(pkt_num_largest_acked_, 0, sizeof(pkt_num_largest_acked_));
     memset(largest_sent_time_, 0, sizeof(largest_sent_time_));
+    memset(largest_acked_pn_, 0, sizeof(largest_acked_pn_));
+    memset(largest_acked_send_time_, 0, sizeof(largest_acked_send_time_));
 
-    // CC algorithm selection: read from config.h constant (kDefaultCongestionControl).
-    // To switch algorithm, modify kDefaultCongestionControl in quic/config.h and rebuild.
-    CongestionControlType cc_type = CongestionControlType::kReno;
-    std::string v(kDefaultCongestionControl);
-    if (v == "cubic") {
-        cc_type = CongestionControlType::kCubic;
-    } else if (v == "bbrv1" || v == "bbr" || v == "bbr1") {
-        cc_type = CongestionControlType::kBbrV1;
-    } else if (v == "bbrv2" || v == "bbr2") {
-        cc_type = CongestionControlType::kBbrV2;
-    } else if (v == "bbrv3" || v == "bbr3") {
-        cc_type = CongestionControlType::kBbrV3;
-    } else if (v == "reno") {
-        cc_type = CongestionControlType::kReno;
-    } else {
-        LOG_WARN("SendControl: unknown CC algorithm \"%s\", falling back to reno", kDefaultCongestionControl);
-    }
-    LOG_INFO("SendControl: using congestion control: %s", v.c_str());
+    // CC algorithm selection: the compile-time default (kDefaultCongestionControl
+    // in quic/config.h). Runtime override via SetCongestionControlType(),
+    // called by the worker before any packet is sent.
+    CongestionControlType cc_type = CongestionControlTypeFromString("");
+    active_cc_type_ = cc_type;
+    LOG_INFO("SendControl: using congestion control: %s", CongestionControlTypeToString(cc_type));
     congestion_control_ = CreateCongestionControl(cc_type);
+}
+
+void SendControl::SetCongestionControlType(CongestionControlType type) {
+    // Rebuilding the CC object mid-connection would drop bytes_in_flight and
+    // cwnd state, so the override is only allowed before the first packet is
+    // sent. The worker calls this right after connection creation, which is
+    // always before OnPacketSend.
+    if (cc_locked_) {
+        LOG_WARN("SendControl: ignoring congestion control override after packets were already sent");
+        return;
+    }
+    LOG_INFO("SendControl: overriding congestion control to: %s", CongestionControlTypeToString(type));
+    active_cc_type_ = type;
+    congestion_control_ = CreateCongestionControl(type);
 }
 
 void SendControl::OnPacketSend(uint64_t now, const std::shared_ptr<IPacket>& packet, uint32_t pkt_len) {
@@ -62,7 +67,10 @@ void SendControl::OnPacketSend(uint64_t now, const std::shared_ptr<IPacket>& pac
         return;
     }
     pkt_num_largest_sent_[ns] = packet->GetPacketNumber();
-    largest_sent_time_[ns] = common::UTCTimeMsec();
+    largest_sent_time_[ns] = common::MonotonicTimeMsec();
+    // The first send locks the congestion control algorithm: rebuilding the
+    // CC object afterwards would drop bytes_in_flight / cwnd state.
+    cc_locked_ = true;
 
     // RFC 9002: Only ACK-eliciting packets count towards congestion control
     // ACK-only packets should NOT be accounted in bytes_in_flight
@@ -81,8 +89,10 @@ void SendControl::TrackPacketInCongestionControl(
     uint64_t now, const std::shared_ptr<IPacket>& packet, uint32_t pkt_len) {
     // Count this packet in congestion control (bytes_in_flight)
     // BUGFIX: CC algorithms (BBR/Cubic) use microsecond-based internal timing.
-    // The system clock (UTCTimeMsec) provides milliseconds; multiply by 1000
-    // so that CC bandwidth/BDP/epoch calculations use the correct time scale.
+    // |now| comes from the monotonic clock in milliseconds; multiply by 1000 so
+    // that CC bandwidth/BDP/epoch calculations use the correct time scale. (The
+    // multiplier is about the unit, not the clock — but the clock must be
+    // monotonic, otherwise a backwards step desynchronises every CC epoch.)
     congestion_control_->OnPacketSent(SentPacketEvent{packet->GetPacketNumber(), pkt_len, now * 1000, false});
 
     // Track when we last sent ack-eliciting data for PTO timer
@@ -149,7 +159,7 @@ std::function<void()> SendControl::MakeRetransmitTimeoutHandler(
         // retransmitted PN re-inherits the same byte-range tracking when
         // the connection layer pushes it back through OnPacketSend.
         lost_packets_.push_back(LostPacketEntry{packet, it->second.stream_data});
-        congestion_control_->OnPacketLost(LossEvent{packet->GetPacketNumber(), pkt_len, common::UTCTimeMsec() * 1000});
+        congestion_control_->OnPacketLost(LossEvent{packet->GetPacketNumber(), pkt_len, common::MonotonicTimeMsec() * 1000});
 
         // Metrics: Packet lost
         Metrics::CounterInc(common::MetricsStd::QuicPacketsLost);
@@ -223,8 +233,20 @@ void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, const std::sha
     Metrics::CounterInc(common::MetricsStd::DiagAcksReceived);
 
     auto ack_frame = std::dynamic_pointer_cast<AckFrame>(frame);
-    LOG_DEBUG("SendControl::OnPacketAck: largest_ack=%llu, first_ack_range=%u, ns=%d", ack_frame->GetLargestAck(),
+    if (!ack_frame) {
+        LOG_ERROR("SendControl::OnPacketAck: frame is not an AckFrame");
+        return;
+    }
+    LOG_DEBUG("SendControl::OnPacketAck: largest_ack=%llu, first_ack_range=%llu, ns=%d", ack_frame->GetLargestAck(),
         ack_frame->GetFirstAckRange(), ns);
+
+    // RFC 9000 §19.3.1 / §13.1: the peer must not acknowledge packet numbers we
+    // never sent, and its ranges must be well formed. Validate before any walk:
+    // the range lengths are attacker-controlled varints (up to 2^62-1) and
+    // AckRangePackets() iterates once per acknowledged packet number.
+    if (!ValidateAckFrame(ns, ack_frame)) {
+        return;
+    }
 
     EmitQlogPacketsAcked(ack_frame);
     AckLargestAckedPacket(now, ns, frame, ack_frame);
@@ -401,8 +423,31 @@ void SendControl::AckLargestAckedPacket(
         return;
     }
 
+    // Capture the largest-acked packet number and send time BEFORE
+    // AckOnePacket() below erases the entry: DetectLostPackets() (called
+    // later in the same OnPacketAck) needs them for the RFC 9002 §6.1.2
+    // time threshold and can no longer look them up in the map. The pair is
+    // validated in DetectLostPackets(): a stale record (from a repeated or
+    // out-of-order ACK) is not a valid anchor and disables the check for
+    // that round.
+    largest_acked_pn_[ns] = pkt_num;
+    largest_acked_send_time_[ns] = iter->second.send_time_;
+
     // Scale peer-reported ACK delay by exponent to milliseconds
     uint64_t scaled_ack_delay = ack_frame->GetAckDelay() << ack_delay_exponent_;
+    // RFC 9002 §5.3: the RTT adjustment MUST use min(ack_delay, the peer's
+    // advertised max_ack_delay); otherwise a peer reporting an oversized ACK
+    // Delay deflates SRTT/RTTVAR and drags the PTO early. (The handshake-
+    // confirmed distinction — ignore max_ack_delay before confirmation — is
+    // still tracked in the roadmap; clamping once the peer advertised a
+    // value is the safe subset.) NOTE (#6, code review round 2):
+    // max_ack_delay_ is seeded with kMaxAckDelay (25ms) in the constructor,
+    // so the pre-transport-params handshake phase already clamps to 25ms — a
+    // conservative default, not an unclamped window. UpdateConfig(
+    // TransportParam) overwrites it with the peer's advertised value.
+    if (max_ack_delay_ > 0 && scaled_ack_delay > max_ack_delay_) {
+        scaled_ack_delay = max_ack_delay_;
+    }
     // Metrics: ACK ranges per frame (first range + additional ranges)
     size_t ack_range_count = 1 + ack_frame->GetAckRange().size();
     UpdateRttOnAck(pkt_num, iter->second.send_time_, now, scaled_ack_delay, ack_range_count);
@@ -434,23 +479,132 @@ void SendControl::AckLargestAckedPacket(
     }
 }
 
+void SendControl::ReportProtocolViolation(uint64_t error, uint16_t frame_type, const std::string& reason) {
+    if (protocol_violation_cb_) {
+        protocol_violation_cb_(error, frame_type, reason);
+        return;
+    }
+    LOG_ERROR("SendControl: protocol violation (error=%llu, frame=%u): %s — no handler installed, dropping frame",
+        static_cast<unsigned long long>(error), frame_type, reason.c_str());
+}
+
+bool SendControl::ValidateAckFrame(PacketNumberSpace ns, const std::shared_ptr<AckFrame>& ack_frame) {
+    if (!ack_frame) {
+        return false;
+    }
+    const uint64_t largest_ack = ack_frame->GetLargestAck();
+    const uint64_t largest_sent = pkt_num_largest_sent_[ns];
+
+    // RFC 9000 §19.3.1: "A receiver that receives an ACK frame ... MUST treat
+    // the receipt of an ACK frame that acknowledges a packet number that was
+    // never sent as a connection error of type PROTOCOL_VIOLATION."
+    //
+    // This is the check that makes the walk below safe. Without it a peer can
+    // set Largest Acknowledged to an arbitrary 62-bit value and let
+    // AckRangePackets() iterate once per "acknowledged" packet number.
+    if (largest_ack > largest_sent) {
+        LOG_ERROR("SendControl: ACK for un-sent packet number. largest_ack:%llu, largest_sent:%llu, ns:%d",
+            static_cast<unsigned long long>(largest_ack), static_cast<unsigned long long>(largest_sent), ns);
+        ReportProtocolViolation(
+            QuicErrorCode::kProtocolViolation, FrameType::kAck, "acknowledged a packet number that was never sent");
+        return false;
+    }
+
+    // First ACK Range: covers [largest_ack - first_range, largest_ack].
+    const uint64_t first_range = ack_frame->GetFirstAckRange();
+    if (first_range > largest_ack) {
+        LOG_ERROR("SendControl: first ACK range underflows. first_range:%llu, largest_ack:%llu, ns:%d",
+            static_cast<unsigned long long>(first_range), static_cast<unsigned long long>(largest_ack), ns);
+        ReportProtocolViolation(
+            QuicErrorCode::kFrameEncodingError, FrameType::kAck, "first ACK range exceeds largest acknowledged");
+        return false;
+    }
+
+    // Additional ranges must march strictly downwards without underflowing
+    // below packet number 0. `low` tracks the smallest PN covered so far.
+    uint64_t low = largest_ack - first_range;
+    for (const auto& range : ack_frame->GetAckRange()) {
+        const uint64_t gap = range.GetGap();
+        // gap + 2 can overflow only for gap > UINT64_MAX - 2, which the varint
+        // decoder bounds to 2^62-1 — but compare defensively anyway.
+        if (gap > UINT64_MAX - 2 || low < gap + 2) {
+            LOG_ERROR("SendControl: ACK gap underflows. gap:%llu, low:%llu, ns:%d", static_cast<unsigned long long>(gap),
+                static_cast<unsigned long long>(low), ns);
+            ReportProtocolViolation(
+                QuicErrorCode::kFrameEncodingError, FrameType::kAck, "ACK gap field underflows packet number 0");
+            return false;
+        }
+        const uint64_t range_high = low - gap - 2;
+        const uint64_t range_len = range.GetAckRangeLength();
+        if (range_len > range_high) {
+            LOG_ERROR(
+                "SendControl: ACK range length underflows. len:%llu, range_high:%llu, ns:%d",
+                static_cast<unsigned long long>(range_len), static_cast<unsigned long long>(range_high), ns);
+            ReportProtocolViolation(
+                QuicErrorCode::kFrameEncodingError, FrameType::kAck, "ACK range length underflows packet number 0");
+            return false;
+        }
+        low = range_high - range_len;
+    }
+
+    return true;
+}
+
 void SendControl::AckRangePackets(uint64_t now, PacketNumberSpace ns, const std::shared_ptr<AckFrame>& ack_frame) {
+    // Upper bound on how many packet numbers this one ACK frame may make us
+    // walk. Every iteration is a hash lookup in unacked_packets_[ns], and a
+    // peer-controlled range can nominally span up to 2^62 numbers, so without a
+    // budget a single frame could monopolise the worker thread indefinitely.
+    //
+    // The budget is derived from what is actually outstanding rather than being
+    // a fixed constant: packets still tracked in unacked_packets_ are the only
+    // ones a walk can have any effect on, and they are always the *highest*
+    // packet numbers, so a downward walk reaches all of them early. Anything
+    // beyond the slack is guaranteed to be a kNotFound no-op, and those entries
+    // remain recoverable through packet-threshold / PTO loss detection.
+    auto& tracked = unacked_packets_[ns];
+    const uint64_t walk_budget =
+        std::max<uint64_t>(kAckWalkBudgetFloor, static_cast<uint64_t>(tracked.size()) * kAckWalkBudgetSlack);
+    uint64_t walked = 0;
+    bool budget_exhausted = false;
+
+    // Returns false once the budget (or the tracked table) is exhausted.
+    auto step = [&](uint64_t pkt_num, StreamAckLogLevel log_level) -> bool {
+        if (tracked.empty()) {
+            return false;  // nothing left that an ACK could possibly affect
+        }
+        if (walked >= walk_budget) {
+            budget_exhausted = true;
+            return false;
+        }
+        ++walked;
+        if (AckOnePacket(ns, pkt_num, now, ack_frame->GetAckDelay(), false, log_level) == AckOneResult::kNotFound) {
+            LOG_DEBUG("SendControl::OnPacketAck: packet %llu not found in unacked_packets", pkt_num);
+        }
+        return true;
+    };
+
     uint64_t pkt_num = ack_frame->GetLargestAck();
 
     // Process first ACK range and notify streams
     // NOTE: largest_ack (pkt_num) was already processed above for RTT, so skip it
     // by starting from pkt_num-1
-    for (uint32_t i = 0; i < ack_frame->GetFirstAckRange(); i++) {
+    //
+    // ValidateAckFrame() has already proven first_range <= largest_ack, so
+    // `pkt_num--` cannot wrap past 0 here.
+    const uint64_t first_range = ack_frame->GetFirstAckRange();
+    for (uint64_t i = 0; i < first_range; i++) {
         pkt_num--;  // Move to next packet in range
-        if (AckOnePacket(ns, pkt_num, now, ack_frame->GetAckDelay(), false, StreamAckLogLevel::kPerStreamWithMissLog) ==
-            AckOneResult::kNotFound) {
-            LOG_DEBUG("SendControl::OnPacketAck: packet %llu not found in unacked_packets", pkt_num);
+        if (!step(pkt_num, StreamAckLogLevel::kPerStreamWithMissLog)) {
+            break;
         }
     }
 
     // Process additional ACK ranges
-    auto ranges = ack_frame->GetAckRange();
-    for (auto iter = ranges.begin(); iter != ranges.end(); iter++) {
+    for (auto iter = ack_frame->GetAckRange().begin(); iter != ack_frame->GetAckRange().end(); iter++) {
+        if (walked >= walk_budget && !tracked.empty()) {
+            break;
+        }
         // RFC 9000 §19.3.1: each Gap field is encoded as one less than the
         // actual number of unacknowledged packets between the previous range
         // and this one. The largest PN of the next range is therefore:
@@ -464,16 +618,31 @@ void SendControl::AckRangePackets(uint64_t now, PacketNumberSpace ns, const std:
         // it lost. That stalled SendStream byte-range bookkeeping (FIN was
         // never recognised as ACKed) and produced the cwnd-stuck-at-1..31B
         // fingerprint observed in interop transfer-loss runs.
+        //
+        // ValidateAckFrame() has already proven the subtraction cannot
+        // underflow, so this mirrors the encode side exactly.
         pkt_num = pkt_num - iter->GetGap() - 2;
-        for (uint32_t i = 0; i <= iter->GetAckRangeLength(); i++) {
-            AckOnePacket(ns, pkt_num, now, ack_frame->GetAckDelay(), false, StreamAckLogLevel::kQuiet);
+        const uint64_t range_len = iter->GetAckRangeLength();
+        for (uint64_t i = 0; i <= range_len; i++) {
+            if (!step(pkt_num, StreamAckLogLevel::kQuiet)) {
+                return;
+            }
             // BUGFIX P2-1: Only decrement pkt_num within the range, not after the last packet.
             // The extra decrement caused off-by-one for subsequent additional ranges:
             // next range would start at (lowest-1) instead of lowest.
-            if (i < iter->GetAckRangeLength()) {
+            if (i < range_len) {
                 pkt_num--;
             }
         }
+    }
+
+    if (budget_exhausted) {
+        // Only reachable for a deliberately sparse frame; a normal ACK never
+        // comes close. Log at DEBUG to avoid a per-packet cost.
+        LOG_DEBUG("SendControl::AckRangePackets: walk budget %llu exhausted (ns=%d, tracked=%zu); "
+                  "remaining entries fall back to loss detection",
+            static_cast<unsigned long long>(walk_budget), ns, tracked.size());
+        Metrics::CounterInc(common::MetricsStd::DiagAckWalkBudgetExhausted);
     }
 }
 
@@ -581,8 +750,11 @@ void SendControl::FireFrameDelivery(PacketTimerInfo& info, FrameDeliveryState st
     // therefore safe to fire repeatedly (PTO can re-queue an already-lost
     // packet; the duplicate kLost is absorbed by the handler's idempotence).
     if (!info.packet) {
+        LOG_DEBUG("SendControl::FireFrameDelivery: null packet, state=%d", (int)state);
         return;
     }
+    LOG_DEBUG("SendControl::FireFrameDelivery: pn=%llu frames=%zu state=%d",
+        (unsigned long long)info.packet->GetPacketNumber(), info.packet->GetFrames().size(), (int)state);
     for (auto& frame : info.packet->GetFrames()) {
         if (frame) {
             frame->NotifyDelivery(state);
@@ -637,9 +809,18 @@ void SendControl::DiscardPacketNumberSpace(PacketNumberSpace ns) {
             ++it;
         }
     }
-    pkt_num_largest_sent_[ns] = 0;
-    pkt_num_largest_acked_[ns] = 0;
-    largest_sent_time_[ns] = 0;
+    // Do NOT zero pkt_num_largest_sent_ / pkt_num_largest_acked_ /
+    // largest_sent_time_ here. RFC 9000 §4.10 discards the packet number
+    // space, but the cipher keys are deliberately kept a while longer (pending
+    // CRYPTO bytes may still need to be sent, see the comment in
+    // BaseConnection::FinalizeHandshakePacketNumberSpaces). A peer's PTO
+    // retransmission can therefore still deliver a *legitimate* Initial-space
+    // ACK after the discard; zeroing the bookkeeping made ValidateAckFrame
+    // reject it as "acknowledged a packet number that was never sent" and tear
+    // down an otherwise healthy connection (observed in the handshakecorruption
+    // interop run: largest_ack:3 vs largest_sent:0 right after handshake
+    // confirmation). Historical values are monotonic and can only make the
+    // validation more permissive for packets of a space we no longer use.
 
     LOG_INFO("SendControl: Discarded packet number space %d per RFC 9000", ns);
 }
@@ -675,12 +856,21 @@ void SendControl::DetectLostPackets(uint64_t now, PacketNumberSpace ns, uint64_t
     uint64_t loss_delay = (rtt_calculator_.GetSmoothedRtt() * kTimeThresholdNum) / kTimeThresholdDen;
     loss_delay = std::max(loss_delay, uint64_t(1));  // At least 1ms
 
-    // Find send time of largest_acked packet for time threshold calculation
-    uint64_t largest_acked_send_time = 0;
-    auto largest_iter = unacked_packets_[ns].find(largest_acked);
-    if (largest_iter != unacked_packets_[ns].end()) {
-        largest_acked_send_time = largest_iter->second.send_time_;
-    }
+    // Send time of the largest-acked packet, for the time-threshold check.
+    // A map lookup here would always miss: AckLargestAckedPacket() has
+    // already erased the largest-acked entry from unacked_packets_ by the
+    // time we run, which is why the time-threshold branch used to be dead
+    // code. AckLargestAckedPacket() now captures the (pn, send_time) pair
+    // before the erase, and the pair is only used when its packet number
+    // matches THIS round's largest_acked. On a repeated or out-of-order ACK
+    // frame (largest_acked <= last processed, so AckLargestAckedPacket()
+    // early-returned) the stale reference is not a valid anchor — using it
+    // could bias the threshold in either direction — so the time-threshold
+    // check is disabled for that round; the packet threshold and PTO still
+    // apply, and the check resumes on the next ACK that advances the
+    // largest acknowledged. 0 disables the check.
+    uint64_t largest_acked_send_time =
+        (largest_acked_pn_[ns] == largest_acked) ? largest_acked_send_time_[ns] : 0;
 
     // Check all unacked packets with pkt_num < largest_acked
     std::vector<uint64_t> lost_packet_nums;
@@ -703,14 +893,21 @@ void SendControl::DetectLostPackets(uint64_t now, PacketNumberSpace ns, uint64_t
 
         // RFC 9002 Section 6.1.2: Time threshold
         // Declare lost if sent more than loss_delay before largest_acked
-        if (!should_declare_lost && largest_acked_send_time > 0) {
+        // (delta) OR more than loss_delay before now (#5, code review
+        // round 2: the RFC specifies both conditions OR'd; only delta was
+        // implemented). The now-branch also covers the rounds where the
+        // largest-acked anchor is unavailable (out-of-order/repeated ACK ->
+        // largest_acked_send_time == 0), so the time threshold no longer
+        // goes blind in those windows.
+        if (!should_declare_lost) {
             uint64_t time_since_sent =
                 (largest_acked_send_time > info.send_time_) ? (largest_acked_send_time - info.send_time_) : 0;
-            if (time_since_sent > loss_delay) {
+            uint64_t age = (now > info.send_time_) ? (now - info.send_time_) : 0;
+            if (time_since_sent > loss_delay || age > loss_delay) {
                 should_declare_lost = true;
                 LOG_DEBUG(
-                    "DetectLostPackets: packet %llu lost by time threshold (time_since_sent=%llums, loss_delay=%llums)",
-                    pkt_num, time_since_sent, loss_delay);
+                    "DetectLostPackets: packet %llu lost by time threshold (delta=%llums, age=%llums, loss_delay=%llums)",
+                    pkt_num, time_since_sent, age, loss_delay);
             }
         }
 
@@ -901,7 +1098,7 @@ void SendControl::OnPTOTimer() {
             // Frame-level delivery: PTO-declared loss, notify tracked frames.
             FireFrameDelivery(it->second, FrameDeliveryState::kLost);
             lost_packets_.push_back(LostPacketEntry{it->second.packet, it->second.stream_data});
-            congestion_control_->OnPacketLost(LossEvent{it->first, it->second.pkt_len_, common::UTCTimeMsec() * 1000});
+            congestion_control_->OnPacketLost(LossEvent{it->first, it->second.pkt_len_, common::MonotonicTimeMsec() * 1000});
             it->second.timer_.Cancel();
 
             // Log marked_for_retransmit event (PTO-triggered)

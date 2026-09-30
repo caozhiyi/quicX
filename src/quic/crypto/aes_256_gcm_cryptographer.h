@@ -11,9 +11,13 @@ public:
     Aes256GcmCryptographer();
     virtual ~Aes256GcmCryptographer();
 
-    virtual const char* GetName();
+    virtual const char* GetName() override;
 
-    virtual CryptographerId GetCipherId();
+    virtual CryptographerId GetCipherId() override;
+
+protected:
+    // RFC 9001 §5.4.3: AES-256-GCM uses AES-256-ECB for header protection.
+    const EVP_CIPHER* GetHeaderProtectionCipher() const override;
 };
 
 }  // namespace quic

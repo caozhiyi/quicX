@@ -10,6 +10,7 @@
 #include "common/network/socket_handle.h"
 #include "common/structure/double_buffer.h"
 
+#include "quic/congestion_control/congestion_control_factory.h"
 #include "quic/connection/if_connection.h"
 #include "quic/crypto/tls/tls_ctx.h"
 #include "quic/quicx/if_worker.h"
@@ -61,6 +62,20 @@ protected:
 
     void HandleAddConnectionId(ConnectionID& cid, std::shared_ptr<IConnection> conn);
     void HandleRetireConnectionId(ConnectionID& cid);
+
+    // Look up the connection that owns |cid|.
+    //
+    // conn_map_ is keyed on ConnectionID::Hash(), a 64-bit value, so a hit is
+    // only a *candidate*: distinct CIDs can collide. The match is confirmed
+    // against the actual CID bytes via IConnection::HasLocalConnectionId()
+    // before the connection is handed back. Without that confirmation a
+    // colliding CID would have its packets delivered to an unrelated
+    // connection — corrupting that connection's state, and (on a server) mixing
+    // two clients' traffic.
+    //
+    // Returns nullptr when there is no verified owner, in which case the caller
+    // should treat the packet exactly as an unknown connection.
+    std::shared_ptr<IConnection> FindConnection(const ConnectionID& cid);
     virtual void HandleHandshakeDone(std::shared_ptr<IConnection> conn);
     void HandleActiveSendConnection(std::shared_ptr<IConnection> conn);
     virtual void HandleConnectionClose(std::shared_ptr<IConnection> conn, uint64_t error, const std::string& reason);
@@ -70,6 +85,9 @@ protected:
     bool ecn_enabled_;
     bool enable_key_update_;  // RFC 9001: Key Update support
     uint32_t quic_version_;   // QUIC version from config
+    // Congestion control algorithm for every connection this worker creates
+    // (runtime-configurable; see QuicConfig::congestion_control_).
+    CongestionControlType cc_type_ = CongestionControlType::kReno;
     std::string worker_id_;
     QuicTransportParams params_;
 

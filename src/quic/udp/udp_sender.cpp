@@ -326,6 +326,12 @@ uint32_t UdpSender::SendBatch(std::vector<std::shared_ptr<NetPacket>>& batch) {
                     }
                     Metrics::HistogramObserve(common::MetricsStd::DiagSendtoLatencyUs, gdt / gso_run);
                     Metrics::CounterInc(common::MetricsStd::DiagUdpSendBatchOk);
+                    // GSO accounting: run length + segments, so the metrics
+                    // dump can answer "what fraction of udp_packets_tx
+                    // actually rode a GSO sendmsg, and with what run size".
+                    Metrics::CounterInc(common::MetricsStd::GsoBatchesTotal);
+                    Metrics::CounterInc(common::MetricsStd::GsoSegmentsTotal, gso_run);
+                    Metrics::HistogramObserve(common::MetricsStd::GsoRunLenHist, gso_run);
                     used_gso = true;
                     gso_sent_pkts = gso_run;
                 } else {

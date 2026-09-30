@@ -29,5 +29,9 @@ CryptographerId Aes256GcmCryptographer::GetCipherId() {
     return kCipherIdAes256GcmSha384;
 }
 
+const EVP_CIPHER* Aes256GcmCryptographer::GetHeaderProtectionCipher() const {
+    return EVP_aes_256_ecb();
+}
+
 }  // namespace quic
 }  // namespace quicx

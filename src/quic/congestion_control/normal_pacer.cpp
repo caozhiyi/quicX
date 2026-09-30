@@ -36,7 +36,7 @@ uint64_t NormalPacer::TimeUntilSend() const {
     if (pacing_rate_bytes_per_sec_ == 0) {
         return 0;
     }
-    uint64_t now_ms = common::UTCTimeMsec();
+    uint64_t now_ms = common::MonotonicTimeMsec();
     if (now_ms >= next_send_time_ms_) {
         return 0;
     }

@@ -63,7 +63,16 @@ std::string RetryTokenManager::BuildHmacPayload(
 
 RetryTokenManager::RetryTokenManager():
     last_rotation_time_(std::chrono::steady_clock::now()) {
-    GenerateRandomSecret();
+    secret_ready_ = GenerateRandomSecret();
+    if (!secret_ready_) {
+        LOG_ERROR("RetryTokenManager: no CSPRNG secret available — Retry tokens are DISABLED. "
+                  "Connections will be accepted without address validation.");
+    }
+}
+
+bool RetryTokenManager::HasUsableSecret() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return secret_ready_ && !current_secret_.empty();
 }
 
 std::string RetryTokenManager::GenerateToken(const common::Address& client_addr, const ConnectionID& original_dcid) {
@@ -75,10 +84,26 @@ std::string RetryTokenManager::GenerateToken(const common::Address& client_addr,
     if (steady_now - last_rotation_time_ > kRotationInterval) {
         // RotateSecret() also takes mutex_; call its body inline to avoid
         // re-locking. Keep the public RotateSecret() entry point untouched.
-        previous_secret_ = current_secret_;
-        GenerateRandomSecret();
-        last_rotation_time_ = steady_now;
-        LOG_INFO("Retry token secret rotated (auto)");
+        //
+        // Only adopt the new secret if it is actually usable: a rotation that
+        // failed must not be allowed to replace a good key with an empty one.
+        std::string rotated;
+        if (RetryCrypto::GenerateRandomSecret(SECRET_SIZE, rotated) && rotated.size() == SECRET_SIZE) {
+            previous_secret_ = current_secret_;
+            current_secret_ = std::move(rotated);
+            last_rotation_time_ = steady_now;
+            LOG_INFO("Retry token secret rotated (auto)");
+        } else {
+            LOG_ERROR("Retry token secret rotation failed; keeping the current secret");
+        }
+    }
+
+    // No usable key -> refuse to issue a token. Returning "" makes the caller
+    // fall through to accepting the connection without a Retry, which is a
+    // legitimate (and far safer) outcome than a forgeable token.
+    if (!secret_ready_ || current_secret_.empty()) {
+        LOG_ERROR("RetryTokenManager: refusing to issue a token without a CSPRNG secret");
+        return "";
     }
 
     // Token timestamp is wall-clock (system_clock ms): the client-visible
@@ -116,6 +141,17 @@ std::string RetryTokenManager::GenerateToken(const common::Address& client_addr,
 
 bool RetryTokenManager::ValidateToken(const std::string& token, const common::Address& client_addr,
     ConnectionID& out_original_dcid, uint64_t max_age_seconds) {
+    // Never validate against an unusable key. An empty secret makes the HMAC a
+    // plain SHA-256 that anyone can compute offline, so accepting tokens in
+    // that state would let an attacker bypass Retry-based address validation.
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!secret_ready_ || current_secret_.empty()) {
+            LOG_WARN("RetryTokenManager: no usable secret, rejecting token");
+            return false;
+        }
+    }
+
     // Minimum size: timestamp(8) + cid_len(1) + HMAC(32) = 41 bytes
     if (token.size() < sizeof(uint64_t) + 1 + 32) {
         LOG_WARN("Invalid Retry token size: %zu (too short)", token.size());
@@ -205,8 +241,15 @@ bool RetryTokenManager::ValidateToken(const std::string& token, const common::Ad
 
 void RetryTokenManager::RotateSecret() {
     std::lock_guard<std::mutex> lock(mutex_);
+    // Same "never adopt a failed rotation" rule as the automatic path above.
+    std::string rotated;
+    if (!RetryCrypto::GenerateRandomSecret(SECRET_SIZE, rotated) || rotated.size() != SECRET_SIZE) {
+        LOG_ERROR("Retry token secret rotation failed; keeping the current secret");
+        return;
+    }
     previous_secret_ = current_secret_;
-    GenerateRandomSecret();
+    current_secret_ = std::move(rotated);
+    secret_ready_ = true;
     last_rotation_time_ = std::chrono::steady_clock::now();
     LOG_INFO("Retry token secret rotated");
 }
@@ -220,12 +263,17 @@ std::string RetryTokenManager::ComputeHMAC(const std::string& data) {
     return hmac;
 }
 
-void RetryTokenManager::GenerateRandomSecret() {
-    if (!RetryCrypto::GenerateRandomSecret(SECRET_SIZE, current_secret_)) {
-        LOG_ERROR("Failed to generate random secret for Retry tokens");
-        // Fallback: use empty secret (not secure, but prevents crash)
-        current_secret_.clear();
+bool RetryTokenManager::GenerateRandomSecret() {
+    std::string fresh;
+    if (!RetryCrypto::GenerateRandomSecret(SECRET_SIZE, fresh) || fresh.size() != SECRET_SIZE) {
+        LOG_ERROR("Failed to generate random secret for Retry tokens (CSPRNG unavailable)");
+        // Deliberately do NOT touch current_secret_: clearing it would switch
+        // the HMAC to an empty key, i.e. plain SHA-256 that anyone can forge.
+        // Callers check HasUsableSecret() / secret_ready_ and disable Retry.
+        return false;
     }
+    current_secret_ = std::move(fresh);
+    return true;
 }
 
 }  // namespace quic

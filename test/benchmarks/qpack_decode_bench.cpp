@@ -28,7 +28,7 @@ static void BM_Qpack_Decode_StaticIndexed(benchmark::State& state) {
         auto hdr = MakeBuffer();
         dec.WriteHeaderPrefix(hdr, /*ric*/ 0, /*base*/ 0);
         QpackEncodePrefixedInteger(hdr, 6, 0xC0, static_cast<uint64_t>(sidx));
-        std::unordered_map<std::string, std::string> headers;
+        std::vector<std::pair<std::string, std::string>> headers;
         bool ok = dec.Decode(hdr, headers);
         benchmark::DoNotOptimize(ok);
         benchmark::DoNotOptimize(headers);
@@ -48,7 +48,7 @@ static void BM_Qpack_Decode_DynamicIndexed(benchmark::State& state) {
         auto hdr = MakeBuffer();
         dec.WriteHeaderPrefix(hdr, /*ric*/ 1, /*base*/ 1);
         QpackEncodePrefixedInteger(hdr, 6, 0x80, 0);
-        std::unordered_map<std::string, std::string> headers;
+        std::vector<std::pair<std::string, std::string>> headers;
         bool ok = dec.Decode(hdr, headers);
         benchmark::DoNotOptimize(ok);
         benchmark::DoNotOptimize(headers);
@@ -67,7 +67,7 @@ static void BM_Qpack_Decode_Literal_NoIndex(benchmark::State& state) {
         hdr->Write(&literal, 1);
         QpackEncodeStringLiteral(name, hdr, false);
         QpackEncodeStringLiteral(value, hdr, false);
-        std::unordered_map<std::string, std::string> headers;
+        std::vector<std::pair<std::string, std::string>> headers;
         bool ok = dec.Decode(hdr, headers);
         benchmark::DoNotOptimize(ok);
         benchmark::DoNotOptimize(headers);

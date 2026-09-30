@@ -208,7 +208,7 @@ static void BM_CpuHotspot_QpackEncode(benchmark::State& state) {
     http3::QpackEncoder encoder;
 
     // Typical HTTP request headers
-    std::unordered_map<std::string, std::string> headers = {
+    std::vector<std::pair<std::string, std::string>> headers = {
         {":method", "GET"},
         {":path", "/api/v1/users?page=1&limit=20"},
         {":scheme", "https"},
@@ -232,7 +232,7 @@ static void BM_CpuHotspot_QpackDecode(benchmark::State& state) {
     http3::QpackEncoder encoder;
 
     // Pre-encode headers
-    std::unordered_map<std::string, std::string> headers = {
+    std::vector<std::pair<std::string, std::string>> headers = {
         {":method", "GET"},
         {":path", "/"},
         {":scheme", "https"},
@@ -251,7 +251,7 @@ static void BM_CpuHotspot_QpackDecode(benchmark::State& state) {
         auto buf = MakeBuffer(4096);
         buf->Write(encoded_data.data(), static_cast<uint32_t>(encoded_data.size()));
 
-        std::unordered_map<std::string, std::string> decoded;
+        std::vector<std::pair<std::string, std::string>> decoded;
         encoder.Decode(buf, decoded);
 
         benchmark::DoNotOptimize(decoded.size());

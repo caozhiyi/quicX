@@ -232,8 +232,14 @@ TEST(AntiAmplificationIntegrationTest, emitter_clamps_flight_to_budget) {
     const uint64_t clamped = TotalBytesSent(p.server_sender);
 
     EXPECT_LE(clamped, 3 * kCredit) << "emitter let " << clamped << " B through on a " << (3 * kCredit) << " B budget";
-    EXPECT_TRUE(send_manager.IsAmpBlocked()) << "server has more to send and must report itself blocked, "
-                                                "otherwise the worker spins on it";
+
+    // The frame-delivery model no longer needs an emitter refusal to stop:
+    // the build-time budget gate spends the budget on a small fragment and
+    // stops the burst when the remainder drops below the usable floor, so no
+    // datagram is ever refused. The anti-spin contract is therefore "a send
+    // round makes no progress on an exhausted budget", not "emitter refused"
+    // (which is what IsAmpBlocked() reports).
+    EXPECT_EQ(p.server->TrySendBurst(4), 0) << "worker spin: send rounds still emit on an exhausted budget";
 
     // Validation lifts the gate: the same egress path that just refused 1146 B
     // now accepts a full-size datagram.
@@ -249,6 +255,43 @@ TEST(AntiAmplificationIntegrationTest, emitter_clamps_flight_to_budget) {
     EXPECT_FALSE(amp.IsUnvalidated());
     EXPECT_FALSE(send_manager.IsAmpBlocked());
     EXPECT_TRUE(send_manager.CheckAndChargeAmpBudget(1200)) << "budget must be uncapped once the address is validated";
+}
+
+// The build-time sizing query must be the exact counterpart of the emit-time
+// gate: same remaining budget while unvalidated, unlimited once validated.
+// AntiAmplificationController::GetRemainingBudget() returns 0 in BOTH the
+// exhausted and the already-validated case -- wiring that raw into the send
+// path would zero every healthy connection's window, so the divergence
+// between the two return values below is the whole point of this test.
+TEST(AntiAmplificationIntegrationTest, build_time_budget_query_matches_gate) {
+    auto p = MakePeers();
+    auto& send_manager = p.server->GetSendManagerForTest();
+    const auto& amp = send_manager.GetAmpControllerForTest();
+
+    // Fresh server: unvalidated with zero credit -> no usable budget.
+    ASSERT_TRUE(amp.IsUnvalidated());
+    EXPECT_EQ(send_manager.GetAmpBudgetRemaining(), 0u);
+
+    // One datagram buys exactly 3x its size of budget.
+    p.client_sender->Clear();
+    ASSERT_GT(p.client->TrySendBurst(1), 0u);
+    const uint64_t received = Deliver(p.client_sender->GetLastSentBuffer(), p.server);
+    ASSERT_GT(received, 0u);
+    EXPECT_EQ(send_manager.GetAmpBudgetRemaining(), 3 * received);
+
+    // Charging at the emit-time gate must be reflected by the build-time
+    // query (single source of truth: the controller's counters).
+    const uint32_t charged = 100;
+    ASSERT_TRUE(send_manager.CheckAndChargeAmpBudget(charged));
+    EXPECT_EQ(send_manager.GetAmpBudgetRemaining(), 3 * received - charged);
+
+    // Validation lifts the limit entirely. Both return values are pinned:
+    // the controller's (whose header doc long claimed 0 here -- the reason
+    // the SendManager facade exists) and the facade's, which is what the
+    // build-time send path actually reads.
+    send_manager.MarkAddressValidated();
+    EXPECT_EQ(amp.GetRemainingBudget(), UINT64_MAX);
+    EXPECT_EQ(send_manager.GetAmpBudgetRemaining(), UINT64_MAX);
 }
 
 }  // namespace

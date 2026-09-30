@@ -55,6 +55,23 @@ public:
     // Get the number of available CIDs in the pool
     size_t GetAvailableIDCount() const { return sequence_cid_map_.size(); }
 
+    // Whether |id| is one of the CIDs this manager currently owns (the active
+    // one or any pooled sequence number).
+    //
+    // Needed because connection routing is keyed on ConnectionID::Hash(), a
+    // 64-bit value: two different CIDs can collide, so a routing hit must be
+    // confirmed against the real bytes before a packet is handed to a
+    // connection.
+    bool HasID(const ConnectionID& id) const;
+
+    // Look up a pooled CID by its sequence number. Returns true and copies the
+    // CID into |out| when that sequence number is still live (not yet retired).
+    // Used by the frame-level loss-recovery handler for NEW_CONNECTION_ID
+    // (RFC 9000 §13.3): when the packet carrying the frame is declared lost, a
+    // fresh equivalent frame is re-emitted, which requires recovering the CID
+    // bytes from the pool.
+    bool GetIDBySequence(uint64_t sequence, ConnectionID& out) const;
+
     // Get all CIDs managed by this manager (for cleanup on connection close)
     std::vector<uint64_t> GetAllIDHashes();
 

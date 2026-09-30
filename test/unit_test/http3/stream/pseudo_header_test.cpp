@@ -7,6 +7,16 @@
 namespace quicx {
 namespace http3 {
 
+// Headers are an ordered field-line sequence now (RFC 9110 §5.3); this keeps
+// the old map-style assertions readable.
+static std::string* FindValue(const HttpFields& fields, const std::string& name) {
+    static std::string kEmpty;
+    for (const auto& field : fields) {
+        if (field.first == name) return const_cast<std::string*>(&field.second);
+    }
+    return &kEmpty;
+}
+
 class PseudoHeaderTest: public testing::Test {
 protected:
     void SetUp() override {
@@ -27,11 +37,11 @@ TEST_F(PseudoHeaderTest, EncodeRequestGET) {
 
     PseudoHeader::Instance().EncodeRequest(request_);
 
-    auto headers = request_->GetHeaders();
-    EXPECT_EQ(headers[":method"], "GET");
-    EXPECT_EQ(headers[":path"], "/test");
-    EXPECT_EQ(headers[":scheme"], "https");
-    EXPECT_EQ(headers[":authority"], "example.com");
+    const auto& headers = request_->GetHeaders();
+    EXPECT_EQ(*FindValue(headers, ":method"), "GET");
+    EXPECT_EQ(*FindValue(headers, ":path"), "/test");
+    EXPECT_EQ(*FindValue(headers, ":scheme"), "https");
+    EXPECT_EQ(*FindValue(headers, ":authority"), "example.com");
 }
 
 TEST_F(PseudoHeaderTest, EncodeRequestPOST) {
@@ -42,16 +52,16 @@ TEST_F(PseudoHeaderTest, EncodeRequestPOST) {
 
     PseudoHeader::Instance().EncodeRequest(request_);
 
-    auto headers = request_->GetHeaders();
-    EXPECT_EQ(headers[":method"], "POST");
-    EXPECT_EQ(headers[":path"], "/api/data");
-    EXPECT_EQ(headers[":scheme"], "http");
-    EXPECT_EQ(headers[":authority"], "api.example.com");
+    const auto& headers = request_->GetHeaders();
+    EXPECT_EQ(*FindValue(headers, ":method"), "POST");
+    EXPECT_EQ(*FindValue(headers, ":path"), "/api/data");
+    EXPECT_EQ(*FindValue(headers, ":scheme"), "http");
+    EXPECT_EQ(*FindValue(headers, ":authority"), "api.example.com");
 }
 
 // Test Request Decoding
 TEST_F(PseudoHeaderTest, DecodeRequest) {
-    std::unordered_map<std::string, std::string> headers = {
+    quicx::HttpFields headers = {
         {":method", "GET"}, {":path", "/test"}, {":scheme", "https"}, {":authority", "example.com"}};
     request_->SetHeaders(headers);
 
@@ -69,8 +79,8 @@ TEST_F(PseudoHeaderTest, EncodeResponse) {
 
     PseudoHeader::Instance().EncodeResponse(response_);
 
-    auto headers = response_->GetHeaders();
-    EXPECT_EQ(headers[":status"], "200");
+    const auto& headers = response_->GetHeaders();
+    EXPECT_EQ(*FindValue(headers, ":status"), "200");
 }
 
 TEST_F(PseudoHeaderTest, EncodeResponseError) {
@@ -78,13 +88,13 @@ TEST_F(PseudoHeaderTest, EncodeResponseError) {
 
     PseudoHeader::Instance().EncodeResponse(response_);
 
-    auto headers = response_->GetHeaders();
-    EXPECT_EQ(headers[":status"], "404");
+    const auto& headers = response_->GetHeaders();
+    EXPECT_EQ(*FindValue(headers, ":status"), "404");
 }
 
 // Test Response Decoding
 TEST_F(PseudoHeaderTest, DecodeResponse) {
-    std::unordered_map<std::string, std::string> headers = {{":status", "200"}};
+    quicx::HttpFields headers = {{":status", "200"}};
     response_->SetHeaders(headers);
 
     PseudoHeader::Instance().DecodeResponse(response_);
@@ -102,13 +112,13 @@ TEST_F(PseudoHeaderTest, RequestWithCustomHeaders) {
 
     PseudoHeader::Instance().EncodeRequest(request_);
 
-    auto headers = request_->GetHeaders();
-    EXPECT_EQ(headers[":method"], "POST");
-    EXPECT_EQ(headers[":path"], "/api/data");
-    EXPECT_EQ(headers[":scheme"], "https");
-    EXPECT_EQ(headers[":authority"], "api.example.com");
-    EXPECT_EQ(headers["content-type"], "application/json");
-    EXPECT_EQ(headers["user-agent"], "test-client");
+    const auto& headers = request_->GetHeaders();
+    EXPECT_EQ(*FindValue(headers, ":method"), "POST");
+    EXPECT_EQ(*FindValue(headers, ":path"), "/api/data");
+    EXPECT_EQ(*FindValue(headers, ":scheme"), "https");
+    EXPECT_EQ(*FindValue(headers, ":authority"), "api.example.com");
+    EXPECT_EQ(*FindValue(headers, "content-type"), "application/json");
+    EXPECT_EQ(*FindValue(headers, "user-agent"), "test-client");
 }
 
 TEST_F(PseudoHeaderTest, ResponseWithCustomHeaders) {
@@ -118,10 +128,10 @@ TEST_F(PseudoHeaderTest, ResponseWithCustomHeaders) {
 
     PseudoHeader::Instance().EncodeResponse(response_);
 
-    auto headers = response_->GetHeaders();
-    EXPECT_EQ(headers[":status"], "201");
-    EXPECT_EQ(headers["content-type"], "application/json");
-    EXPECT_EQ(headers["server"], "test-server");
+    const auto& headers = response_->GetHeaders();
+    EXPECT_EQ(*FindValue(headers, ":status"), "201");
+    EXPECT_EQ(*FindValue(headers, "content-type"), "application/json");
+    EXPECT_EQ(*FindValue(headers, "server"), "test-server");
 }
 
 // Test Encode-Decode Combined Cases
@@ -149,8 +159,8 @@ TEST_F(PseudoHeaderTest, RequestEncodeDecodeCombined) {
     EXPECT_EQ(decoded_request->GetPath(), "/api/v1/resource");
     EXPECT_EQ(decoded_request->GetScheme(), "https");
     EXPECT_EQ(decoded_request->GetAuthority(), "api.test.com");
-    EXPECT_EQ(decoded_request->GetHeaders()["content-type"], "application/json");
-    EXPECT_EQ(decoded_request->GetHeaders()["authorization"], "Bearer token123");
+    EXPECT_EQ(*FindValue(decoded_request->GetHeaders(), "content-type"), "application/json");
+    EXPECT_EQ(*FindValue(decoded_request->GetHeaders(), "authorization"), "Bearer token123");
 }
 
 TEST_F(PseudoHeaderTest, ResponseEncodeDecodeCombined) {
@@ -172,9 +182,9 @@ TEST_F(PseudoHeaderTest, ResponseEncodeDecodeCombined) {
 
     // Verify all fields match
     EXPECT_EQ(decoded_response->GetStatusCode(), 201);
-    EXPECT_EQ(decoded_response->GetHeaders()["content-type"], "application/json");
-    EXPECT_EQ(decoded_response->GetHeaders()["cache-control"], "no-cache");
-    EXPECT_EQ(decoded_response->GetHeaders()["x-custom-header"], "custom-value");
+    EXPECT_EQ(*FindValue(decoded_response->GetHeaders(), "content-type"), "application/json");
+    EXPECT_EQ(*FindValue(decoded_response->GetHeaders(), "cache-control"), "no-cache");
+    EXPECT_EQ(*FindValue(decoded_response->GetHeaders(), "x-custom-header"), "custom-value");
 }
 
 TEST_F(PseudoHeaderTest, RequestComplexPathEncodeDecodeCombined) {
@@ -229,8 +239,8 @@ TEST_F(PseudoHeaderTest, ResponseMultipleHeadersEncodeDecodeCombined) {
     // Verify multiple headers are preserved
     EXPECT_EQ(decoded_response->GetStatusCode(), 200);
     auto headers = decoded_response->GetHeaders();
-    EXPECT_EQ(headers["set-cookie"], "session=123");
-    EXPECT_EQ(headers["vary"], "Accept");
+    EXPECT_EQ(*FindValue(headers, "set-cookie"), "session=123");
+    EXPECT_EQ(*FindValue(headers, "vary"), "Accept");
 }
 
 }  // namespace http3

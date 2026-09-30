@@ -413,7 +413,7 @@ Free(pkt):
 
 ---
 
-## 9. 不变量
+## 9. 关键不变量
 
 读懂这些池后再看代码，下面几条贯穿所有路径：
 
@@ -434,12 +434,12 @@ Free(pkt):
 - [`ownership_and_memory.md`](ownership_and_memory.md) —— LSan 对 `BlockMemoryPool` 的抑制说明（与本文 §5.6 互看）；以及为什么"加了池仍要避免环引用"。
 - [`metrics.md`](metrics.md) —— §11 列出 `MemPool*` 四个指标，是 `BlockMemoryPool` 唯一可观察性入口。
 - [`process_model.md`](process_model.md) —— 解释为什么 `BlockMemoryPool` 可以做成 `thread_local`：worker 模型 + 连接钉线程。
-- [`buffers.md`](buffers.md) —— `BufferChunk` / `IBuffer` / `SharedBufferSpan` 的语义，是 `BufferChunkPool` 服务的对象。
+- `buffers.md`（尚未撰写）—— `BufferChunk` / `IBuffer` / `SharedBufferSpan` 的语义，是 `BufferChunkPool` 服务的对象。
 - 内部决策剧本：`docs/internal/pool_allocator_frame_optimization.md` —— `Poolallocator` 为什么暂未接入 frame、若重启走哪条 P0 路径。
 
 ---
 
-## 11. 参考实现 / 文献
+## 11. 关联 RFC
 
 - 经典 STL slab 分配器：`__gnu_cxx::__pool_alloc`（GCC libstdc++）—— `Poolallocator` 的 free-list / chunk-alloc 结构与之同源。
 - Bonwick, J. "The Slab Allocator: An Object-Caching Kernel Memory Allocator." USENIX 1994 —— "对象池 + 自由表"思路的奠基论文，与 `BufferChunkPool` 思想一致。

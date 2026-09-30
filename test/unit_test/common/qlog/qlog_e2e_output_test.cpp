@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -132,8 +133,12 @@ static bool IsBalancedJson(const std::string& json) {
 class QlogE2EOutputTest: public ::testing::Test {
 protected:
     void SetUp() override {
-        // Create unique output directory for each test
-        test_dir_ = "./test_qlog_e2e_" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+        // Create unique output directory for each test. Bazel runs tests with
+        // a read-only cwd but provides a writable scratch directory via
+        // TEST_TMPDIR; without it (CMake) fall back to the build directory.
+        const char* tmp = std::getenv("TEST_TMPDIR");
+        const std::string prefix = (tmp && *tmp) ? std::string(tmp) + "/" : "./";
+        test_dir_ = prefix + "test_qlog_e2e_" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
 
         QlogConfig config;
         config.enabled_ = true;

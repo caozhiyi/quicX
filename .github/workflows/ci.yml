@@ -72,8 +72,7 @@ jobs:
             -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
             -DENABLE_TESTING=ON \
-            -DENABLE_INTERGRATION=ON \
-            -DENABLE_INTEROP=OFF \
+            -DENABLE_INTEGRATION=ON \
             -DENABLE_FUZZING=OFF \
             -DBUILD_EXAMPLES=ON \
             -DQUICX_WARNINGS_AS_ERRORS=ON

@@ -1,20 +1,26 @@
-cmake_minimum_required(VERSION 3.10)
+# HTTP/3 command-line tool (curl-like + QUIC feature showcase)
 
-# quicx-curl - HTTP/3 command-line tool
-add_executable(quicx-curl
+add_executable(quicx_curl
     main.cpp
-    args_parser.cpp
-    http_client.cpp
-    output_formatter.cpp
+    cli/option_table.cpp
+    app/orchestrator.cpp
+    app/request_builder.cpp
+    app/request_driver.cpp
+    session/session.cpp
+    session/transport_map.cpp
+    features/redirect.cpp
+    features/cookie_jar.cpp
+    features/migration_ctl.cpp
+    features/push_display.cpp
+    io/sinks.cpp
+    io/progress.cpp
+    io/writeout.cpp
+    obs/stats_report.cpp
 )
 
-target_link_libraries(quicx-curl
+target_include_directories(quicx_curl PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(quicx_curl
     http3
     quicx
+    ${OPENSSL_LIBRARIES}
 )
-
-install(
-    TARGETS quicx-curl
-    RUNTIME DESTINATION bin
-)
-

@@ -1,20 +1,13 @@
-# `h3_connection.md` — HTTP/3 连接的多流协作
+# HTTP/3 连接的多流协作
 
-> **段三 · 第 19 站**　承接 [`stream_state_machine.md`](stream_state_machine.md)（流的发送 / 接收双状态机）和 [`qpack_dynamic_table.md`](qpack_dynamic_table.md)（动态表的两遍编码），从"**连接**"的视角回答：在一个 QUIC connection 上，HTTP/3 是如何用 **6 类 stream** 拼出一个完整的协议会话的？
+本文从"**连接**"的视角梳理 HTTP/3 的实现：在一个 QUIC connection 上，HTTP/3 如何用 **6 类 stream** 拼出一个完整的协议会话。流的发送 / 接收双状态机见 [`stream_state_machine.md`](stream_state_machine.md)，动态表的两遍编码见 [`qpack_dynamic_table.md`](qpack_dynamic_table.md)，本文不重复展开。本文尝试回答以下问题：
 
----
-
-## 开篇：四个高 ROI 问题
-
-| 问题 | 答案前置 |
-| :--- | :--- |
-| **Q1**：HTTP/3 一共有几种 stream？为什么不是一种？ | **6 类**：control（双向）/ qpack-encoder（单向）/ qpack-decoder（单向）/ req-resp（双向）/ push（单向）/ unidentified（临时）。每一类承担一个不会与其他类竞争的协议任务（控制帧 / 字段编码字典更新 / 字段编码反馈 / 业务请求 / 服务器推送）。如果合一，就是 HTTP/2 的 SETTINGS、HEADERS、PUSH_PROMISE、RST_STREAM 等帧在**同一个 stream 上排队**——队头阻塞回归。HTTP/3 的"`一类一流`"是把 HTTP/2 的帧多路分发到 QUIC 的 stream 多路。 |
-| **Q2**：QPACK 不是一个表吗？为什么 `IConnection` 持有 `qpack_encoder_` **和** `qpack_decoder_` 两个 `QpackEncoder` 实例？ | **RFC 9204 §3.2.3**：每条连接需要**两份独立的动态表**——本端 encoder 用于把出站 headers 编码为 wire bytes（持有"我插入了什么"），本端 decoder 用于把入站 headers 解回 map（持有"对方插入了什么"）。它们的 insert count、capacity、reference 完全独立，互不影响。`QpackEncoder` 这个类是"**封装的 encoder + 封装的 decoder + 一张动态表**"，所以 `qpack_encoder_` 实例存的是**本端 encoder 的 dynamic table**，`qpack_decoder_` 实例存的是**对端 encoder 写过来的 dynamic table 的 mirror**。命名是历史遗留——更准确的名字是 `local_table_` / `peer_mirror_table_`。 |
-| **Q3**：客户端和服务端的 stream 拓扑是不是一样？ | **不一样**。服务端建 **5 条**单向流：control-sender / qpack-enc-sender / qpack-dec-sender / qpack-dec-receiver（早期）+ 反应式接收 client 的 control-receiver / qpack-enc-receiver。客户端建 **3 条**单向流：control-sender / qpack-enc-sender / qpack-dec-sender，**不主动建** qpack-dec-receiver——它要等服务端开 qpack-encoder 流过来时再反应式地建（`OnStreamTypeIdentified` 路径）。这是 §5 详述的"主动 vs 反应式"分工。 |
-| **Q4**：unidirectional stream 上的"流类型"字段什么时候识别？过早识别会怎样？ | RFC 9114 §6.2 规定单向流首字节是 stream type varint。但 QUIC 一次到达的数据是**字节流**，不保证整字节先到——可能 prefix 1 字节先来 stream type 还没读到。所以本仓采用 **`UnidentifiedStream`** 占位：先把流注册到 `streams_[id]`，等 `OnData` 攒够 1 字节再 decode varint 决定具体类型，然后**替换为真正的子类**（`switch (stream_type)` → `make_shared<X>` → `streams_[id] = typed`），把已读的剩余 byte 通过 `OnData(remaining_data, false, 0)` 回灌新流。错误识别（提前 cast 或没识别就 dispatch 帧）会把 wire bytes 解释为错误的 stream 类型——典型是把 control 帧解成 QPACK encoder instruction，损坏 dynamic table。 |
+1. **HTTP/3 一共有几种 stream？为什么不是一种？** —— 6 类，各自承担互不竞争的协议任务；合并就是 HTTP/2 的帧同流排队，队头阻塞回归；
+2. **QPACK 不是一个表吗？为什么 `IConnection` 持有 `qpack_encoder_` 和 `qpack_decoder_` 两个实例？** —— 每条连接需要两份独立的动态表：本端 encoder 用的 + 对端 encoder 写过来的镜像；
+3. **客户端和服务端的 stream 拓扑是不是一样？** —— 不一样：服务端主动建 5 条单向流，客户端只建 3 条，qpack-dec-receiver 要等服务端开流后反应式创建；
+4. **单向流上的"流类型"字段什么时候识别？过早识别会怎样？** —— 先用 `UnidentifiedStream` 占位，攒够 varint 字节再定型替换；过早识别会把 wire bytes 解释成错误的流类型，典型如把 control 帧解成 QPACK 指令。
 
 ---
-
 ## 1. 总览：一条 H3 连接的 6 类流拓扑
 
 ```mermaid
@@ -384,7 +377,7 @@ H3 连接相关计数（`src/common/metrics/metrics_std.h:50-58, 107-110`）：
 
 ---
 
-## 11. RFC 与外部依据
+## 11. 关联 RFC
 
 - **RFC 9114** — HTTP/3
   - §4.1 双向流 / 请求-响应基本模型

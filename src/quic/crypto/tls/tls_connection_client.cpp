@@ -3,6 +3,8 @@
 
 #include <openssl/err.h>
 #include <openssl/ssl.h>
+#include <openssl/x509.h>
+#include <openssl/x509v3.h>
 
 #include "common/log/log.h"
 
@@ -58,6 +60,19 @@ bool TLSClientConnection::DoHandleShake() {
             }
         }
         return false;
+    }
+
+    // Defence in depth. SSL_VERIFY_PEER + SSL_set1_host() normally abort the
+    // handshake on a bad certificate, so reaching here implies success — but
+    // SSL_get_verify_result() is the authoritative answer and costs nothing.
+    // Skipped when peer verification is off, where there is nothing to check.
+    if (SSL_get_verify_mode(ssl_.get()) & SSL_VERIFY_PEER) {
+        const long verify_result = SSL_get_verify_result(ssl_.get());
+        if (verify_result != X509_V_OK) {
+            LOG_ERROR("TLS peer certificate verification failed. result:%ld (%s)", verify_result,
+                X509_verify_cert_error_string(verify_result));
+            return false;
+        }
     }
 
     return true;
@@ -129,7 +144,22 @@ bool TLSClientConnection::SetServerName(const std::string& server_name) {
         LOG_ERROR("SSL_set_tlsext_host_name failed. server_name:%s", server_name.c_str());
         return false;
     }
-    LOG_DEBUG("Set SNI: %s", server_name.c_str());
+
+    // SNI is only "which certificate should I present?". It does NOT constrain
+    // what we are willing to accept, and BoringSSL's SSL_VERIFY_PEER validates
+    // the chain without doing any name matching unless an expected hostname has
+    // been pinned on the SSL. Without the call below, a client with
+    // verify_peer=true still accepts ANY certificate issued by a trusted CA —
+    // a textbook MITM. Pin the name we intend to reach (RFC 6125 matching).
+    if (SSL_set1_host(ssl_.get(), server_name.c_str()) != 1) {
+        LOG_ERROR("SSL_set1_host failed. server_name:%s", server_name.c_str());
+        return false;
+    }
+    // Refuse wildcards that match only part of a label (e.g. "*.com"), which
+    // RFC 6125 permits but no public CA should ever issue.
+    SSL_set_hostflags(ssl_.get(), X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS);
+
+    LOG_DEBUG("Set SNI and expected hostname: %s", server_name.c_str());
     return true;
 }
 

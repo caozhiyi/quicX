@@ -299,7 +299,7 @@ std::shared_ptr<IStream> StreamManager::CreateRemoteStream(
 // ==================== Stream ACK Notification ====================
 
 void StreamManager::OnStreamDataAcked(uint64_t stream_id, uint64_t offset_start, uint64_t length, bool has_fin) {
-    common::LogTagGuard guard("|strm:" + std::to_string(stream_id));
+    common::LogTagGuard guard("|strm:", stream_id);
     auto stream = FindStream(stream_id);
     if (!stream) {
         LOG_DEBUG("StreamManager: stream %llu not found in OnStreamDataAcked", stream_id);
@@ -362,7 +362,7 @@ void StreamManager::MarkStreamActive(std::shared_ptr<IStream> stream) {
     }
 
     uint64_t stream_id = stream->GetStreamID();
-    common::LogTagGuard guard("|strm:" + std::to_string(stream_id));
+    common::LogTagGuard guard("|strm:", stream_id);
     LOG_DEBUG("StreamManager: marking stream %llu as active, ptr=%p, is_crypto=%d, is_bidi=%d, direction=%d", stream_id,
         stream.get(), std::dynamic_pointer_cast<CryptoStream>(stream) ? 1 : 0,
         std::dynamic_pointer_cast<BidirectionStream>(stream) ? 1 : 0, static_cast<int>(stream->GetDirection()));
@@ -398,7 +398,7 @@ bool StreamManager::BuildStreamFrames(IFrameVisitor* visitor, uint8_t encrypto_l
         }
 
         uint64_t sid = stream->GetStreamID();
-        common::LogTagGuard guard("|strm:" + std::to_string(sid));
+        common::LogTagGuard guard("|strm:", sid);
 
         // Encryption level filtering (RFC 9000 §12.4 / §12.5):
         //  - CRYPTO frames: allowed at Initial/Handshake/Application (handled by CryptoStream per-level buffer)

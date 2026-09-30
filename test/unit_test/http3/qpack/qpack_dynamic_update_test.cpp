@@ -14,6 +14,16 @@ namespace quicx {
 namespace http3 {
 namespace {
 
+static std::string* FindValue(const std::vector<std::pair<std::string, std::string>>& fields,
+    const std::string& name) {
+    static std::string kEmpty;
+    for (const auto& f : fields) {
+        if (f.first == name) return const_cast<std::string*>(&f.second);
+    }
+    return &kEmpty;
+}
+
+
 class QpackDynamicUpdateTest: public ::testing::Test {
 protected:
     void SetUp() override {
@@ -51,10 +61,10 @@ TEST_F(QpackDynamicUpdateTest, InsertWithoutNameRef_ThenDecodeIndexedHeader) {
     // Indexed Header Field — dynamic: first byte 10xxxxxx with 6-bit prefix, value = relative index
     ASSERT_TRUE(QpackEncodePrefixedInteger(hdr, 6, 0x80, /*relative_index*/ 0));
 
-    std::unordered_map<std::string, std::string> headers;
+    std::vector<std::pair<std::string, std::string>> headers;
     ASSERT_TRUE(decoder_->Decode(hdr, headers));
     ASSERT_EQ(headers.size(), 1u);
-    EXPECT_EQ(headers["x-custom"], "alpha");
+    EXPECT_EQ(*FindValue(headers, "x-custom"), "alpha");
 }
 
 // Insert With Static Name Reference (e.g., ":method"), then decode
@@ -72,10 +82,10 @@ TEST_F(QpackDynamicUpdateTest, InsertWithStaticNameRef_ThenDecodeIndexedHeader) 
     decoder_->WriteHeaderPrefix(hdr, 1, 1);
     ASSERT_TRUE(QpackEncodePrefixedInteger(hdr, 6, 0x80, 0));
 
-    std::unordered_map<std::string, std::string> headers;
+    std::vector<std::pair<std::string, std::string>> headers;
     ASSERT_TRUE(decoder_->Decode(hdr, headers));
     ASSERT_EQ(headers.size(), 1u);
-    EXPECT_EQ(headers[":method"], "GET");
+    EXPECT_EQ(*FindValue(headers, ":method"), "GET");
 }
 
 // Duplicate instruction creates a new dynamic entry which can also be referenced
@@ -101,10 +111,10 @@ TEST_F(QpackDynamicUpdateTest, DuplicateInstruction_CreatesSecondEntry) {
     ASSERT_TRUE(QpackEncodePrefixedInteger(hdr, 6, 0x80, 0));  // newest
     ASSERT_TRUE(QpackEncodePrefixedInteger(hdr, 6, 0x80, 1));  // older duplicate
 
-    std::unordered_map<std::string, std::string> headers;
+    std::vector<std::pair<std::string, std::string>> headers;
     ASSERT_TRUE(decoder_->Decode(hdr, headers));
     // Both map to the same name, value; map will keep one entry with final value identical
-    EXPECT_EQ(headers["x-dupe"], "v");
+    EXPECT_EQ(*FindValue(headers, "x-dupe"), "v");
 }
 
 // If Required Insert Count exceeds dynamic table size, decoding is blocked (Decode returns false)
@@ -120,7 +130,7 @@ TEST_F(QpackDynamicUpdateTest, DecodeBlocked_WhenRICExceedsTable) {
     auto hdr = MakeBuffer();
     decoder_->WriteHeaderPrefix(hdr, /*required_insert_count*/ 2, /*base*/ 2);
     // Even without any fields, decode should fail due to blocked state
-    std::unordered_map<std::string, std::string> headers;
+    std::vector<std::pair<std::string, std::string>> headers;
     EXPECT_FALSE(decoder_->Decode(hdr, headers));
 }
 

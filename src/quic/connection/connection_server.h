@@ -22,7 +22,7 @@ public:
 protected:
     virtual bool OnRetryPacket(const std::shared_ptr<IPacket>& packet) override;
 
-    // WriteCryptoData 的握手完成钩子（Base 负责公共的 TLS 数据回灌部分）
+    // Handshake-completion hook for WriteCryptoData (Base handles the common TLS data write-back)
     virtual void OnTlsHandshakeComplete() override;
 
     // HANDSHAKE_DONE frame handler (set as callback to frame processor)

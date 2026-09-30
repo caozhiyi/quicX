@@ -36,7 +36,7 @@
 | [`guide/sanitizer_hello_world_load.md`](guide/sanitizer_hello_world_load.md) | Sanitizer 场景：hello_world 加压 |
 | [`guide/sanitizer_file_transfer.md`](guide/sanitizer_file_transfer.md) | Sanitizer 场景：file_transfer |
 
-> 注：`perf_testing.md` 和 `ci_local.md` 目前仅提供中文版；英文版为占位文档，待后续翻译。
+> 注：`sanitizer_hello_world_load.md`、`sanitizer_file_transfer.md`、`perf_testing.md` 和 `ci_local.md` 目前仅提供中文版；英文版为占位文档，待后续翻译。
 
 ## 4. 参考（`reference/`）
 
@@ -77,7 +77,7 @@
 | 文档 | 解答什么问题 |
 | :--- | :--- |
 | [`design/packet_lifecycle.md`](design/packet_lifecycle.md) | 一个 datagram 从 socket 入到上层 frame 的完整路径 |
-| [`design/connection_anatomy.md`](design/connection_anatomy.md) | Connection 子树（21 个 cpp）的三层结构：骨架 / 协调器 / 控制器 |
+| [`design/connection_anatomy.md`](design/connection_anatomy.md) | Connection 子树（36 个 cpp）的三层结构：骨架 / 协调器 / 控制器 |
 | [`design/handshake_state_machine.md`](design/handshake_state_machine.md) | TLS / 加密级别 / Key Update 的状态机 |
 | [`design/ownership_and_memory.md`](design/ownership_and_memory.md) | Buffer / 连接 / 流的所有权与生命周期 |
 
@@ -119,10 +119,12 @@
 | :--- | :--- |
 | [`design/metrics.md`](design/metrics.md) | 内置 Metrics 名录与 emit 点 |
 
+> 注：本节文档（除 `design/metrics.md` 与 `design/ownership_and_memory.md` 外）目前仅提供中文版；英文版为占位文档，待后续翻译。
+
 ## 7. 进一步阅读源码
 
 文档之外，源码本身就是最好的参考：
 
-- **`example/`** 与 **`test/`** 是"可执行文档"——`example/hello_world` 看接入、`test/quic/` 看协议各模块单测、`tools/cc_simulator/` 看拥塞控制可视化。
+- **`example/`** 与 **`test/`** 是"可执行文档"——`example/hello_world` 看接入、`test/unit_test/quic/` 看协议各模块单测、`test/congestion_control/` 看拥塞控制模拟器。
 - 仓库目录结构本身就是 index：`src/quic/` 下每个子目录与 RFC 9000 / 9001 / 9002 的章节大致对应，按需 `cd` 进去即可。
 - 关键决策点（拥塞控制 / 丢包恢复 / 流控 / 握手 / QPACK）的源码已就近补 RFC §-级注释，看不懂直接查注释指向的条款。

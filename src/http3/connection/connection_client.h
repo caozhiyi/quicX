@@ -19,8 +19,9 @@ public:
     ClientConnection(const std::string& unique_id, const Http3Settings& settings,
         const std::shared_ptr<IQuicConnection>& quic_connection,
         const std::function<void(const std::string& unique_id, uint32_t error_code)>& error_handler,
-        const std::function<bool(std::unordered_map<std::string, std::string>& headers)>& push_promise_handler,
-        const http_response_handler& push_handler, uint64_t max_concurrent_streams = 200, bool enable_push = false);
+        const std::function<bool(HttpFields& headers)>& push_promise_handler,
+        const http_response_handler& push_handler, uint64_t max_concurrent_streams = 200, bool enable_push = false,
+        uint64_t max_push_id = 100);
     virtual ~ClientConnection();
 
     // Two-phase init: control/qpack stream wiring is deferred to Init() because
@@ -76,13 +77,13 @@ private:
 
     void HandleStream(std::shared_ptr<IQuicStream> stream, uint32_t error) override;
     // handle push promise
-    void HandlePushPromise(std::unordered_map<std::string, std::string>& headers, uint64_t push_id);
+    void HandlePushPromise(HttpFields& headers, uint64_t push_id);
     // handle error
     void HandleError(uint64_t stream_id, uint32_t error_code) override;
 
 private:
     http_response_handler push_handler_;
-    std::function<bool(std::unordered_map<std::string, std::string>&)> push_promise_handler_;
+    std::function<bool(HttpFields&)> push_promise_handler_;
 
     // Metrics: Track request start times for duration calculation
     std::unordered_map<uint64_t, uint64_t> request_start_times_;
@@ -92,6 +93,11 @@ private:
     // payload at Shutdown() time so we never widen the push-id window in
     // a GOAWAY (the spec requires GOAWAY id to be non-increasing).
     uint64_t advertised_max_push_id_ = 0;
+
+    // RFC 9114 §7.2.7: the MAX_PUSH_ID we advertise in Init() when push is
+    // enabled. Configurable via Http3ClientConfig::max_push_id_ (code-review
+    // P3g); 100 was the previous hardcoded default.
+    uint64_t max_push_id_ = 100;
 };
 
 }  // namespace http3

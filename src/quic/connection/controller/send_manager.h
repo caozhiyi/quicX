@@ -39,12 +39,32 @@ public:
     // SendControl::Bind). Called from BaseConnection once it is owned.
     void Bind(std::weak_ptr<void> self) { send_control_.Bind(self); }
 
+    // Forward the runtime CC selection to SendControl (code-review P2-5).
+    // Only effective before the connection's first packet is sent.
+    void SetCongestionControlType(CongestionControlType t) { send_control_.SetCongestionControlType(t); }
+
     SendOperation GetSendOperation();
 
     uint32_t GetRtt() { return send_control_.GetRtt(); }
     uint32_t GetPTO(uint32_t max_ack_delay) { return send_control_.GetPTO(max_ack_delay); }
     RttCalculator& GetRttCalculator() { return send_control_.GetRttCalculator(); }
     void EnqueueFrame(std::shared_ptr<IFrame> frame);
+
+    /**
+     * @brief Attach the generic loss-response to a value frame: on kLost,
+     *        re-queue the SAME frame object for the next send round.
+     *
+     * Only for frames whose re-emission is idempotent (MAX_DATA /
+     * MAX_STREAM_DATA / MAX_STREAMS: re-sending a window that is merely
+     * current-or-stale is harmless). This cuts the BLOCKED-probe round trip
+     * the RFC 9000 fallback needs when such a frame is lost and also covers
+     * the double-loss case (frame + the peer's BLOCKED probe both lost).
+     *
+     * NOT for frames that must carry fresh state — those producers own their
+     * own handler instead (see ConnectionIDCoordinator's NCI/RETIRE resends,
+     * the hand-written original of this pattern).
+     */
+    void AttachRequeueOnLoss(const std::shared_ptr<IFrame>& frame);
 
     /**
      * @brief Whether any queued frame is a probing frame.
@@ -217,6 +237,27 @@ public:
      * Always false once the peer address is validated.
      */
     bool IsAmpBudgetBelow(uint32_t bytes) const { return amp_controller_.GetRemainingBudget() < bytes; }
+
+    /**
+     * @brief Build-time §8.1 size limit: how many payload bytes a packet may
+     *        carry right now.
+     *
+     * The build-time counterpart of the emit-time gate. Unlike
+     * AntiAmplificationController::GetRemainingBudget(), which returns 0
+     * *both* when exhausted and when the address is already validated (a
+     * trap: wiring that straight into the send path would zero the window of
+     * every healthy connection), this returns UINT64_MAX once validated.
+     *
+     * Callers should subtract kAmpOverheadReserve before using this as a
+     * frame budget, and treat anything below kMinAmpUsableBytes as "stop".
+     * Read-only; CheckAndChargeAmpBudget() remains the single charging point.
+     */
+    uint64_t GetAmpBudgetRemaining() const {
+        if (!amp_controller_.IsUnvalidated()) {
+            return UINT64_MAX;
+        }
+        return amp_controller_.GetRemainingBudget();
+    }
 
     // ---- PMTU probing (skeleton) ----
     // Start a simple PMTU probe sequence after migration (skeleton only).

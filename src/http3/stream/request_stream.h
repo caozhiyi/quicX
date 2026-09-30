@@ -28,7 +28,7 @@ public:
         const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
         const std::shared_ptr<IQuicBidirectionStream>& stream, std::shared_ptr<IAsyncClientHandler> async_handler,
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
-        const std::function<void(std::unordered_map<std::string, std::string>&, uint64_t push_id)>&
+        const std::function<void(HttpFields&, uint64_t push_id)>&
             push_promise_handler);
 
     RequestStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
@@ -36,7 +36,7 @@ public:
         const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
         const std::shared_ptr<IQuicBidirectionStream>& stream, http_response_handler response_handler,
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
-        const std::function<void(std::unordered_map<std::string, std::string>&, uint64_t push_id)>&
+        const std::function<void(HttpFields&, uint64_t push_id)>&
             push_promise_handler);
 
     virtual ~RequestStream();
@@ -64,7 +64,7 @@ private:
     std::shared_ptr<IResponse> response_;
     http_response_handler response_handler_;
     std::shared_ptr<IAsyncClientHandler> async_handler_;
-    std::function<void(std::unordered_map<std::string, std::string>&, uint64_t)> push_promise_handler_;
+    std::function<void(HttpFields&, uint64_t)> push_promise_handler_;
 };
 
 }  // namespace http3

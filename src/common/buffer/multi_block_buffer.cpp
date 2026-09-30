@@ -156,7 +156,11 @@ void MultiBlockBuffer::VisitData(const std::function<bool(uint8_t*, uint32_t)>& 
 }
 
 uint32_t MultiBlockBuffer::GetDataLength() {
-    return total_data_length_;
+    // total_data_length_ is uint64_t; clamp to uint32_t to keep this call
+    // site consistent with the cap in GetSharedReadableSpans() (Invariant 3).
+    // In practice the length is bounded by chunk-pool capacity, but clamping
+    // here prevents the two readouts from diverging if that ever overflows.
+    return (total_data_length_ > UINT32_MAX) ? UINT32_MAX : static_cast<uint32_t>(total_data_length_);
 }
 
 std::shared_ptr<IBuffer> MultiBlockBuffer::CloneReadable(uint32_t length, bool move_write_pt) {
@@ -344,6 +348,9 @@ SharedBufferSpan MultiBlockBuffer::GetCoalescedReadable(uint32_t max_length) con
     }
 
     // Slow path: stitch a contiguous prefix of size `take` across chunks.
+    // Pooled acquire: the chunk is recycled (not freed) when the last frame
+    // referencing it is destroyed, so the steady-state coalesce costs no
+    // allocation. See StandaloneBufferChunk::Acquire.
     uint32_t take = static_cast<uint32_t>(std::min<uint64_t>(max_length, total_readable));
     auto standalone = std::make_shared<StandaloneBufferChunk>(take);
     if (!standalone || !standalone->Valid()) {
@@ -517,12 +524,18 @@ uint32_t MultiBlockBuffer::Write(const SharedBufferSpan& span, uint32_t data_len
     // tiny ChunkStates by itself. The histogram disambiguates.
     Metrics::HistogramObserve(MetricsStd::DiagSpanWriteHist, data_len);
 
-    // if the last chunk has enough writable space, write to it
+    // if the last chunk is an owned chunk with enough writable space, write
+    // to it. A zero-copy mounted view state must NOT be used as a memcpy
+    // destination: its chunk's tail beyond write_pos_ is the source
+    // buffer's unsent data (see ChunkState::writable_owner_) — writing
+    // there splices the appended bytes into the source's future reads.
     if (!chunks_.empty()) {
         auto& back = chunks_.back();
-        uint32_t capacity = back.Writable();
-        if (capacity >= data_len) {
-            return Write(span.GetStart(), data_len);
+        if (back.writable_owner_) {
+            uint32_t capacity = back.Writable();
+            if (capacity >= data_len) {
+                return Write(span.GetStart(), data_len);
+            }
         }
     }
 
@@ -671,7 +684,10 @@ bool MultiBlockBuffer::Empty() const {
 std::shared_ptr<IBufferChunk> MultiBlockBuffer::EnsureWritableChunk() {
     if (!chunks_.empty()) {
         auto& back = chunks_.back();
-        if (back.chunk_ && back.chunk_->Valid()) {
+        // Only an owned chunk may be written to: a zero-copy mounted view
+        // shares its chunk with a source buffer whose bytes beyond
+        // back.write_pos_ may still be unsent. See ChunkState::writable_owner_.
+        if (back.writable_owner_ && back.chunk_ && back.chunk_->Valid()) {
             if (back.Writable() > 0) {
                 return back.chunk_;
             }
@@ -688,6 +704,7 @@ std::shared_ptr<IBufferChunk> MultiBlockBuffer::EnsureWritableChunk() {
     state.chunk_ = chunk;
     state.read_pos_ = chunk->GetData();
     state.write_pos_ = chunk->GetData();
+    state.writable_owner_ = true;
     chunks_.push_back(std::move(state));
 
     return chunk;

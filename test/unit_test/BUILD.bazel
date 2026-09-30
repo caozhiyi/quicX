@@ -8,7 +8,10 @@ cc_library(
     name = "common_support",
     testonly = True,
     srcs = ["common/time_consuming.cpp"],
-    hdrs = ["common/time_consuming.h"],
+    # All helper headers under common/ (e.g. common/timer/) are exposed so
+    # tests can `#include "test/unit_test/common/..."`, matching the CMake
+    # build's directory-wide include path.
+    hdrs = glob(["common/**/*.h"]),
     include_prefix = "test/unit_test",
     copts = ["-std=c++17"],
     deps = [

@@ -1,25 +1,30 @@
 ###############################################################################
 # Bzlmod module definitions for QuicX.
 #
-# Bzlmod replaces WORKSPACE-based external dependencies. We keep external
-# dependencies minimal because the project vendors BoringSSL and GoogleTest
-# under //third/.
+# Bzlmod is the only external dependency mechanism supported by this repo:
+# WORKSPACE files are disabled by default in Bazel >= 8 and removed in
+# Bazel 9. External dependencies are kept minimal because the project vendors
+# BoringSSL and GoogleTest under //third/ as git submodules.
 #
-# See https://bazel.build/external/migration for details.
+# Pin the Bazel version with .bazelversion (bazelisk picks it up
+# automatically). See https://bazel.build/external/migration for details.
 ###############################################################################
 
 module(
     name = "quicx",
     version = "1.0.0",
-    compatibility_level = 1,
 )
 
 # Required for the @platforms//os:* constraint values used in select() blocks
-# (linux/macos/windows).
-bazel_dep(name = "platforms", version = "0.0.10")
+# (linux/macos/windows) and by the vendored //third/{boringssl,googletest}
+# BUILD files.
+bazel_dep(name = "platforms", version = "1.1.0")
 
 # BoringSSL's BUILD file uses @rules_license//rules:license.bzl.
 bazel_dep(name = "rules_license", version = "1.0.0")
 
-# Standard C/C++ rules.
-bazel_dep(name = "rules_cc", version = "0.0.17")
+# Standard C/C++ rules. This is a hard requirement even though first-party
+# BUILD files still use the built-in (native) cc_* rules — which stay
+# available until Bazel 9 — because the vendored //third/boringssl loads
+# cc_binary/cc_library/cc_test from @rules_cc//cc:defs.bzl.
+bazel_dep(name = "rules_cc", version = "0.2.22")

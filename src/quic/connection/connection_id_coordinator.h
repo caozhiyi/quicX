@@ -22,6 +22,8 @@ namespace quic {
 
 // Forward declarations
 class SendManager;
+class NewConnectionIDFrame;
+class RetireConnectionIDFrame;
 
 /**
  * @brief Connection ID coordinator
@@ -143,6 +145,38 @@ public:
      * @param limit Active connection ID limit
      */
     void SetPeerActiveConnectionIDLimit(uint64_t limit);
+
+    // ==================== Frame-Level Loss Recovery (RFC 9000 §13.3) ====================
+
+    /**
+     * @brief Attach a delivery handler to a NEW_CONNECTION_ID frame so a packet
+     *        loss re-emits an equivalent frame.
+     *
+     * RFC 9000 §13.3 puts NEW_CONNECTION_ID in the "retransmit as-is" class,
+     * and §5.1.1 makes its eventual delivery load-bearing: a lost NCI that is
+     * never retransmitted can exhaust the peer's CID pool, after which the
+     * peer "will be unable to respond" when it needs to migrate. Receivers
+     * treat duplicates by sequence number as no-ops (§19.15), so re-emission
+     * is safe alongside the packet-level retransmission path.
+     *
+     * Follows the state-reset pattern documented on FrameDeliveryHandler
+     * (if_frame.h): on kLost a *fresh* equivalent frame is queued through the
+     * regular send loop, not the original frame object. The re-emitted copy is
+     * itself tracked (the handler chain re-arms per copy), bounded by the
+     * connection's loss recovery, and stops at kAcked.
+     */
+    void TrackNewConnectionIDFrameDelivery(const std::shared_ptr<NewConnectionIDFrame>& frame);
+
+    /**
+     * @brief Attach a delivery handler to a RETIRE_CONNECTION_ID frame so a
+     *        packet loss re-emits an equivalent frame.
+     *
+     * RFC 9000 §5.1.2: the issuer waits for the RETIRE_CONNECTION_ID
+     * acknowledgement before replacing the CID; a lost RETIRE that is never
+     * retransmitted wedges that accounting open. Like NCI, the frame is
+     * idempotent at the receiver, so re-emission is safe.
+     */
+    void TrackRetireConnectionIDFrameDelivery(const std::shared_ptr<RetireConnectionIDFrame>& frame);
 
     // ==================== Accessors ====================
 

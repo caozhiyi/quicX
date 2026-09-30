@@ -4,7 +4,7 @@
   <a href="https://opensource.org/licenses/BSD-3-Clause"><img src="https://img.shields.io/badge/license-BSD--3--Clause-orange.svg" alt="License"></a>
   <img src="https://img.shields.io/badge/version-1.0.0-blue.svg" alt="Version">
   <img src="https://img.shields.io/badge/status-stable--v1.0.0-brightgreen.svg" alt="Status">
-  <img src="https://img.shields.io/badge/interop-24%20scenarios%20%C3%97%2017%20peers%20%7C%2091.22%25-brightgreen.svg" alt="Interop">
+  <img src="https://img.shields.io/badge/interop-24%20scenarios%20%C3%97%2017%20peers%20%7C%2090.60%25-brightgreen.svg" alt="Interop">
   <img src="https://img.shields.io/badge/C%2B%2B-17-blue.svg" alt="C++17">
   <img src="https://img.shields.io/badge/RFC-9000%20%2F%209369%20%2F%209114-informational.svg" alt="RFC">
 </p>
@@ -14,7 +14,7 @@
 
 **QuicX** is a self-contained C++17 QUIC / HTTP/3 protocol stack: from UDP socket, TLS 1.3 (BoringSSL), QUIC stream, all the way to HTTP/3 routing, QPACK, and server push, all implemented in a single repository without depending on any external HTTP framework.
 
-It is built for **production services**: 1527 unit and integration tests, clean ASan / UBSan / TSan runs, and a 91.22% pass rate across a 24-scenario × 17-peer interop matrix — the complete packet lifecycle, from the network card to the HTTP/3 handler, holds up under scrutiny.
+**QuicX is a production-ready QUIC / HTTP/3 protocol stack**: 1523 unit and integration tests, clean ASan / UBSan / TSan runs, and a 90.60% pass rate across a 24-scenario × 17-peer interop matrix — robustness that holds up in production. The codebase is also deliberately readable, walking through every layer from the network card to the HTTP/3 handler (`docs/zh/LEARNING_PATH.md`), making debugging and extension straightforward. Since 1.0, the public C++ API follows semantic versioning.
 
 ---
 
@@ -70,8 +70,8 @@ Requests flow top-to-bottom along the solid lines: user's `IServer` handler → 
 | **Network** | Cross-platform UDP I/O (Linux / macOS / Windows); non-blocking event loop |
 | **Thread** | Single-threaded or multi-threaded; configurable worker count |
 | **Timer** | Hierarchical timer wheel (connection idle, PTO, application timers) |
-| **Logging & QLog** | Levelled logging; optional RFC 9001 QLog tracing (`-DQUICX_ENABLE_QLOG=ON`) |
-| **Metrics** | Built-in Metrics registry, covering UDP / QUIC / HTTP/3 / Congestion / Memory / TLS / Migration / Retry |
+| **Logging & QLog** | Levelled logging; optional RFC 9254 QLog tracing (`-DQUICX_ENABLE_QLOG=ON`) |
+| **Metrics** | Built-in `Metrics` registry, covering UDP / QUIC / HTTP/3 / Congestion / Memory / TLS / Migration / Retry |
 
 > For the list of implemented / partially implemented features, see [`support matrix`](./docs/en/reference/support_matrix.md).
 
@@ -79,36 +79,36 @@ Requests flow top-to-bottom along the solid lines: user's `IServer` handler → 
 
 ## Interop Testing
 
-QuicX is continuously tested against major QUIC implementations using [`quic-interop-runner`](https://github.com/quic-interop/quic-interop-runner) — **24 scenarios × 17 peers across both directions = 744 test combinations per round** (22 RFC-conformance scenarios plus goodput / crosstraffic measurements). Most recent run (2026-09-04):
+QuicX is continuously tested against major QUIC implementations using [`quic-interop-runner`](https://github.com/quic-interop/quic-interop-runner) — **24 scenarios × 17 peers across both directions = 744 test combinations per round** (22 RFC-conformance scenarios plus goodput / crosstraffic measurements). Most recent run:
 
 | Metric | Value |
 |---|---|
-| Pass | **592** |
-| Fail | **57** |
+| Pass | **588** |
+| Fail | **61** |
 | Unsupported | 95 |
-| **Pass Rate** (excluding unsupported) | **91.22%** |
-| Goodput / Crosstraffic | 30/30 / 28/30 |
+| **Pass Rate** (excluding unsupported) | **90.60%** |
+| Goodput / Crosstraffic | 30/30 / 27/30 |
 
 By peer implementation, sorted by overall effective pass rate (`N/A` = the peer does not ship that role; `chrome` is HTTP/3-client-only):
 
 | Peer | QuicX as Server | QuicX as Client | Pass Rate |
 |---|:--:|:--:|:--:|
-| **lsquic**   | 23/23 | 23/24 | 97.9% |
-| **aioquic**  | 22/23 | 21/22 | 95.6% |
-| **neqo**     | 21/24 | 24/24 | 93.8% |
-| **picoquic** | 22/24 | 23/24 | 93.8% |
-| **kwik**     | 22/23 | 20/22 | 93.3% |
-| **xquic**    | 20/22 | 20/21 | 93.0% |
-| **s2n-quic** | 19/20 | 20/22 | 92.9% |
-| **ngtcp2**   | 23/24 | 21/24 | 91.7% |
+| **aioquic**  | 22/23 | 22/22 | 97.8% |
+| **picoquic** | 22/24 | 24/24 | 95.8% |
+| **lsquic**   | 22/23 | 23/24 | 95.7% |
+| **ngtcp2**   | 24/24 | 21/24 | 93.8% |
+| **neqo**     | 20/24 | 24/24 | 91.7% |
 | **quinn**    | 20/24 | 22/22 | 91.3% |
+| **kwik**     | 22/23 | 19/22 | 91.1% |
 | **haproxy**  |  N/A  | 20/22 | 90.9% |
+| **quic-go**  | 18/22 | 21/21 | 90.7% |
 | **msquic**   | 18/22 | 21/21 | 90.7% |
+| **s2n-quic** | 18/20 | 20/22 | 90.5% |
 | **nginx**    |  N/A  | 19/21 | 90.5% |
-| **go-x-net** | 14/15 | 12/14 | 89.7% |
-| **quic-go**  | 19/22 | 19/21 | 88.4% |
-| **quiche**   | 17/20 | 19/21 | 87.8% |
-| **mvfst**    | 12/18 | 15/19 | 73.0% |
+| **quiche**   | 18/20 | 19/21 | 90.2% |
+| **go-x-net** | 13/15 | 12/14 | 86.2% |
+| **xquic**    | 17/22 | 19/21 | 83.7% |
+| **mvfst**    | 11/18 | 16/19 | 73.0% |
 | **chrome**   |  1/1  |  N/A  | 100%  |
 
 Covered scenarios: `handshake`, `transfer`, `longrtt`, `chacha20`, `multiplexing`, `retry`, `resumption`, `zerortt`, `http3`, `blackhole`, `keyupdate`, `ecn`, `amplificationlimit`, `handshakeloss`, `transferloss`, `handshakecorruption`, `transfercorruption`, `ipv6`, `v2`, `rebind-port`, `rebind-addr`, `connectionmigration`, `goodput`, `crosstraffic`.
@@ -126,7 +126,7 @@ All examples are located in `example/`, enable `-DBUILD_EXAMPLES=ON` to compile.
 - **Streaming & Large Files**: `streaming_api`, `file_transfer`, `bidirectional_comm`
 - **Connection Behavior**: `connection_lifecycle`, `concurrent_requests`, `server_push`
 - **Ops & Observability**: `metrics_monitoring`, `qlog_integration`, `performance_benchmark`, `load_testing`
-- **Protocol Upgrade & Tools**: `upgrade_h3`, `quicx_curl` (a curl-like command-line client)
+- **Protocol Upgrade & Tools**: `upgrade_h3`, `quicx_curl` (a curl-like command-line client, see its [README](example/quicx_curl/README.md) for full usage)
 
 ### Testing
 
@@ -138,7 +138,7 @@ All examples are located in `example/`, enable `-DBUILD_EXAMPLES=ON` to compile.
 python3 run_tests.py
 
 # Congestion control simulator
-./build/bin/cc_simulator
+./build/bin/cc_test
 
 # Fuzz testing (requires Clang + libFuzzer)
 cmake -B build_fuzz -DENABLE_FUZZING=ON -DCMAKE_CXX_COMPILER=clang++
@@ -149,7 +149,7 @@ cmake --build build_fuzz
 
 ## Observability
 
-**Metrics** — Built-in `MetricsRegistry`, covering UDP rx/tx and drop, QUIC connection / packet / stream, flow control blocking, HTTP/3 requests and status code buckets, congestion window and pacing, RTT and ACK delay, memory pool, TLS handshake and session resumption, connection migration, Retry and other dimensions. You can read `MetricsRegistry` directly at runtime, or expose an HTTP endpoint via `Http3ServerConfig::metrics_` / `Http3ClientConfig::metrics_`.
+**Metrics** — Built-in `Metrics` registry, covering UDP rx/tx and drop, QUIC connection / packet / stream, flow control blocking, HTTP/3 requests and status code buckets, congestion window and pacing, RTT and ACK delay, memory pool, TLS handshake and session resumption, connection migration, Retry and other dimensions. You can read `Metrics` directly at runtime, or expose an HTTP endpoint via `Http3ServerConfig::metrics_` / `Http3ClientConfig::metrics_`.
 
 **QLog** — Enable by compiling with `-DQUICX_ENABLE_QLOG=ON` and configuring the output path in `QuicConfig::qlog_config_`. The generated trace files are compatible with [qvis](https://qvis.quictools.info/) and Wireshark.
 

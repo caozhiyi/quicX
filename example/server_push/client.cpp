@@ -23,7 +23,7 @@ int main() {
     bool completed1 = false;
 
     // Set push promise handler BEFORE sending request
-    client->SetPushPromiseHandler([](std::unordered_map<std::string, std::string>& headers) -> bool {
+    client->SetPushPromiseHandler([](quicx::HttpFields& headers) -> bool {
         for (auto iter : headers) {
             std::cout << "get push promise. header:" << iter.first << " value:" << iter.second << std::endl;
         }
@@ -62,7 +62,7 @@ int main() {
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
     // change push promise handler, return false to cancel push
-    client->SetPushPromiseHandler([](std::unordered_map<std::string, std::string>& headers) -> bool {
+    client->SetPushPromiseHandler([](quicx::HttpFields& headers) -> bool {
         for (auto iter : headers) {
             std::cout << "get push promise. header:" << iter.first << " value:" << iter.second << std::endl;
         }

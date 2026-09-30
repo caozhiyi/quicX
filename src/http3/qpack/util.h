@@ -35,6 +35,18 @@ bool QpackDecodePrefixedInteger(
 bool QpackDecodePrefixedIntegerFrom(
     const std::shared_ptr<common::IBuffer> buf, uint8_t prefix_bits, uint8_t first_byte, uint64_t& value);
 
+// Shared tail of every string-literal decoder: reads |len| bytes and Huffman
+// decodes them if |huffman| is set.
+//
+// |len| is whatever the peer wrote. It is bounded by what is actually readable
+// BEFORE anything is allocated: a 5-byte header could otherwise request
+// gigabytes and turn a single HEADERS frame into std::bad_alloc.
+//
+// This is the single place string bodies are read. Every decoder must route
+// through it — see the note on QpackEncoder::DecodeString, which used to have
+// its own copy of this logic without the bound.
+bool QpackReadStringBody(const std::shared_ptr<common::IBuffer> buf, uint64_t len, bool huffman, std::string& out);
+
 // QPACK string literal with Huffman flag in MSB of length prefix (prefix 7 bits)
 bool QpackEncodeStringLiteral(const std::string& s, std::shared_ptr<common::IBuffer> buf, bool huffman = false);
 bool QpackDecodeStringLiteral(const std::shared_ptr<common::IBuffer> buf, std::string& out);

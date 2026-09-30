@@ -9,6 +9,7 @@
 #include <quicx/quic/if_quic_bidirection_stream.h>
 #include <unordered_map>
 
+#include "http3/config.h"
 #include "http3/frame/frame_decoder.h"
 #include "http3/frame/if_frame.h"
 #include "http3/qpack/blocked_registry.h"
@@ -51,7 +52,8 @@ public:
      *
      * RFC 9114 §4.2.2 lets a peer send a field section larger than the advertised
      * limit, so the value is only meaningful if the receiver actually enforces it.
-     * 0 means "no limit".
+     * 0 resets to the local fallback cap (kDefaultMaxFieldSectionSize) — use
+     * UINT64_MAX to genuinely disable the check.
      */
     void SetMaxFieldSectionSize(uint64_t size) { max_field_section_size_ = size; }
 
@@ -71,7 +73,7 @@ protected:
     // Send request body using provider (streaming mode)
     bool SendBodyWithProvider(const body_provider& provider);
     bool SendBodyDirectly(const std::shared_ptr<common::IBuffer>& body);
-    bool SendHeaders(const std::unordered_map<std::string, std::string>& headers);
+    bool SendHeaders(const HttpFields& headers);
     // handle the data sent callback
     void HandleSent(uint32_t length, uint32_t error);
 
@@ -109,8 +111,13 @@ private:
     bool EnforceFieldSectionSize();
 
 protected:
-    // SETTINGS_MAX_FIELD_SECTION_SIZE we advertised; 0 disables the check.
-    uint64_t max_field_section_size_{0};
+    // SETTINGS_MAX_FIELD_SECTION_SIZE we advertised, applied via
+    // SetMaxFieldSectionSize() when we advertised a value. Defaults to the
+    // local fallback cap kDefaultMaxFieldSectionSize so that un-advertised
+    // connections still bound inbound header blocks (code-review P2-3: a
+    // malicious peer could otherwise buffer an arbitrarily large field
+    // section). 0 disables the check.
+    uint64_t max_field_section_size_{kDefaultMaxFieldSectionSize};
 
     uint64_t header_block_key_{0};
     uint32_t next_section_number_{0};
@@ -120,7 +127,7 @@ protected:
     std::shared_ptr<QpackBlockedRegistry> blocked_registry_;
 
     // request or response
-    std::unordered_map<std::string, std::string> headers_;
+    HttpFields headers_;  // ordered field lines (RFC 9110 §5.3)
     std::shared_ptr<common::IBuffer> body_;
     bool is_last_data_;
     bool current_frame_is_last_;            // Track if current frame is last in OnData batch
@@ -168,4 +175,5 @@ protected:
 }  // namespace http3
 }  // namespace quicx
 
-#endif  // HTTP3_STREAM_REQ_RESP_BASE_STREAM
+#endif  // HTTP3_STREAM_REQ_RESP_BASE_STREAM
+

@@ -31,6 +31,11 @@ This example demonstrates how to build a complete RESTful API service using the 
 | PUT | `/users/:id` | Update existing user |
 | DELETE | `/users/:id` | Delete user |
 | GET | `/stats` | Get server statistics |
+| HEAD | `/users` | Same metadata as GET, body omitted |
+| GET | `/redirect` | 302 redirect to `/users` (redirect-following tests) |
+| GET | `/redirect-loop` | 302 redirect to self (`--max-redirs` tests) |
+| GET | `/set-cookie` | Issue `Set-Cookie` headers (cookie jar tests) |
+| GET | `/echo-headers` | Echo request headers (`-H`/`-A`/`-u`/`-e` tests) |
 
 ## Data Model
 
@@ -83,7 +88,7 @@ Output:
 ==================================
 RESTful API Server Starting...
 ==================================
-Listen on: https://0.0.0.0:8883
+Listen on: https://0.0.0.0:7007
 
 Available endpoints:
   GET    /users       - Get all users
@@ -116,30 +121,30 @@ The client will run through a series of tests:
 
 ### 3. Manual Testing with curl
 
-You can also test the API manually using curl (note: you may need to use `--http3` flag if your curl supports it):
+You can also test the API manually using curl (note: you may need to use `--http3` flag if your curl supports it), or with the bundled `quicx_curl` tool:
 
 ```bash
 # Get all users
-curl -k https://127.0.0.1:8883/users
+quicx_curl -k https://127.0.0.1:7007/users
 
 # Get single user
-curl -k https://127.0.0.1:8883/users/1
+quicx_curl -k https://127.0.0.1:7007/users/1
 
 # Create new user
-curl -k -X POST https://127.0.0.1:8883/users \
+quicx_curl -k -X POST https://127.0.0.1:7007/users \
   -H "Content-Type: application/json" \
   -d '{"name":"Eve","email":"eve@example.com","age":27}'
 
 # Update user
-curl -k -X PUT https://127.0.0.1:8883/users/1 \
+quicx_curl -k -X PUT https://127.0.0.1:7007/users/1 \
   -H "Content-Type: application/json" \
   -d '{"name":"Alice Smith","email":"alice.smith@example.com","age":26}'
 
 # Delete user
-curl -k -X DELETE https://127.0.0.1:8883/users/2
+quicx_curl -k -X DELETE https://127.0.0.1:7007/users/2
 
 # Get statistics
-curl -k https://127.0.0.1:8883/stats
+quicx_curl -k https://127.0.0.1:7007/stats
 ```
 
 ## Code Highlights
@@ -149,15 +154,15 @@ curl -k https://127.0.0.1:8883/stats
 ```cpp
 // GET /users - Get all users
 server->AddHandler(
-    quicx::http3::HttpMethod::kGet,
+    quicx::HttpMethod::kGet,
     "/users",
-    [db](std::shared_ptr<quicx::http3::IRequest> req, 
-         std::shared_ptr<quicx::http3::IResponse> resp) {
+    [db](std::shared_ptr<quicx::IRequest> req, 
+         std::shared_ptr<quicx::IResponse> resp) {
         auto users = db->GetAllUsers();
         std::string json = UsersToJson(users);
         
         resp->AddHeader("Content-Type", "application/json");
-        resp->SetBody(json);
+        resp->AppendBody(json);
         resp->SetStatusCode(200);
     }
 );
@@ -168,10 +173,10 @@ server->AddHandler(
 ```cpp
 // Logging middleware - runs before all handlers
 server->AddMiddleware(
-    quicx::http3::HttpMethod::kAny,
-    quicx::http3::MiddlewarePosition::kBefore,
-    [](std::shared_ptr<quicx::http3::IRequest> req, 
-       std::shared_ptr<quicx::http3::IResponse> resp) {
+    quicx::HttpMethod::kAny,
+    quicx::MiddlewarePosition::kBefore,
+    [](std::shared_ptr<quicx::IRequest> req, 
+       std::shared_ptr<quicx::IResponse> resp) {
         std::cout << "[" << req->GetMethodString() << "] " 
                   << req->GetPath() << std::endl;
     }
@@ -181,18 +186,18 @@ server->AddMiddleware(
 ### Client: Making Requests
 
 ```cpp
-auto request = quicx::http3::IRequest::Create();
+auto request = quicx::IRequest::Create();
 request->AddHeader("Content-Type", "application/json");
-request->SetBody("{\"name\":\"David\",\"email\":\"david@example.com\",\"age\":28}");
+request->AppendBody("{\"name\":\"David\",\"email\":\"david@example.com\",\"age\":28}");
 
 client->DoRequest(
-    "https://127.0.0.1:8883/users",
-    quicx::http3::HttpMethod::kPost,
+    "https://127.0.0.1:7007/users",
+    quicx::HttpMethod::kPost,
     request,
-    [](std::shared_ptr<quicx::http3::IResponse> response, uint32_t error) {
+    [](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
         if (error == 0) {
             std::cout << "Status: " << response->GetStatusCode() << std::endl;
-            std::cout << "Response: " << response->GetBody() << std::endl;
+            std::cout << "Response: " << response->GetBodyAsString() << std::endl;
         }
     }
 );
@@ -242,7 +247,7 @@ This is a demonstration example. For production use, consider:
 ## Troubleshooting
 
 ### Server won't start
-- Check if port 8883 is already in use: `lsof -i :8883`
+- Check if port 7007 is already in use: `lsof -i :7007`
 - Ensure you have proper permissions
 
 ### Client connection errors
@@ -259,7 +264,7 @@ This is a demonstration example. For production use, consider:
 After understanding this example, explore:
 - **File Transfer** - Upload/download large files
 - **Streaming** - Real-time data streaming
-- **WebSocket over HTTP/3** - Bidirectional communication
+- **Bidirectional Communication** - Free-form bidirectional streams
 - **Load Balancing** - Multiple server instances
 
 ## License

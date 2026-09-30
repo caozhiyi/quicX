@@ -1,6 +1,6 @@
 # Connection 解剖：骨架 / 协调器 / 控制器
 
-`src/quic/connection/` 是仓库最大的子树（21 个 cpp + 一个 `controler/` 子目录）。第一次打开它的人会被名字相近的类淹没——`ConnectionIDManager` / `ConnectionIDCoordinator` 各管什么？`SendManager` / `SendControl` / `SendFlowController` 三个都姓 send，谁调用谁？
+`src/quic/connection/` 是仓库最大的子树（28 个 cpp + 一个 `controller/` 子目录）。第一次打开它的人会被名字相近的类淹没——`ConnectionIDManager` / `ConnectionIDCoordinator` 各管什么？`SendManager` / `SendControl` / `SendFlowController` 三个都姓 send，谁调用谁？
 
 本文档画一张地图。读完后你应当能够：
 
@@ -44,7 +44,7 @@ flowchart TB
         kup[KeyUpdateTrigger]
     end
 
-    subgraph Ctrl["控制器层 (controler/)"]
+    subgraph Ctrl["控制器层 (controller/)"]
         send_mgr[SendManager]
         send_ctl[SendControl]
         send_fc[SendFlowController]
@@ -114,7 +114,7 @@ flowchart TB
 ### 2.1 类层次
 
 ```
-IConnection (公开接口，src/quic/include/quicx/quic/if_connection.h)
+IConnection (内部接口，src/quic/connection/if_connection.h)
    ▲
    │
 BaseConnection (connection_base.{h,cpp})
@@ -123,7 +123,7 @@ BaseConnection (connection_base.{h,cpp})
    └──── ClientConnection (connection_client.{h,cpp})
 ```
 
-`BaseConnection` 持有所有协调器与控制器作为成员变量（见 [`connection_base.h`](../../src/quic/connection/connection_base.h) 第 348~414 行的 protected 段）：
+`BaseConnection` 持有所有协调器与控制器作为成员变量（见 [`connection_base.h`](../../../src/quic/connection/connection_base.h) 第 600 行起的 protected 成员段）：
 
 | 成员 | 类型 | 说明 |
 | :--- | :--- | :--- |
@@ -152,7 +152,7 @@ BaseConnection (connection_base.{h,cpp})
 
 ### 2.2 ConnectionStateMachine
 
-定义在 [`connection_state_machine.h`](../../src/quic/connection/connection_state_machine.h)，五个状态：
+定义在 [`connection_state_machine.h`](../../../src/quic/connection/connection_state_machine.h)，五个状态：
 
 | 状态 | 含义 |
 | :--- | :--- |
@@ -185,7 +185,7 @@ BaseConnection (connection_base.{h,cpp})
 
 ### 3.1 FrameProcessor —— 收到的 frame 派发到谁
 
-[`connection_frame_processor.{h,cpp}`](../../src/quic/connection/connection_frame_processor.cpp)
+[`connection_frame_processor.{h,cpp}`](../../../src/quic/connection/connection_frame_processor.cpp)
 
 `BaseConnection::OnPackets` 解密成功后调 `OnFrames(frames, crypto_level)`，它只是 `FrameProcessor::OnFrames` 的转发。FrameProcessor 拿到的是已解密的 `vector<IFrame>`，按 `FrameType` switch 派发。完整映射表见 `packet_lifecycle.md` §6.3。
 
@@ -193,7 +193,7 @@ BaseConnection (connection_base.{h,cpp})
 
 ### 3.2 StreamManager —— 流的全生命周期
 
-[`connection_stream_manager.{h,cpp}`](../../src/quic/connection/connection_stream_manager.cpp)
+[`connection_stream_manager.{h,cpp}`](../../../src/quic/connection/connection_stream_manager.cpp)
 
 | 职责 | 关键方法 |
 | :--- | :--- |
@@ -207,9 +207,9 @@ BaseConnection (connection_base.{h,cpp})
 
 ### 3.3 ConnectionIDCoordinator —— 协调本端 / 对端两套 CID 管理
 
-[`connection_id_coordinator.{h,cpp}`](../../src/quic/connection/connection_id_coordinator.cpp)
+[`connection_id_coordinator.{h,cpp}`](../../../src/quic/connection/connection_id_coordinator.cpp)
 
-它**协调** [`ConnectionIDManager`](../../src/quic/connection/connection_id_manager.cpp) 两实例：本端 CID 池（local，自己生成的、登记给对端的）+ 对端 CID 池（remote，对端生成的、自己用来当 DCID 的）。
+它**协调** [`ConnectionIDManager`](../../../src/quic/connection/connection_id_manager.cpp) 两实例：本端 CID 池（local，自己生成的、登记给对端的）+ 对端 CID 池（remote，对端生成的、自己用来当 DCID 的）。
 
 | 协调器（Coordinator） | 管理器（Manager） |
 | :--- | :--- |
@@ -221,7 +221,7 @@ BaseConnection (connection_base.{h,cpp})
 
 ### 3.4 PathManager —— 路径验证与连接迁移（RFC 9000 §9）
 
-[`connection_path_manager.{h,cpp}`](../../src/quic/connection/connection_path_manager.cpp)
+[`connection_path_manager.{h,cpp}`](../../../src/quic/connection/connection_path_manager.cpp)
 
 构造时通过 `PathManager::Deps` struct 注入 6 路依赖（之前是 8 参数构造，已重构成具名 struct——参考头文件 §`Deps` 注释里的 lifetime contract）。
 
@@ -234,11 +234,11 @@ BaseConnection (connection_base.{h,cpp})
 | 检测到对端地址变了（NAT rebinding） | `OnObservedPeerAddress` | 候选地址入队，发 PATH_CHALLENGE |
 | 收到 `PATH_RESPONSE` 验证成功 | `OnPathResponse` | 切换主路径、退出 anti-amp、回调通知应用 |
 
-PathManager 自己**不做** anti-amp 计费（那是 [`anti_amplification_controller`](../../src/quic/connection/controler/anti_amplification_controller.cpp) 控制器的事），但它**决定何时**进入/退出 anti-amp 状态。
+PathManager 自己**不做** anti-amp 计费（那是 [`anti_amplification_controller`](../../../src/quic/connection/controller/anti_amplification_controller.cpp) 控制器的事），但它**决定何时**进入/退出 anti-amp 状态。
 
 ### 3.5 TimerCoordinator —— 连接级定时器集中管理
 
-[`connection_timer_coordinator.{h,cpp}`](../../src/quic/connection/connection_timer_coordinator.cpp)
+[`connection_timer_coordinator.{h,cpp}`](../../../src/quic/connection/connection_timer_coordinator.cpp)
 
 | 定时器 | 职责 |
 | :--- | :--- |
@@ -253,7 +253,7 @@ PathManager 自己**不做** anti-amp 计费（那是 [`anti_amplification_contr
 
 ### 3.6 ConnectionCrypto —— TLS 与多 epoch keys
 
-[`connection_crypto.{h,cpp}`](../../src/quic/connection/connection_crypto.cpp)
+[`connection_crypto.{h,cpp}`](../../../src/quic/connection/connection_crypto.cpp)
 
 | 职责 | 备注 |
 | :--- | :--- |
@@ -268,7 +268,7 @@ PathManager 自己**不做** anti-amp 计费（那是 [`anti_amplification_contr
 
 ### 3.7 EncryptionLevelScheduler —— 下个包用哪一级
 
-[`encryption_level_scheduler.{h,cpp}`](../../src/quic/connection/encryption_level_scheduler.cpp)
+[`encryption_level_scheduler.{h,cpp}`](../../../src/quic/connection/encryption_level_scheduler.cpp)
 
 历史包袱：原本"用什么 level 发"分散在 `BaseConnection::GetCurEncryptionLevel()` 和 `GenerateSendData()` 两处，规则混乱（cross-level ACK 优先级、0-RTT 必须先发 Initial、PATH_CHALLENGE 强制 Application 级…）。
 
@@ -283,13 +283,13 @@ scheduler 把决策权集中：`GetNextSendContext()` 返回一个 `SendContext{
 
 ### 3.8 PacketBuilder —— 统一组装包
 
-[`packet_builder.{h,cpp}`](../../src/quic/connection/packet_builder.cpp)
+[`packet_builder.{h,cpp}`](../../../src/quic/connection/packet_builder.cpp)
 
 之前 `SendManager::MakePacket` 与 `BaseConnection::SendImmediateAckAtLevel` 各有一份组装逻辑，重复且偶尔不一致（典型 bug：Initial 包的 1200 字节 padding 一处加了一处忘了）。PacketBuilder 用 `BuildContext` struct 把所有输入显式列出（encryption_level / cryptographer / frame_visitor / 两个 CID manager / token / padding flag / quic_version），单一出口，彻底消除重复。
 
 ### 3.9 ConnectionCloser —— 优雅关闭与立即关闭
 
-[`connection_closer.{h,cpp}`](../../src/quic/connection/connection_closer.cpp)
+[`connection_closer.{h,cpp}`](../../../src/quic/connection/connection_closer.cpp)
 
 两种关闭路径：
 
@@ -302,7 +302,7 @@ scheduler 把决策权集中：`GetNextSendContext()` 返回一个 `SendContext{
 
 ### 3.10 KeyUpdateTrigger —— 主动 Key Update 决策
 
-[`key_update_trigger.{h,cpp}`](../../src/quic/connection/key_update_trigger.cpp)
+[`key_update_trigger.{h,cpp}`](../../../src/quic/connection/key_update_trigger.cpp)
 
 只是一个"什么时候该触发 key update"的判断：基于已发字节数 / 已发包号 / 时间。判断为 true 时由 `BaseConnection::TriggerKeyUpdate` 调 `connection_crypto_.TriggerKeyUpdate()` 实际翻 phase。
 
@@ -312,29 +312,29 @@ scheduler 把决策权集中：`GetNextSendContext()` 返回一个 `SendContext{
 
 | 组件 | 职责 |
 | :--- | :--- |
-| [`retry_token_manager`](../../src/quic/connection/retry_token_manager.cpp) | server 侧：用 HMAC-SHA256 生成 / 验证 Retry token（RFC 9000 §8.1.4）。token 绑定 client IP + original DCID + 时间戳。线程安全（多 worker 共享同一 secret，定期轮换）。 |
-| [`session_cache`](../../src/quic/connection/session_cache.cpp) | client 侧：缓存 NEW_TOKEN（用于下次连接的 0-RTT）+ remote transport params 快照。RFC 9000 §7.4.1 / §8.1.3。 |
+| [`retry_token_manager`](../../../src/quic/connection/retry_token_manager.cpp) | server 侧：用 HMAC-SHA256 生成 / 验证 Retry token（RFC 9000 §8.1.4）。token 绑定 client IP + original DCID + 时间戳。线程安全（多 worker 共享同一 secret，定期轮换）。 |
+| [`session_cache`](../../../src/quic/connection/session_cache.cpp) | client 侧：缓存 NEW_TOKEN（用于下次连接的 0-RTT）+ remote transport params 快照。RFC 9000 §7.4.1 / §8.1.3。 |
 
 这两个是面向**会话外**的（一个跨多次连接的 token，一个跨多次连接的会话票据），所以没出现在 §1 总览图的中央——它们是**协调器旁边的辅助**。
 
 ---
 
-## 4. 控制器层：controler/ 子目录
+## 4. 控制器层：controller/ 子目录
 
-[`src/quic/connection/controler/`](../../src/quic/connection/controler) 共 8 个文件，全部是"按规则记账或计算"的单一职责类：
+[`src/quic/connection/controller/`](../../../src/quic/connection/controller) 共 8 组类（16 个文件，.h + .cpp 成对），全部是"按规则记账或计算"的单一职责类：
 
 | 控制器 | 职责 | RFC |
 | :--- | :--- | :--- |
-| [`SendControl`](../../src/quic/connection/controler/send_control.cpp) | 发送侧 packet number 跟踪、PTO/loss timer、丢包检测、ACK 处理回弹给 RTT 与 cwnd | RFC 9002 §6 |
-| [`RecvControl`](../../src/quic/connection/controler/recv_control.cpp) | 接收侧 packet number 集合、ACK 聚合阈值、max_ack_delay timer、生成 ACK frame | RFC 9000 §13.2 |
-| [`SendFlowController`](../../src/quic/connection/controler/send_flow_controller.cpp) | 连接级发送窗口（被对端 MAX_DATA 授信），发字节计数、阻塞时发 DATA_BLOCKED | RFC 9000 §4 |
-| [`RecvFlowController`](../../src/quic/connection/controler/recv_flow_controller.cpp) | 连接级接收窗口（自己授信给对端），消费字节计数、低水位时发 MAX_DATA | RFC 9000 §4 |
-| [`RttCalculator`](../../src/quic/connection/controler/rtt_calculator.cpp) | latest/min/smoothed RTT、RTT VAR、PTO 计算（含连续 PTO backoff，max 2^6 倍） | RFC 9002 §5/§6.2 |
-| [`AntiAmplificationController`](../../src/quic/connection/controler/anti_amplification_controller.cpp) | server 对未验证地址的 3×bytes 限额计费 | RFC 9000 §8 |
-| [`PmtuProber`](../../src/quic/connection/controler/pmtu_prober.cpp) | PMTU 探测：选目标尺寸、记探测包号、看 ACK 覆盖判结果 | RFC 8899 |
-| [`SendManager`](../../src/quic/connection/controler/send_manager.cpp) | **协调器**：聚合上面 4 个控制器（SendControl + SendFlowController + Anti + Pmtu），加上 PacketBuilder，对 BaseConnection 暴露统一的 `GetSendOperation` / `MakePacket` / `ToSendFrame` | —— |
+| [`SendControl`](../../../src/quic/connection/controller/send_control.cpp) | 发送侧 packet number 跟踪、PTO/loss timer、丢包检测、ACK 处理回弹给 RTT 与 cwnd | RFC 9002 §6 |
+| [`RecvControl`](../../../src/quic/connection/controller/recv_control.cpp) | 接收侧 packet number 集合、ACK 聚合阈值、max_ack_delay timer、生成 ACK frame | RFC 9000 §13.2 |
+| [`SendFlowController`](../../../src/quic/connection/controller/send_flow_controller.cpp) | 连接级发送窗口（被对端 MAX_DATA 授信），发字节计数、阻塞时发 DATA_BLOCKED | RFC 9000 §4 |
+| [`RecvFlowController`](../../../src/quic/connection/controller/recv_flow_controller.cpp) | 连接级接收窗口（自己授信给对端），消费字节计数、低水位时发 MAX_DATA | RFC 9000 §4 |
+| [`RttCalculator`](../../../src/quic/connection/controller/rtt_calculator.cpp) | latest/min/smoothed RTT、RTT VAR、PTO 计算（含连续 PTO backoff，max 2^6 倍） | RFC 9002 §5/§6.2 |
+| [`AntiAmplificationController`](../../../src/quic/connection/controller/anti_amplification_controller.cpp) | server 对未验证地址的 3×bytes 限额计费 | RFC 9000 §8 |
+| [`PmtuProber`](../../../src/quic/connection/controller/pmtu_prober.cpp) | PMTU 探测：选目标尺寸、记探测包号、看 ACK 覆盖判结果 | RFC 8899 |
+| [`SendManager`](../../../src/quic/connection/controller/send_manager.cpp) | **协调器**：聚合上面 4 个控制器（SendControl + SendFlowController + Anti + Pmtu），加上 PacketBuilder，对 BaseConnection 暴露统一的 `GetSendOperation` / `MakePacket` / `ToSendFrame` | —— |
 
-注意：`SendManager` 严格说**是协调器**，物理上放在 `controler/` 子目录里只是历史原因（早期所有 send 相关都在这）。它的职责是组装下一帧 / 下一包要发什么，调用 4 个控制器拿到约束（cwnd / fc 窗 / amp 限额 / pmtu 限额），最后用 PacketBuilder 出包。**每条 send-side 路径都先经过 SendManager**。
+注意：`SendManager` 严格说**是协调器**，物理上放在 `controller/` 子目录里只是历史原因（早期所有 send 相关都在这）。它的职责是组装下一帧 / 下一包要发什么，调用 4 个控制器拿到约束（cwnd / fc 窗 / amp 限额 / pmtu 限额），最后用 PacketBuilder 出包。**每条 send-side 路径都先经过 SendManager**。
 
 ### 4.1 SendControl 与 RttCalculator 的关系
 
@@ -363,7 +363,7 @@ ACK 路径：`FrameProcessor` 收到 ACK frame → `SendManager::OnPacketAck` �
 | 限额来源 | 对端的 transport param `initial_max_data` + 后续的 MAX_DATA 帧 | 自己根据 RTT / 丢包状况估算 |
 | 单位 | 字节 | 字节（但用 cwnd 这个变量） |
 | 阻塞时发 | DATA_BLOCKED 帧 | 不发任何信号，自己等 |
-| 实现位置 | `controler/send_flow_controller.{h,cpp}` | `src/quic/congestion_control/`（Reno / Cubic / BBR） |
+| 实现位置 | `controller/send_flow_controller.{h,cpp}` | `src/quic/congestion_control/`（Reno / Cubic / BBR） |
 
 `SendManager` 同时受这两个限制——`GetAvailableWindow()` 返回的是两者最小值。
 

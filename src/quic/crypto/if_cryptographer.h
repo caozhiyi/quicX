@@ -58,13 +58,25 @@ public:
     virtual Result EncryptPacket(uint64_t pn, common::BufferSpan& associated_data, common::BufferSpan& plaintext,
         std::shared_ptr<common::IBuffer> out_ciphertext) = 0;
 
-    virtual Result DecryptHeader(common::BufferSpan& ciphertext, common::BufferSpan& sample, uint8_t pn_offset,
+    // NOTE: pn_offset is measured from the header start and can exceed 255 for
+    // token-bearing Initial packets (e.g. 256-byte stateless retry token +
+    // CIDs + varints). It MUST NOT be narrowed to uint8_t — the truncation
+    // previously corrupted the token bytes with the PN mask and left the PN
+    // itself unprotected, making every post-Retry Initial undecryptable.
+    virtual Result DecryptHeader(common::BufferSpan& ciphertext, common::BufferSpan& sample, uint32_t pn_offset,
         uint8_t& out_packet_num_len, bool is_short) = 0;
 
     // RFC 9001 §6: Check if previous read key is available (for Key Update fallback)
     virtual bool HasPrevReadKey() const = 0;
 
-    virtual Result EncryptHeader(common::BufferSpan& plaintext, common::BufferSpan& sample, uint8_t pn_offset,
+    // Whether the READ secret (incl. header-protection secret) has been
+    // installed. Distinguishes "packet arrived before our TLS stack finished
+    // (early 1-RTT packet — buffer and replay after key install)" from
+    // "packet is genuinely corrupt / wrong key phase (drop)". Default true so
+    // implementations without staged key installation are unaffected.
+    virtual bool HasReadKey() const { return true; }
+
+    virtual Result EncryptHeader(common::BufferSpan& plaintext, common::BufferSpan& sample, uint32_t pn_offset,
         size_t pkt_number_len, bool is_short) = 0;
 
     virtual size_t GetTagLength() = 0;

@@ -75,9 +75,9 @@ cmake --build build --parallel $(nproc)
 | `ENABLE_BENCHMARKS` | `ON` | 是否编译性能基准测试。 |
 | `ENABLE_CC_SIMULATOR` | `ON` | 是否编译内置的**拥塞控制模拟器**，对于研究 BBR/CUBIC 算法非常有帮助。 |
 | `ENABLE_INTEGRATION` | `ON` | 是否编译本地集成测试对跑工具。 |
-| `QUICX_ENABLE_QLOG` | `ON` | **关键指标：** 开启后，允许记录符合 RFC 9001 规范的 `qlog`。这些日志可以直接导入 `qvis` 等可视化工具分析由于拥塞、丢包导致的问题。<br/>*注：开启会在一定程度上影响极限性能。* |
+| `QUICX_ENABLE_QLOG` | `ON` | **关键指标：** 开启后，允许记录符合 RFC 9254 规范的 `qlog`。这些日志可以直接导入 `qvis` 等可视化工具分析由于拥塞、丢包导致的问题。<br/>*注：开启会在一定程度上影响极限性能。* |
 
-*(如果是进行安全性质疑码排查，还可以开启 `-DENABLE_FUZZING=ON` 结合 `Clang` 编译器进行 libFuzzer 测试。)*
+*(如果是进行模糊测试 / 安全排查，还可以开启 `-DENABLE_FUZZING=ON` 结合 `Clang` 编译器进行 libFuzzer 测试。)*
 
 ### 2. 使用 Bazel 构建
 

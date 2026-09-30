@@ -77,6 +77,18 @@ public:
      */
     void RotateSecret();
 
+    /**
+     * @brief Whether this manager currently holds a cryptographically usable
+     *        secret and can therefore issue/accept Retry tokens.
+     *
+     * False means the CSPRNG failed. In that state the manager refuses to do
+     * either: HMAC-SHA256 over an empty key is trivially forgeable, so issuing
+     * tokens would hand an attacker a way to skip address validation entirely
+     * while looking like the Retry path is working. Retry is optional in QUIC,
+     * so degrading to "no Retry" is always safer than degrading to "no key".
+     */
+    bool HasUsableSecret();
+
 private:
     /**
      * @brief Compute HMAC-SHA256 over data using current secret.
@@ -85,8 +97,12 @@ private:
 
     /**
      * @brief Generate a new random secret key.
+     *
+     * @return true on success. On failure |current_secret_| is left UNTOUCHED
+     *         (never cleared): silently falling back to an empty key would make
+     *         every token forgeable.
      */
-    void GenerateRandomSecret();
+    bool GenerateRandomSecret();
 
     /**
      * @brief Build the HMAC payload (client_ip || port_be || timestamp_be || cid_len || cid).
@@ -101,6 +117,9 @@ private:
     std::string current_secret_;
     std::string previous_secret_;  // For validation during rotation window
     std::mutex mutex_;
+    // Guarded by mutex_. Mirrors "current_secret_ came from a real CSPRNG";
+    // see HasUsableSecret().
+    bool secret_ready_ = false;
 
     // Monotonic clock for rotation cadence: not affected by wall-clock jumps
     // (NTP step, manual settime, suspend/resume, etc). Initialized at ctor.

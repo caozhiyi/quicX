@@ -28,7 +28,7 @@ public:
         error_code_ = error_code;
         last_error_unique_id_ = unique_id;
     }
-    bool PushPromiseHandler(std::unordered_map<std::string, std::string>& headers) {
+    bool PushPromiseHandler(quicx::HttpFields& headers) {
         // TODO: implement this
         return true;
     }

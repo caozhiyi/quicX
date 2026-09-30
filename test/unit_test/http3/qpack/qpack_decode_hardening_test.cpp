@@ -13,8 +13,18 @@
 //     uint32_t-truncated read count against an int32_t-truncated length, so
 //     len = 0x100000000 read 0 bytes, compared 0 == 0, and reported success
 //     holding a 4 GiB string.
+//
+// The same "resize first, read second" pattern also existed in two more places
+// that did NOT go through the hardened helper — QpackEncoder::DecodeString()
+// (every literal header field's *value*) and QpackEncoder::DecodeLiteralNoName-
+// Ref() (its *name*). All three now funnel through QpackReadStringBody(), so
+// the bound is enforced in exactly one place; the tests at the bottom of this
+// file cover the encoder entry point as well.
 
+#include <algorithm>
 #include <memory>
+#include <string>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -22,6 +32,8 @@
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
 
+#include "http3/qpack/qpack_constants.h"
+#include "http3/qpack/qpack_encoder.h"
 #include "http3/qpack/util.h"
 
 namespace quicx {
@@ -192,6 +204,191 @@ TEST(QpackDecodeHardeningTest, RejectsEmptyBuffer) {
     std::string out;
     EXPECT_FALSE(QpackDecodeStringLiteral(buf, out));
 }
+
+// ===== QpackReadStringBody: the single bounded implementation =====
+//
+// Every string-literal decoder now routes through this helper, so it is the
+// one place the "bound the length before allocating" contract has to hold.
+
+TEST(QpackDecodeHardeningTest, ReadStringBodyRejectsLengthBeyondBuffer) {
+    auto buf = MakeBuffer();
+    ASSERT_TRUE(QpackEncodePrefixedInteger(buf, 7, 0x00, 0x100000000ULL));
+    const uint8_t body[] = {'a'};
+    buf->Write(body, 1);
+
+    // The helper is the tail of a decoder: the length varint has already been
+    // consumed by the caller.
+    uint8_t first = 0;
+    uint64_t len = 0;
+    ASSERT_TRUE(QpackDecodePrefixedInteger(buf, 7, first, len));
+
+    std::string out;
+    EXPECT_FALSE(QpackReadStringBody(buf, len, /*huffman=*/false, out));
+    EXPECT_TRUE(out.empty());
+}
+
+TEST(QpackDecodeHardeningTest, ReadStringBodyRejectsNullBuffer) {
+    std::string out;
+    EXPECT_FALSE(QpackReadStringBody(nullptr, 16, /*huffman=*/false, out));
+}
+
+TEST(QpackDecodeHardeningTest, ReadStringBodyAcceptsExactFit) {
+    auto buf = MakeBuffer();
+    ASSERT_TRUE(QpackEncodePrefixedInteger(buf, 7, 0x00, 5));
+    const uint8_t body[] = {'h', 'e', 'l', 'l', 'o'};
+    buf->Write(body, 5);
+
+    uint8_t first = 0;
+    uint64_t len = 0;
+    ASSERT_TRUE(QpackDecodePrefixedInteger(buf, 7, first, len));
+    ASSERT_EQ(len, 5u);
+
+    std::string out;
+    ASSERT_TRUE(QpackReadStringBody(buf, len, /*huffman=*/false, out));
+    EXPECT_EQ(out, "hello");
+}
+
+// ===== QpackEncoder::Decode: the end-to-end header-block path =====
+//
+// Before the fix, a single HEADERS frame claiming a 4 GiB literal reached
+// std::string::resize() and threw std::bad_alloc out of the HTTP/3 stream
+// callback, terminating the process. It must now simply fail to decode.
+
+TEST(QpackDecodeHardeningTest, EncoderRejectsOversizedLiteralValue) {
+    QpackEncoder encoder;
+
+    auto buf = MakeBuffer(256);
+    // Header block prefix: Required Insert Count = 0, Delta Base = 0.
+    const uint8_t prefix[] = {0x00, 0x00};
+    ASSERT_EQ(buf->Write(prefix, 2), 2u);
+    // Literal Field Line With Literal Name (001 N H NameLen): N=0, H=0, name len 0.
+    const uint8_t literal_no_name_ref = QpackHeaderPattern::kLiteralNoNameRef;  // 001x xxxx
+    ASSERT_EQ(buf->Write(&literal_no_name_ref, 1), 1u);
+    // Value length: claims 4 GiB, with nothing behind it.
+    ASSERT_TRUE(QpackEncodePrefixedInteger(buf, QpackString::kLengthPrefix, 0x00, 0x100000000ULL));
+
+    std::vector<std::pair<std::string, std::string>> headers;
+    EXPECT_FALSE(encoder.Decode(buf, headers));
+    EXPECT_TRUE(headers.empty());
+}
+
+TEST(QpackDecodeHardeningTest, EncoderRejectsOversizedLiteralName) {
+    QpackEncoder encoder;
+
+    auto buf = MakeBuffer(256);
+    const uint8_t prefix[] = {0x00, 0x00};
+    ASSERT_EQ(buf->Write(prefix, 2), 2u);
+    // Literal Field Line With Literal Name, 3-bit name-length prefix set to all
+    // ones so a continuation-encoded (huge) name length follows.
+    const uint8_t name_len_continuation = QpackHeaderPattern::kLiteralNoNameRef | 0x07;
+    ASSERT_EQ(buf->Write(&name_len_continuation, 1), 1u);
+    // Continuation bytes encoding a 4 GiB name with no payload behind them.
+    const uint8_t huge[] = {0xFF, 0xFF, 0xFF, 0xFF, 0x0F};
+    ASSERT_EQ(buf->Write(huge, sizeof(huge)), sizeof(huge));
+
+    std::vector<std::pair<std::string, std::string>> headers;
+    EXPECT_FALSE(encoder.Decode(buf, headers));
+    EXPECT_TRUE(headers.empty());
+}
+
+// A well-formed block must still decode — the bound must not reject valid input.
+TEST(QpackDecodeHardeningTest, EncoderAcceptsWellFormedLiteral) {
+    QpackEncoder encoder;
+
+    auto buf = MakeBuffer(256);
+    const uint8_t prefix[] = {0x00, 0x00};
+    ASSERT_EQ(buf->Write(prefix, 2), 2u);
+    // Name length 4 (fits the 3-bit prefix? no: 4 > 7? yes 4 <= 7 so it fits).
+    const uint8_t name_len = QpackHeaderPattern::kLiteralNoNameRef | 0x04;
+    ASSERT_EQ(buf->Write(&name_len, 1), 1u);
+    const uint8_t name[] = {'n', 'a', 'm', 'e'};
+    ASSERT_EQ(buf->Write(name, sizeof(name)), sizeof(name));
+    ASSERT_TRUE(QpackEncodePrefixedInteger(buf, QpackString::kLengthPrefix, 0x00, 5));
+    const uint8_t value[] = {'v', 'a', 'l', 'u', 'e'};
+    ASSERT_EQ(buf->Write(value, sizeof(value)), sizeof(value));
+
+    std::vector<std::pair<std::string, std::string>> headers;
+    ASSERT_TRUE(encoder.Decode(buf, headers));
+    ASSERT_EQ(headers.size(), 1u);
+    EXPECT_EQ(headers[0].first, "name");
+    EXPECT_EQ(headers[0].second, "value");
+}
+
+// ===== Round-trip faithfulness (found by qpack_roundtrip_fuzz) =====
+
+// The fuzzer found that Encode -> Decode was not byte-faithful in two ways
+// (both fixed); these tests pin the fixes. A shared harness mirrors the real
+// connection wiring: two QpackEncoder instances with the encoder-instruction
+// and insert-count side channels bridged the way the QPACK streams do.
+namespace roundtrip_fidelity {
+
+using FieldList = std::vector<std::pair<std::string, std::string>>;
+
+struct Pair {
+    QpackEncoder enc;
+    QpackEncoder dec;
+    Pair(uint32_t cap) {
+        enc.SetLocalMaxTableCapacity(cap);
+        enc.SetPeerMaxTableCapacity(cap);
+        enc.SetDynamicTableEnabled(cap > 0);
+        dec.SetMaxTableCapacity(cap);
+        dec.SetDynamicTableEnabled(cap > 0);
+        QpackEncoder* enc_p = &enc;
+        QpackEncoder* dec_p = &dec;
+        enc.SetInstructionSender([enc_p, dec_p](const FieldList& inserts) {
+            QpackEncoder scratch;
+            auto instr = MakeBuffer(64 + inserts.size() * 600);
+            if (!scratch.EncodeEncoderInstructions(inserts, instr)) {
+                return;
+            }
+            uint64_t before = dec_p->GetInsertCount();
+            if (dec_p->DecodeEncoderInstructions(instr)) {
+                uint64_t delta = dec_p->GetInsertCount() - before;
+                if (delta > 0) {
+                    enc_p->OnPeerInsertCountIncrement(delta);
+                }
+            }
+        });
+    }
+};
+
+FieldList Sorted(FieldList fields) {
+    std::sort(fields.begin(), fields.end());
+    return fields;
+}
+
+// Fuzz crash #1: an unknown ':'-prefixed name (":", not one of the five
+// known pseudo-headers) was silently DROPPED by OrderHeaders, and duplicate
+// known pseudo-headers were de-duplicated first-wins. QPACK is a
+// byte-faithful compression layer; semantic validation belongs above.
+TEST(QpackRoundtripFidelityTest, UnknownPseudoHeaderAndDuplicateKept) {
+    Pair p(0);  // dynamic table disabled: pure static/literal path
+    FieldList in = {{":", ""}, {":method", "GET"}, {":method", "POST"}, {"x-a", "1"}};
+    auto wire = MakeBuffer(512);
+    ASSERT_TRUE(p.enc.Encode(in, wire));
+
+    FieldList back;
+    ASSERT_TRUE(p.dec.Decode(wire, back));
+    EXPECT_EQ(Sorted(back), Sorted(in)) << "every field line must survive the round trip";
+}
+
+// Fuzz crash #2: a mixed-case name (":methOd") was lowercased before the
+// static-table name-only match, so it came back as ":method". Legal traffic
+// is all-lowercase and unaffected, but the compression layer must not
+// rewrite bytes.
+TEST(QpackRoundtripFidelityTest, MixedCaseNameIsNotLowercased) {
+    Pair p(0);
+    FieldList in = {{":methOd", ""}, {"Content-Type", "text/html"}};
+    auto wire = MakeBuffer(512);
+    ASSERT_TRUE(p.enc.Encode(in, wire));
+
+    FieldList back;
+    ASSERT_TRUE(p.dec.Decode(wire, back));
+    ASSERT_EQ(back.size(), 2u);
+    EXPECT_EQ(Sorted(back), Sorted(in)) << "names must round-trip byte-faithfully, not lowercased";
+}
+
+}  // namespace roundtrip_fidelity
 
 }  // namespace
 }  // namespace http3

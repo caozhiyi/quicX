@@ -29,5 +29,9 @@ CryptographerId Aes128GcmCryptographer::GetCipherId() {
     return kCipherIdAes128GcmSha256;
 }
 
+const EVP_CIPHER* Aes128GcmCryptographer::GetHeaderProtectionCipher() const {
+    return EVP_aes_128_ecb();
+}
+
 }  // namespace quic
 }  // namespace quicx

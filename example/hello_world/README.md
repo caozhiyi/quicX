@@ -19,7 +19,7 @@ Assuming you have built the project and are in the `build` directory:
 
 ### 1. Start the Server
 
-Run the server in a terminal window. It will listen on `127.0.0.1:8883`.
+Run the server in a terminal window. It will listen on `0.0.0.0:7001`.
 
 ```bash
 ./bin/hello_world_server
@@ -38,8 +38,9 @@ Run the client in a separate terminal window. It will connect to the server, sen
 The client should output something similar to:
 
 ```text
-status: 200
-content-length: 11
-response: hello world
-cost time: 5 ms
+======== Response Received ========
+Status: 200
+Body: hello world
+===================================
+Request took: 5 ms
 ```

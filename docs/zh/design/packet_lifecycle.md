@@ -76,7 +76,7 @@ FrameProcessor::HandleFrames(...)    ← src/quic/connection/connection_frame_pr
 
 ### 2.1 谁在监听 fd
 
-EventLoop 在某个线程上跑，UDP socket 的 fd 通过 [`UdpReceiver::AddReceiver`](../../src/quic/udp/udp_receiver.cpp) 注册到 EventLoop 的 IO multiplexer。Linux 用 epoll、macOS 用 kqueue、Windows 用 select（IOCP 是完成式模型，与 `IEventDriver`/`UdpReceiver` 的就绪拉取模型不兼容，曾有过的 `IOCPEventDriver` 模拟实现已删除），统一封装在 [`src/common/network/if_event_driver.h`](../../src/common/network/if_event_driver.h)。
+EventLoop 在某个线程上跑，UDP socket 的 fd 通过 [`UdpReceiver::AddReceiver`](../../../src/quic/udp/udp_receiver.cpp) 注册到 EventLoop 的 IO multiplexer。Linux 用 epoll、macOS 用 kqueue、Windows 用 select（IOCP 是完成式模型，与 `IEventDriver`/`UdpReceiver` 的就绪拉取模型不兼容，曾有过的 `IOCPEventDriver` 模拟实现已删除），统一封装在 [`src/common/network/if_event_driver.h`](../../../src/common/network/if_event_driver.h)。
 
 注册时挂的 handler 是 `UdpReceiver` 自身（它实现了 `IFdHandler` 接口），所以可读事件触发时由 `UdpReceiver::OnRead(fd)` 处理。
 
@@ -96,7 +96,7 @@ EventLoop 在某个线程上跑，UDP socket 的 fd 通过 [`UdpReceiver::AddRec
 
 ### 2.3 NetPacket 是什么
 
-定义在 [`src/quic/udp/net_packet.h`](../../src/quic/udp/net_packet.h)，本质是一个**已收到的 datagram 的载体**：
+定义在 [`src/quic/udp/net_packet.h`](../../../src/quic/udp/net_packet.h)，本质是一个**已收到的 datagram 的载体**：
 
 | 字段 | 含义 |
 | :--- | :--- |
@@ -110,7 +110,7 @@ NetPacket 不持有任何协议语义——它就是"网卡来的一坨字节 + 
 
 ### 2.4 缓冲来自池
 
-`NetPacket` 用的 `IBuffer` 由 [`IPacketallocator`](../../src/quic/udp/if_packet_allocator.h) 分配。生产路径走 `PoolPacketallocator`，底层 chunk 来自 `common::BlockMemoryPool`。一个常见陷阱：池回收的 NetPacket 可能因为外部还持有 `SharedBufferSpan` 引用，可写区域被压到不足 MTU。`OnRead` 用一个最多 8 次的 retry 循环规避，仍拿不到干净缓冲就缩短本轮 batch。
+`NetPacket` 用的 `IBuffer` 由 [`IPacketallocator`](../../../src/quic/udp/if_packet_allocator.h) 分配。生产路径走 `PoolPacketallocator`，底层 chunk 来自 `common::BlockMemoryPool`。一个常见陷阱：池回收的 NetPacket 可能因为外部还持有 `SharedBufferSpan` 引用，可写区域被压到不足 MTU。`OnRead` 用一个最多 8 次的 retry 循环规避，仍拿不到干净缓冲就缩短本轮 batch。
 
 ---
 
@@ -125,9 +125,9 @@ NetPacket 不持有任何协议语义——它就是"网卡来的一坨字节 + 
 
 ### 3.2 MsgParser 抽取 CID
 
-[`MsgParser::ParsePacket`](../../src/quic/quicx/msg_parser.cpp) 做两件事：
+[`MsgParser::ParsePacket`](../../../src/quic/quicx/msg_parser.cpp) 做两件事：
 
-1. 调 `DecodePackets()`（[`src/quic/packet/packet_decode.cpp`](../../src/quic/packet/packet_decode.cpp)）把一个 datagram 拆成一组 `IPacket`（一个 datagram 可能包含多个 coalesced packet，例如 Initial + Handshake + 1-RTT）；
+1. 调 `DecodePackets()`（[`src/quic/packet/packet_decode.cpp`](../../../src/quic/packet/packet_decode.cpp)）把一个 datagram 拆成一组 `IPacket`（一个 datagram 可能包含多个 coalesced packet，例如 Initial + Handshake + 1-RTT）；
 2. 取首个 packet 的 header，提出 `Destination Connection ID`，写进 `PacketParseResult.cid_`。
 
 > `DecodePackets` 的边界处理细节（无法解码的 trailing 字节、未知版本、coalesced 后续无法解密的 packet）参见源码内的 RFC 9000 §12.2 注释。
@@ -166,7 +166,7 @@ Master::OnPacket
 单线程模式**仍然有 master**，只是 master 与 worker 共用同一个 `IEventLoop`、跑在同一个线程上，因而省掉了 `WorkerWithThread` 那一层和跨线程的 `packet_queue_`：
 
 - `MasterWithThread` 照常起来，`UdpReceiver` 注册在 master 的 event loop 上；
-- worker 通过 `master_event_loop_->AddFixedProcess(worker, ...)` 挂到同一个 loop，每轮 tick 由 master 线程顺手驱动 `worker->Process()`（见 [`quic_client.cpp`](../../src/quic/quicx/quic_client.cpp) `Init()` 中 `kSingleThread` 分支）；
+- worker 通过 `master_event_loop_->AddFixedProcess(worker, ...)` 挂到同一个 loop，每轮 tick 由 master 线程顺手驱动 `worker->Process()`（见 [`quic_client.cpp`](../../../src/quic/quicx/quic_client.cpp) `Init()` 中 `kSingleThread` 分支）；
 - 收包路径变成：`UdpReceiver::OnRead` → `Master::OnPacket` → `MsgParser::ParsePacket` → `Worker::HandlePacket` → 直接 `Worker::InnerHandlePacket`，**不入队、不切线程**。
 
 `QuicClient` 默认就是这个模式。`if_worker.h` 上的关停契约也据此明确写过："单线程模式下 master 线程同时就是 worker 线程，对 master 做 `Stop + Join` 就足够了。"
@@ -180,7 +180,7 @@ Master::OnPacket
 
 ### 4.1 ServerWorker::InnerHandlePacket
 
-[`src/quic/quicx/worker_server.cpp`](../../src/quic/quicx/worker_server.cpp) 的核心分支：
+[`src/quic/quicx/worker_server.cpp`](../../../src/quic/quicx/worker_server.cpp) 的核心分支：
 
 | 情况 | 行为 |
 | :--- | :--- |
@@ -213,7 +213,7 @@ connection->OnPackets(...);
 
 ## 5. 阶段四：状态机门禁
 
-[`BaseConnection::OnPackets`](../../src/quic/connection/connection_base.cpp) 上来先看连接状态：
+[`BaseConnection::OnPackets`](../../../src/quic/connection/connection_base.cpp) 上来先看连接状态：
 
 | 状态 | 处理 |
 | :--- | :--- |
@@ -237,7 +237,7 @@ connection->OnPackets(...);
 2. 调 `IPacket::DecodeWithCrypto(buffer)`：去 Header Protection、AEAD 解密、把 payload 拆成 frame 序列；
 3. 把 frames 交给 `FrameProcessor`。
 
-每种 packet 类型对应不同的 `IPacket` 子类（[`src/quic/packet/`](../../src/quic/packet/)），它们各自实现自己的 `DecodeWithCrypto`：
+每种 packet 类型对应不同的 `IPacket` 子类（[`src/quic/packet/`](../../../src/quic/packet/)），它们各自实现自己的 `DecodeWithCrypto`：
 
 | 类型 | 文件 |
 | :--- | :--- |
@@ -254,7 +254,7 @@ connection->OnPackets(...);
 
 ### 6.3 FrameProcessor::HandleFrames
 
-[`src/quic/connection/connection_frame_processor.cpp`](../../src/quic/connection/connection_frame_processor.cpp)。一个 `switch (frame->GetType())` 把每种 frame 派发到对应模块。常见映射：
+[`src/quic/connection/connection_frame_processor.cpp`](../../../src/quic/connection/connection_frame_processor.cpp)。一个 `switch (frame->GetType())` 把每种 frame 派发到对应模块。常见映射：
 
 | Frame | 接收方 |
 | :--- | :--- |

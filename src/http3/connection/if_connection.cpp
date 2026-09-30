@@ -473,10 +473,15 @@ bool IConnection::SendGoawayFrame(uint64_t goaway_id) {
 void IConnection::WireReqRespStream(const std::shared_ptr<ReqRespBaseStream>& stream) {
     // RFC 9114 §4.2.2: enforce the SETTINGS_MAX_FIELD_SECTION_SIZE we
     // advertised in our SETTINGS, instead of only announcing it.
-    auto it = settings_.find(static_cast<uint16_t>(SettingsType::kMaxFieldSectionSize));
-    if (it != settings_.end()) {
-        stream->SetMaxFieldSectionSize(it->second);
-    }
+    //
+    // Read from pending_settings_ (the local Http3Settings whose value we
+    // advertised), NOT from the settings_ map: that map also holds the
+    // PEER's SETTINGS values (HandleSettings merges them into the same
+    // map), and the peer's advertised limit governs what WE may send —
+    // not what we accept. Reading the map let a peer that also advertises
+    // the setting silently change our inbound header limit (code review
+    // follow-up: settings_ local/peer conflation).
+    stream->SetMaxFieldSectionSize(pending_settings_.max_field_section_size);
 
     // Propagate qlog trace from the QUIC connection to the HTTP/3 stream.
     auto qlog_trace = GetQuicQlogTrace();

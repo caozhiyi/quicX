@@ -1,6 +1,6 @@
 # HTTP/3 应用层 API 核心指南
 
-如果你使用 `quicX` 是为了提供常规的 Web 服务、API 接口或是高吞吐的文件下载。那么你**不需要**直接使用位于 `src/quic/` 的底层接口，而是直接使用 `src/http3/` 提供的开箱即用的应用层 API 模型。
+如果你使用 `quicX` 是为了提供常规的 Web 服务、API 接口或是高吞吐的文件下载。那么你**不需要**直接使用位于 `include/quicx/quic/` 的底层 QUIC 接口，而是直接使用 `include/quicx/http3/` 提供的开箱即用的应用层 API 模型。
 
 在这里，没有复杂的 Stream 流转、各种底层的控制帧，只有你在传统 Web 框架（如 Express.js / Go Gin / Spring Boot）中非常熟悉的 **服务引擎 (IServer/IClient)**、**处理器 (Handler)**、**请求 (Request)** 和 **响应 (Response)**。
 
@@ -54,7 +54,8 @@ config.max_concurrent_streams_ = 200;
 config.enable_push_ = true;          
 
 server->Init(config);
-server->Start("0.0.0.0", 7001);       // 阻塞当前线程开始接客
+server->Start("0.0.0.0", 7001);       // 非阻塞：启动监听后立即返回
+server->Join();                       // 阻塞当前线程直到服务停止
 ```
 
 ### 2. 强大的路由分发系统 (Router)
@@ -88,7 +89,7 @@ server->AddHandler(quicx::HttpMethod::kGet, "/api/v1/user/:id",
 server->AddMiddleware(quicx::HttpMethod::kPost, quicx::MiddlewarePosition::kBefore, 
     [](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
         
-        // 此回调会发生在真正路由的 Handler 被调用 "**之前 (kBefore)**"
+        // 此回调会发生在真正路由的 Handler 被调用之前 (kBefore)
         std::string auth_header;
         if (!req->GetHeader("Authorization", auth_header)) {
             resp->SetStatusCode(401);
@@ -175,7 +176,7 @@ server->AddHandler(quicx::HttpMethod::kPost, "/upload", std::make_shared<FileUpl
   ```cpp
   FILE* upload = fopen("upload.dat", "rb");
   // 当底层协议栈需要发包而发现没有包可发时，就会跑来问你要
-  req->SetRequestBodyProvider([upload](uint8_t* buf, size_t size) -> uint32_t {
+  req->SetRequestBodyProvider([upload](uint8_t* buf, size_t size) -> size_t {
       size_t read = fread(buf, 1, size, upload);
       if (read == 0) fclose(upload);
       return read; // 如果返回 0，底层就知道这个 HTTP 流发完了。

@@ -1,4 +1,6 @@
+#include <chrono>
 #include <memory>
+#include <thread>
 #include <tuple>
 #include <vector>
 
@@ -7,8 +9,11 @@
 #include "common/network/if_event_loop.h"
 #include "common/timer/if_timer.h"
 #include "common/timer/timer_task.h"
+#include "common/util/time.h"
 
 #include "quic/connection/controller/send_control.h"
+#include "quic/congestion_control/congestion_control_factory.h"
+#include "quic/connection/error.h"
 #include "quic/frame/ack_frame.h"
 #include "quic/frame/handshake_done_frame.h"
 #include "quic/frame/ping_frame.h"
@@ -527,6 +532,437 @@ TEST(FrameDeliveryTest, UntrackedFramesAreIgnoredAndHandlersMayRefire) {
 }
 
 }  // namespace frame_delivery
+
+// =====================================================================
+// ACK frame validation (RFC 9000 §19.3.1) and bounded range walk.
+//
+// Largest Acknowledged and every ACK Range Length are peer-controlled varints
+// (up to 2^62-1), and AckRangePackets() iterates once per acknowledged packet
+// number. Without validation a single ACK frame could pin the connection's
+// worker thread essentially forever. Two layers protect it:
+//   1. ValidateAckFrame() rejects an ACK that acknowledges packet numbers we
+//      never sent, plus any structurally malformed range.
+//   2. AckRangePackets() additionally stops walking once the tracked table is
+//      empty or the anti-DoS budget is spent.
+// =====================================================================
+namespace ack_validation {
+
+TEST(SendControlAckValidationTest, AckForUnsentPacketNumberIsRejected) {
+    auto timer = std::make_shared<common::TestTimerScheduler>();
+    SendControl sc(timer);
+
+    std::vector<uint64_t> violations;
+    sc.SetProtocolViolationCallback(
+        [&violations](uint64_t error, uint16_t /*frame_type*/, const std::string& /*reason*/) {
+            violations.push_back(error);
+        });
+
+    bool stream_ack_fired = false;
+    sc.SetStreamDataAckCallback([&stream_ack_fired](uint64_t, uint64_t, uint64_t, bool) { stream_ack_fired = true; });
+
+    auto pkt = MakePacket(1, FrameTypeBit::kStreamBit);
+    sc.OnPacketSend(0, pkt, 1200, {StreamDataInfo(4, /*offset=*/0, /*len=*/100, /*fin=*/false)});
+
+    auto ack = std::make_shared<AckFrame>();
+    ack->SetLargestAck(1ull << 60);  // never sent by us
+    ack->SetAckDelay(0);
+    ack->SetFirstAckRange(0);
+
+    sc.OnPacketAck(10, PacketNumberSpace::kApplicationNumberSpace, ack);
+
+    ASSERT_EQ(violations.size(), 1u);
+    EXPECT_EQ(violations[0], static_cast<uint64_t>(QuicErrorCode::kProtocolViolation));
+    EXPECT_FALSE(stream_ack_fired);
+    // A rejected ACK must not silently retire the packet it pretended to cover.
+    EXPECT_EQ(sc.GetUnackedPacketCountForTest(PacketNumberSpace::kApplicationNumberSpace), 1u);
+}
+
+TEST(SendControlAckValidationTest, AckFirstRangeUnderflowIsRejected) {
+    auto timer = std::make_shared<common::TestTimerScheduler>();
+    SendControl sc(timer);
+
+    std::vector<uint64_t> violations;
+    sc.SetProtocolViolationCallback(
+        [&violations](uint64_t error, uint16_t /*frame_type*/, const std::string& /*reason*/) {
+            violations.push_back(error);
+        });
+
+    sc.OnPacketSend(0, MakePacket(1, FrameTypeBit::kStreamBit), 1200);
+
+    // Built directly through the setters, i.e. bypassing AckFrame::Decode's own
+    // check: ValidateAckFrame() must still refuse a range that reaches below
+    // packet number 0.
+    auto ack = std::make_shared<AckFrame>();
+    ack->SetLargestAck(1);
+    ack->SetAckDelay(0);
+    ack->SetFirstAckRange(100);
+
+    sc.OnPacketAck(10, PacketNumberSpace::kApplicationNumberSpace, ack);
+
+    ASSERT_EQ(violations.size(), 1u);
+    EXPECT_EQ(violations[0], static_cast<uint64_t>(QuicErrorCode::kFrameEncodingError));
+}
+
+TEST(SendControlAckValidationTest, AckGapUnderflowIsRejected) {
+    auto timer = std::make_shared<common::TestTimerScheduler>();
+    SendControl sc(timer);
+
+    std::vector<uint64_t> violations;
+    sc.SetProtocolViolationCallback(
+        [&violations](uint64_t error, uint16_t /*frame_type*/, const std::string& /*reason*/) {
+            violations.push_back(error);
+        });
+
+    sc.OnPacketSend(0, MakePacket(1, FrameTypeBit::kStreamBit), 1200);
+
+    auto ack = std::make_shared<AckFrame>();
+    ack->SetLargestAck(1);
+    ack->SetAckDelay(0);
+    ack->SetFirstAckRange(0);
+    ack->AddAckRange(/*gap=*/100, /*range_len=*/0);  // 1 - 100 - 2 underflows
+
+    sc.OnPacketAck(10, PacketNumberSpace::kApplicationNumberSpace, ack);
+
+    ASSERT_EQ(violations.size(), 1u);
+    EXPECT_EQ(violations[0], static_cast<uint64_t>(QuicErrorCode::kFrameEncodingError));
+}
+
+// The bound must not reject legitimate traffic: a contiguous ACK covering every
+// outstanding packet still retires all of them.
+TEST(SendControlAckValidationTest, FullRangeAckStillRetiresEveryPacket) {
+    auto timer = std::make_shared<common::TestTimerScheduler>();
+    SendControl sc(timer);
+
+    bool violation = false;
+    sc.SetProtocolViolationCallback([&violation](uint64_t, uint16_t, const std::string&) { violation = true; });
+
+    constexpr uint64_t kCount = 200;
+    for (uint64_t pn = 1; pn <= kCount; ++pn) {
+        sc.OnPacketSend(pn, MakePacket(pn, FrameTypeBit::kStreamBit), 1200);
+    }
+    ASSERT_EQ(sc.GetUnackedPacketCountForTest(PacketNumberSpace::kApplicationNumberSpace), kCount);
+
+    auto ack = std::make_shared<AckFrame>();
+    ack->SetLargestAck(kCount);
+    ack->SetAckDelay(0);
+    ack->SetFirstAckRange(kCount - 1);  // covers kCount .. 1
+
+    sc.OnPacketAck(kCount + 1, PacketNumberSpace::kApplicationNumberSpace, ack);
+
+    EXPECT_FALSE(violation);
+    EXPECT_EQ(sc.GetUnackedPacketCountForTest(PacketNumberSpace::kApplicationNumberSpace), 0u);
+}
+
+}  // namespace ack_validation
+
+// =====================================================================
+// Code-review P1-1: RFC 9002 §6.1.2 time-threshold loss detection.
+//
+// DetectLostPackets() used to look up the largest-acked packet's send time
+// in unacked_packets_ AFTER AckLargestAckedPacket() had already erased that
+// entry, so largest_acked_send_time was always 0 and the time-threshold
+// branch was dead code — only the packet threshold (3 packets) and PTO ever
+// declared losses. AckLargestAckedPacket() now captures the send time
+// before the erase; these tests pin that the time threshold is reachable.
+//
+// NOTE on time bases: PacketTimerInfo::send_time_ is stamped internally with
+// common::MonotonicTimeMsec() (NOT the OnPacketSend `now` argument), so these
+// tests drive the real monotonic clock and compute ACK `now` values relative
+// to it.
+// =====================================================================
+namespace time_threshold {
+
+// Send pn=1, wait 500ms, send pn=2, then ACK pn=2 while the packet-threshold
+// window is NOT satisfied (2 - 1 < 3). The ACK arrives ~100ms after pn=2 was
+// sent (SRTT becomes ~100ms => loss_delay ~= 112ms), so the 500ms send-time
+// gap must declare pn=1 lost by the TIME threshold.
+TEST(SendTimeThresholdTest, TimeThresholdDeclaresLossBeforePacketThreshold) {
+    auto timer = std::make_shared<common::TestTimerScheduler>();
+    SendControl sc(timer);
+    const PacketNumberSpace ns = PacketNumberSpace::kApplicationNumberSpace;
+
+    sc.OnPacketSend(common::MonotonicTimeMsec(), MakePacket(1, FrameTypeBit::kStreamBit), 1200);
+    // Real wait: send_time_ is the monotonic clock, and the gap must exceed
+    // 9/8 * SRTT (~112ms after the ACK below updates SRTT to ~100ms).
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    uint64_t t_pn2 = common::MonotonicTimeMsec();
+    sc.OnPacketSend(t_pn2, MakePacket(2, FrameTypeBit::kStreamBit), 1200);
+
+    auto ack = std::make_shared<AckFrame>();
+    ack->SetLargestAck(2);  // acks only pn=2
+    ack->SetAckDelay(0);
+    ack->SetFirstAckRange(0);
+    // ACK ~100ms after pn=2: first RTT sample ~= 100ms, so SRTT ~= 100ms and
+    // loss_delay = 9/8 * 100 ~= 112ms < the 500ms send-time gap.
+    sc.OnPacketAck(t_pn2 + 100, ns, ack);
+
+    // pn=1 must be queued for retransmission via the time threshold.
+    ASSERT_EQ(sc.GetLostPacket().size(), 1u);
+    EXPECT_EQ(sc.GetLostPacket().front().packet->GetPacketNumber(), 1u)
+        << "pn=1 must be declared lost by the RFC 9002 §6.1.2 time threshold: it was "
+           "sent 500ms before the largest-acked packet while loss_delay is ~112ms, "
+           "and the packet threshold (3) is not met. If this fails, the time-threshold "
+           "branch is dead code again (largest_acked_send_time never captured).";
+}
+
+// Negative control: packets sent back-to-back must NOT be lost by the time
+// threshold once SRTT is ~100ms (loss_delay ~112ms >> sub-ms send gap).
+TEST(SendTimeThresholdTest, SmallSendGapIsNotLostByTimeThreshold) {
+    auto timer = std::make_shared<common::TestTimerScheduler>();
+    SendControl sc(timer);
+    const PacketNumberSpace ns = PacketNumberSpace::kApplicationNumberSpace;
+
+    uint64_t t0 = common::MonotonicTimeMsec();
+    sc.OnPacketSend(t0, MakePacket(1, FrameTypeBit::kStreamBit), 1200);
+    sc.OnPacketSend(t0, MakePacket(2, FrameTypeBit::kStreamBit), 1200);
+
+    auto ack = std::make_shared<AckFrame>();
+    ack->SetLargestAck(2);
+    ack->SetAckDelay(0);
+    ack->SetFirstAckRange(0);
+    // RTT sample ~100ms => loss_delay ~112ms, far above the sub-ms send gap.
+    sc.OnPacketAck(t0 + 100, ns, ack);
+
+    EXPECT_EQ(sc.GetLostPacket().size(), 0u)
+        << "A sub-ms send gap must not trip the time threshold once SRTT is ~100ms; "
+           "spurious loss declarations would burn cwnd.";
+}
+
+// #5 (code review round 2): RFC 9002 §6.1.2 specifies the time threshold as
+// (largest_acked.time_sent - pkt.time_sent > loss_delay) OR (now -
+// pkt.time_sent > loss_delay). Only the delta branch used to be implemented,
+// so whenever the largest-acked anchor was unavailable (out-of-order ACK ->
+// largest_acked_pn_ mismatch -> anchor disabled) the time threshold went
+// blind. This test pins the now-branch: an out-of-order ACK whose largest
+// acked (4) is below the last processed one (5) disables the anchor, yet the
+// stale packets must still be declared lost by their age.
+TEST(SendTimeThresholdTest, NowBranchCoversAnchorUnavailableRounds) {
+    auto timer = std::make_shared<common::TestTimerScheduler>();
+    SendControl sc(timer);
+    const PacketNumberSpace ns = PacketNumberSpace::kApplicationNumberSpace;
+
+    // Four back-to-back packets; send times all within ~1ms of t0.
+    uint64_t t0 = common::MonotonicTimeMsec();
+    for (uint64_t pn = 1; pn <= 4; ++pn) {
+        sc.OnPacketSend(t0, MakePacket(pn, FrameTypeBit::kStreamBit), 1200);
+    }
+
+    // ACK {4, 3, 1} (gap leaves pn=2 unacked). Sets SRTT ~100ms (loss_delay
+    // ~112ms) and anchors (pn=4, send_time~t0). pn=2 survives: packet
+    // threshold (4 < 2+3) and both time conditions (delta ~0ms, age ~100ms)
+    // stay below their thresholds.
+    auto ack1 = std::make_shared<AckFrame>();
+    ack1->SetLargestAck(4);
+    ack1->SetAckDelay(0);
+    ack1->SetFirstAckRange(1);                  // ack 4, 3
+    ack1->AddAckRange(/*gap=*/0, /*range=*/0);  // skip pn=2, ack pn=1
+    sc.OnPacketAck(t0 + 100, ns, ack1);
+    ASSERT_EQ(sc.GetLostPacket().size(), 0u) << "100ms age must stay under the ~112ms loss_delay";
+
+    // Out-of-order ACK with largest=3 (<= last processed 4): the anchor is
+    // disabled for this round (pn mismatch -> largest_acked_send_time == 0),
+    // and the delta branch alone could not declare anything. The now-branch
+    // must still declare pn=2 lost: its age is now ~400ms >> loss_delay.
+    auto ack2 = std::make_shared<AckFrame>();
+    ack2->SetLargestAck(3);  // already acked; pn=3 re-ACK is a no-op
+    ack2->SetAckDelay(0);
+    ack2->SetFirstAckRange(0);
+    sc.OnPacketAck(t0 + 400, ns, ack2);
+
+    ASSERT_EQ(sc.GetLostPacket().size(), 1u);
+    EXPECT_EQ(sc.GetLostPacket().front().packet->GetPacketNumber(), 2u)
+        << "The RFC 9002 §6.1.2 now-branch must declare stale packets lost even when "
+           "the largest-acked anchor is unavailable (out-of-order ACK round).";
+}
+
+}  // namespace time_threshold
+
+// =====================================================================
+// Code-review P3e: RFC 9002 §5.3 RTT adjustment must use
+// min(ack_delay, peer's advertised max_ack_delay).
+//
+// AckLargestAckedPacket() used to feed the raw scaled ACK delay into
+// UpdateRtt(), so a peer reporting an oversized ACK Delay could deflate our
+// SRTT/RTTVAR and drag the PTO early. The delay is now clamped to the peer's
+// advertised max_ack_delay (learned via UpdateConfig from transport params).
+//
+// Note the first RTT sample never subtracts ack_delay (RFC 9002 §5.1-first
+// measurement), so each test ACKs a first packet with delay=0 to seed SRTT /
+// min_rtt, then a second packet carries the (oversized) delay.
+// =====================================================================
+namespace rtt_clamp {
+
+// Oversized ACK delay must be clamped to the peer's max_ack_delay: with a
+// true 1000ms RTT, a 100ms first RTT, and a bogus 800ms ACK delay, the
+// adjusted second sample must be ~975ms (clamped to 25ms), not ~200ms.
+TEST(RttClampTest, OversizedAckDelayIsClampedToPeerMaxAckDelay) {
+    auto timer = std::make_shared<common::TestTimerScheduler>();
+    SendControl sc(timer);
+
+    // Peer advertised max_ack_delay = 25ms, ack_delay_exponent = 3.
+    TransportParam tp;
+    tp.SetMaxAckDelay(25);
+    tp.SetAckDelayExponent(3);
+    sc.UpdateConfig(tp);
+
+    // Sample 1 (seed): pn=1, true RTT ~100ms, delay 0 -> SRTT=min_rtt=100.
+    uint64_t t1 = common::MonotonicTimeMsec();
+    sc.OnPacketSend(t1, MakePacket(1, FrameTypeBit::kStreamBit), 1200);
+    auto ack1 = std::make_shared<AckFrame>();
+    ack1->SetLargestAck(1);
+    ack1->SetAckDelay(0);
+    ack1->SetFirstAckRange(0);
+    sc.OnPacketAck(t1 + 100, PacketNumberSpace::kApplicationNumberSpace, ack1);
+    ASSERT_EQ(sc.GetRtt(), 100u);
+
+    // Sample 2: pn=2, true RTT ~1000ms, raw ACK delay 100 << 3 = 800ms.
+    // Clamped: 1000 - 25 = 975 -> SRTT = 7/8*100 + 1/8*975 ~= 209ms.
+    // Unclamped (bug): 1000 - 800 = 200 -> SRTT = 7/8*100 + 1/8*200 ~= 112ms.
+    uint64_t t2 = common::MonotonicTimeMsec();
+    sc.OnPacketSend(t2, MakePacket(2, FrameTypeBit::kStreamBit), 1200);
+    auto ack2 = std::make_shared<AckFrame>();
+    ack2->SetLargestAck(2);
+    ack2->SetAckDelay(100);  // 100 * 2^3 = 800ms once scaled
+    ack2->SetFirstAckRange(0);
+    sc.OnPacketAck(t2 + 1000, PacketNumberSpace::kApplicationNumberSpace, ack2);
+    EXPECT_GT(sc.GetRtt(), 160u) << "SRTT ~= 209ms expected; a value near 112ms means the oversized "
+                                    "ACK delay was NOT clamped to the peer's advertised max_ack_delay "
+                                    "(RFC 9002 §5.3).";
+}
+
+// Clamp boundary semantics, proven by three-instance differential:
+//   C: ACK delay 0ms  -> adjusted sample = 1000ms
+//   A: ACK delay 25ms (= peer max_ack_delay, legitimate) -> 975ms
+//   B: ACK delay 50ms (> peer max_ack_delay, oversized)  -> clamped to 975ms
+// Expected: SRTT(B) ~= SRTT(A) (clamp truncates to the advertised maximum)
+// and both stay clearly below SRTT(C) (the delay IS applied, not discarded).
+// Five samples per instance amplify the 1/8-weighted differences well above
+// clock jitter.
+TEST(RttClampTest, ClampBoundarySemantics) {
+    auto timer = std::make_shared<common::TestTimerScheduler>();
+    SendControl sc_c(timer), sc_a(timer), sc_b(timer);
+
+    TransportParam tp;
+    tp.SetMaxAckDelay(25);
+    tp.SetAckDelayExponent(0);  // raw ACK delay value == milliseconds
+    sc_c.UpdateConfig(tp);
+    sc_a.UpdateConfig(tp);
+    sc_b.UpdateConfig(tp);
+
+    const PacketNumberSpace ns = PacketNumberSpace::kApplicationNumberSpace;
+
+    // Seed each instance: SRTT = min_rtt = 100ms (delay 0).
+    for (SendControl* sc : {&sc_c, &sc_a, &sc_b}) {
+        uint64_t t = common::MonotonicTimeMsec();
+        sc->OnPacketSend(t, MakePacket(1, FrameTypeBit::kStreamBit), 1200);
+        auto ack = std::make_shared<AckFrame>();
+        ack->SetLargestAck(1);
+        ack->SetAckDelay(0);
+        ack->SetFirstAckRange(0);
+        sc->OnPacketAck(t + 100, ns, ack);
+    }
+
+    // Five 1000ms-RTT samples per instance with their respective delays.
+    // Packets are sent to all three instances inside the same millisecond so
+    // their internal monotonic send-time stamps agree.
+    for (uint64_t i = 0; i < 5; ++i) {
+        uint64_t pn = 2 + i;
+        uint64_t t = common::MonotonicTimeMsec();
+        sc_c.OnPacketSend(t, MakePacket(pn, FrameTypeBit::kStreamBit), 1200);
+        sc_a.OnPacketSend(t, MakePacket(pn, FrameTypeBit::kStreamBit), 1200);
+        sc_b.OnPacketSend(t, MakePacket(pn, FrameTypeBit::kStreamBit), 1200);
+
+        auto mk_ack = [pn](uint64_t delay) {
+            auto ack = std::make_shared<AckFrame>();
+            ack->SetLargestAck(pn);
+            ack->SetAckDelay(delay);
+            ack->SetFirstAckRange(0);
+            return ack;
+        };
+        uint64_t now = t + 1000;
+        sc_c.OnPacketAck(now, ns, mk_ack(0));
+        sc_a.OnPacketAck(now, ns, mk_ack(25));
+        sc_b.OnPacketAck(now, ns, mk_ack(50));
+    }
+
+    uint32_t srtt_c = sc_c.GetRtt();
+    uint32_t srtt_a = sc_a.GetRtt();
+    uint32_t srtt_b = sc_b.GetRtt();
+
+    // Oversized (50ms) must equal the exactly-at-max (25ms) outcome: the clamp
+    // truncates to max_ack_delay instead of discarding or passing through.
+    EXPECT_NEAR(srtt_a, srtt_b, 2) << "delay=50ms must clamp to the same adjusted sample as delay=25ms.";
+    // Both delayed instances must sit clearly below the zero-delay instance:
+    // the (clamped) delay is genuinely applied to the RTT adjustment.
+    EXPECT_LT(srtt_a + 10, srtt_c) << "A 25ms ACK delay must lower SRTT vs no delay; if equal, the clamp "
+                                      "over-suppressed legitimate delays.";
+}
+
+}  // namespace rtt_clamp
+
+// =====================================================================
+// Code-review P2-5: runtime congestion-control selection.
+//
+// The CC algorithm used to be a compile-time constant (kDefaultCongestionControl
+// in quic/config.h). It is now runtime-configurable: the worker parses
+// QuicConfig::congestion_control_ into a CongestionControlType and injects it
+// into every connection it creates via SetCongestionControlType(), which is
+// rejected once the first packet has been sent.
+// =====================================================================
+namespace cc_config {
+
+TEST(CcConfigTest, StringParsing) {
+    // Empty = compile-time default (currently "cubic").
+    EXPECT_EQ(CongestionControlTypeFromString(""), CongestionControlType::kCubic);
+    EXPECT_EQ(CongestionControlTypeFromString("cubic"), CongestionControlType::kCubic);
+    EXPECT_EQ(CongestionControlTypeFromString("reno"), CongestionControlType::kReno);
+    EXPECT_EQ(CongestionControlTypeFromString("bbrv1"), CongestionControlType::kBbrV1);
+    EXPECT_EQ(CongestionControlTypeFromString("bbr"), CongestionControlType::kBbrV1);
+    EXPECT_EQ(CongestionControlTypeFromString("bbrv2"), CongestionControlType::kBbrV2);
+    EXPECT_EQ(CongestionControlTypeFromString("bbrv3"), CongestionControlType::kBbrV3);
+    // Case-insensitive.
+    EXPECT_EQ(CongestionControlTypeFromString("CUBIC"), CongestionControlType::kCubic);
+    EXPECT_EQ(CongestionControlTypeFromString("BBRv1"), CongestionControlType::kBbrV1);
+    // Unknown falls back to reno (with a warning log).
+    EXPECT_EQ(CongestionControlTypeFromString("westwood"), CongestionControlType::kReno);
+}
+
+TEST(CcConfigTest, DefaultIsCompileTimeDefault) {
+    auto timer = std::make_shared<common::TestTimerScheduler>();
+    SendControl sc(timer);
+    EXPECT_EQ(sc.GetCcTypeForTest(), CongestionControlTypeFromString(""))
+        << "Without an override, SendControl must use the compile-time default CC.";
+}
+
+TEST(CcConfigTest, AllTypesSelectableBeforeFirstSend) {
+    for (CongestionControlType t :
+        {CongestionControlType::kReno, CongestionControlType::kCubic, CongestionControlType::kBbrV1,
+            CongestionControlType::kBbrV2, CongestionControlType::kBbrV3}) {
+        auto timer = std::make_shared<common::TestTimerScheduler>();
+        SendControl sc(timer);
+        sc.SetCongestionControlType(t);
+        EXPECT_EQ(sc.GetCcTypeForTest(), t) << "Type " << CongestionControlTypeToString(t) << " must be selectable.";
+        // The replaced CC object must be functional (initial cwnd queryable).
+        EXPECT_GT(sc.GetCcCongestionWindowForTest(), 0u);
+    }
+}
+
+TEST(CcConfigTest, OverrideRejectedAfterFirstSend) {
+    auto timer = std::make_shared<common::TestTimerScheduler>();
+    SendControl sc(timer);
+    sc.SetCongestionControlType(CongestionControlType::kBbrV1);
+    ASSERT_EQ(sc.GetCcTypeForTest(), CongestionControlType::kBbrV1);
+
+    // First send locks the algorithm (rebuilding mid-connection would drop
+    // bytes_in_flight / cwnd state).
+    sc.OnPacketSend(common::MonotonicTimeMsec(), MakePacket(1, FrameTypeBit::kStreamBit), 1200);
+    sc.SetCongestionControlType(CongestionControlType::kReno);
+
+    EXPECT_EQ(sc.GetCcTypeForTest(), CongestionControlType::kBbrV1)
+        << "A post-send override must be rejected, not silently applied.";
+}
+
+}  // namespace cc_config
 
 }  // namespace
 }  // namespace quic

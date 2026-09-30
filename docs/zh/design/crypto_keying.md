@@ -1,15 +1,15 @@
-# crypto_keying — TLS 密钥派生、包保护与 Key Update
+# TLS 密钥派生、包保护与 Key Update
 
-> **本文回答四个问题**
-> 1. **从哪个秘密派生出哪些密钥？** —— TLS traffic secret → AEAD key / IV / HP key 三件套，每个加密级别一份；外加 Initial 级别的 HKDF-Extract(salt, DCID) 例外路径。
-> 2. **为什么 nonce 不直接用 packet number？** —— RFC 9001 §5.3 的 IV ⊕ big-endian(pn) 算法；写错就是 nonce 重用 = AEAD 失效。
-> 3. **Key Update 怎么不丢乱序包？** —— `prev_read_secret_` + `HasPrevReadKey()` 双时窗机制；Header Protection key **不更新**的硬性约束。
-> 4. **为什么 v1 和 v2 标签集不一样？** —— RFC 9369 抗中间盒 ossification 设计；标签从 `"tls13 quic key"` 改成 `"tls13 quicv2 key"`，盐换一组。
+本文梳理 quicX 的密钥体系：TLS traffic secret 如何派生出每个加密级别的 AEAD key / IV / HP key，密钥又如何随 Key Update 轮换。本文尝试回答以下问题：
 
-> **本文不涉及**：握手状态推进（见 [`handshake_state_machine.md`](handshake_state_machine.md)）、TransportParam 协商（同上）、CRYPTO frame 与 CryptoStream（见 [`packet_lifecycle.md`](packet_lifecycle.md) §CRYPTO frame）。本文专注于"**密钥从哪来 / 怎么派生 / 怎么用 / 怎么轮换**"这一闭环机制。
+1. **从哪个秘密派生出哪些密钥？** —— TLS traffic secret → AEAD key / IV / HP key 三件套，每个加密级别一份；外加 Initial 级别的 HKDF-Extract(salt, DCID) 例外路径；
+2. **为什么 nonce 不直接用 packet number？** —— RFC 9001 §5.3 的 IV ⊕ big-endian(pn) 算法；写错就是 nonce 重用 = AEAD 失效；
+3. **Key Update 怎么不丢乱序包？** —— `prev_read_secret_` + `HasPrevReadKey()` 双时窗机制；Header Protection key 不更新的硬性约束；
+4. **为什么 v1 和 v2 标签集不一样？** —— RFC 9369 抗中间盒 ossification 设计；标签从 `"tls13 quic key"` 改成 `"tls13 quicv2 key"`，盐换一组。
+
+本文不涉及握手状态推进与 TransportParam 协商（见 [`handshake_state_machine.md`](handshake_state_machine.md)）、CRYPTO frame 与 CryptoStream（见 [`packet_lifecycle.md`](packet_lifecycle.md)），专注于"**密钥从哪来 / 怎么派生 / 怎么用 / 怎么轮换**"这一闭环机制。
 
 ---
-
 ## 1. 总览：密钥栈与四层数据流
 
 ```mermaid
@@ -432,8 +432,7 @@ Tag = AEAD-AES-128-GCM_Seal(
 
 ---
 
-## 7. 不变量速查（debug 用）
-
+## 7. 关键不变量
 1. **traffic secret 必须保存**：`InstallSecretWithVersion` 必须 `raw_*_secret_.assign(secret, ...)`，否则 Key Update 拿不到 base，`KeyUpdate(nullptr, 0, …)` 会返回 `kNotInitialized`。
 2. **HP key 不参与 Key Update**：`KeyUpdateWithVersion` 中 `current_secret.hp_` 必须先备份后还原；这条不变量被破坏 → 对端解 first byte 解不开 → 连接断。
 3. **prev_read_secret_ 最多一代**：每次 read 侧 KeyUpdate 必须 `CleanSecret(prev_read_secret_)`；保留两代会让密钥泄露窗口翻倍。

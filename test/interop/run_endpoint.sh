@@ -56,8 +56,9 @@ ip -brief addr show 2>/dev/null || ifconfig 2>/dev/null || true
 echo ""
 
 # Define supported and unsupported test cases
-# Supported tests: must match scenarios in testcases.py that quicX can handle
-# NOTE: "multiplexing" was removed — it is not a valid scenario in testcases.py.
+# Supported tests: must match the scenarios quicX can handle in the official
+# quic-interop-runner matrix (unknown/unsupported tests exit 127 per convention).
+# NOTE: "multiplexing" is not a scenario quicX currently supports.
 #       "multiconnect" is the correct name for concurrent client testing.
 SUPPORTED_TESTS="handshake transfer retry resumption zerortt multiconnect versionnegotiation chacha20 keyupdate v2 rebind-port rebind-addr connectionmigration http3 ecn"
 

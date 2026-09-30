@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 # NOTE: keep the VERSION argument below in sync with:
-#   - the root `QUICX_VERSION` and `VERSION.txt` files
+#   - the root `VERSION.txt` file
 #   - the QUICX_VERSION_MAJOR/MINOR/PATCH macros in
 #     include/quicx/common/version.h
 #   - the `version = "..."` field in MODULE.bazel
@@ -286,12 +286,6 @@ endif()
 option(ENABLE_INTEGRATION "Enable building integration tests" ON)
 if(ENABLE_INTEGRATION)
     add_subdirectory(test/integration)
-endif()
-
-# interop tests
-option(ENABLE_INTEROP "Enable building interop tests" ON)
-if(ENABLE_INTEROP)
-    add_subdirectory(test/interop)
 endif()
 
 # Performance / baseline tests (CPU hotspots, memory baselines, protocol micro-benchmarks)

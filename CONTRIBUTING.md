@@ -319,15 +319,13 @@ Useful entry-point reading for newcomers:
 
 ## Release process (maintainers)
 
-The active release plan lives in
-[`docs/release_plan_v0.1.0.md`](docs/release_plan_v0.1.0.md).  Any change
-that affects the release schedule, the supported-versions table in
-[`SECURITY.md`](SECURITY.md), or the public-API surface should be reflected
-there as well.
+Release history is tracked in [`CHANGELOG.md`](CHANGELOG.md).  Any change
+that affects the supported-versions table in [`SECURITY.md`](SECURITY.md),
+or the public-API surface should be reflected there as well.
 
 When bumping the version:
 
-1. Update the root `QUICX_VERSION` and `VERSION.txt` files.
+1. Update the root `VERSION.txt` file.
 2. Update `QUICX_VERSION_MAJOR/MINOR/PATCH` in
    `include/quicx/common/version.h`.
 3. Update `project(QuicX VERSION X.Y.Z ...)` in the top-level

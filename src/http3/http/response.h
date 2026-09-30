@@ -25,12 +25,14 @@ public:
     virtual void SetStatusCode(uint32_t code) override { status_code_ = code; }
     virtual uint32_t GetStatusCode() const override { return status_code_; }
 
-    // Headers
+    // Headers (ordered field lines, duplicates preserved — RFC 9110 §5.3)
     virtual void AddHeader(const std::string& name, const std::string& value) override;
+    virtual void SetHeader(const std::string& name, const std::string& value) override;
     virtual bool GetHeader(const std::string& name, std::string& value) const override;
+    virtual std::vector<std::string> GetAllHeaders(const std::string& name) const override;
 
-    virtual void SetHeaders(const std::unordered_map<std::string, std::string>& headers) override;
-    virtual std::unordered_map<std::string, std::string>& GetHeaders() override { return headers_; }
+    virtual void SetHeaders(const HttpFields& headers) override { headers_ = headers; }
+    virtual const HttpFields& GetHeaders() const override { return headers_; }
 
     // Response body sending (server)
     virtual std::string GetBodyAsString() const override;
@@ -52,7 +54,7 @@ public:
 
 private:
     uint32_t status_code_;
-    std::unordered_map<std::string, std::string> headers_;
+    HttpFields headers_;
     std::shared_ptr<common::IBuffer> body_;
     body_provider response_body_provider_;  // For streaming response body sending (server)
     body_consumer request_body_consumer_;   // For streaming request body receiving (server)

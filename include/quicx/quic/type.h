@@ -46,6 +46,13 @@ struct QuicConfig {
     bool enable_key_update_ = false;  //!< Enable automatic Key Update during connection.
     std::string cipher_suites_ = "";  //!< Cipher suites (e.g. TLS_AES_128_GCM_SHA256).
 
+    //! Congestion control algorithm: "reno" | "cubic" | "bbrv1" | "bbrv2" |
+    //! "bbrv3". Empty (default) = compile-time default from
+    //! kDefaultCongestionControl in quic/config.h. Unknown names fall back
+    //! to reno with a warning. Applies to every connection created by the
+    //! client/server; per-connection overrides are not supported.
+    std::string congestion_control_ = "";
+
     //! QUIC version to use (RFC 9000 v1 or RFC 9369 v2).
     //! Default to QUIC v2 (kQuicVersion2) as preferred version.
     uint32_t quic_version_ = kQuicVersion2;

@@ -48,7 +48,7 @@ bool PushSenderStream::SendPushResponse(uint64_t push_id, std::shared_ptr<IRespo
     auto body = response->GetBody();
     size_t body_len = body ? body->GetDataLength() : 0;
     if (body && body_len > 0) {
-        response->AddHeader("content-length", std::to_string(body_len));
+        response->SetHeader("content-length", std::to_string(body_len));
     }
 
     // Encode headers using qpack

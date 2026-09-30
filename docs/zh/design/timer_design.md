@@ -12,7 +12,7 @@ quicX 在两个层面上用到定时器：
 - `EventLoop::Wait` 是怎么把这个定时器揉进 reactor 的；
 - 应用层每条 timer（重点是 PTO）落到底层时长什么样，与 `loss_recovery.md` 怎么形成"应用 → 基础设施"双层闭环。
 
-阅读时建议打开 `src/common/timer/` 下的 5 个文件（`if_timer.h` / `timer_task.h` / `timing_wheel_timer.{h,cpp}` / `treemap_timer.{h,cpp}`）以及 `src/common/network/event_loop.cpp`、`src/quic/connection/controler/send_control.cpp`。
+阅读时建议打开 `src/common/timer/` 下的 5 个文件（`if_timer.h` / `timer_task.h` / `timing_wheel_timer.{h,cpp}` / `treemap_timer.{h,cpp}`）以及 `src/common/network/event_loop.cpp`、`src/quic/connection/controller/send_control.cpp`。
 
 ---
 
@@ -353,8 +353,7 @@ void OnPTOTimer();                       // 触发回调
 
 ---
 
-## 8. 设计不变量
-
+## 8. 关键不变量
 读源码或调试时如果发现下列任一条不成立，就是 bug：
 
 1. **每个 EventLoop 一个 timer 实例**：从来不同时存在两个 ITimer，所有应用层 timer 共用一个轮（或一棵树）。
@@ -377,7 +376,7 @@ void OnPTOTimer();                       // 触发回调
 
 ---
 
-## 10. 参考文献
+## 10. 关联 RFC
 
 - RFC 9002 §6（Loss Detection）—— PTO 公式、loss timer、ack-eliciting 概念。
 - RFC 9002 §7（Pacing）—— pacing timer 的应用语义。
