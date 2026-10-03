@@ -7,9 +7,10 @@
   <img src="https://img.shields.io/badge/interop-24%20scenarios%20%C3%97%2017%20peers%20%7C%2090.60%25-brightgreen.svg" alt="Interop">
   <img src="https://img.shields.io/badge/C%2B%2B-17-blue.svg" alt="C++17">
   <img src="https://img.shields.io/badge/RFC-9000%20%2F%209369%20%2F%209114-informational.svg" alt="RFC">
+  <a href="https://caozhiyi.cc/docs/quicx/en/"><img src="https://img.shields.io/badge/website-caozhiyi.cc-8A2BE2.svg" alt="Website"></a>
 </p>
 
-[简体中文](./README_cn.md)
+[简体中文](./README_cn.md) | [Website](https://caozhiyi.cc/docs/quicx/en/)
 ---
 
 **QuicX** is a self-contained C++17 QUIC / HTTP/3 protocol stack: from UDP socket, TLS 1.3 (BoringSSL), QUIC stream, all the way to HTTP/3 routing, QPACK, and server push, all implemented in a single repository without depending on any external HTTP framework.
@@ -157,6 +158,7 @@ cmake --build build_fuzz
 
 ## Further Reading
 
+- **Website**: https://caozhiyi.cc/docs/quicx/en/ (or browse the docs sources in [`docs/en/`](./docs/en/README.md))
 - English documentation entry: [`README`](./docs/en/README.md) (`getting-started/` · `tutorial/` · `guide/` · `reference/` · `reports/` · `design/`)
 - Change history: [`CHANGELOG.md`](./CHANGELOG.md)
 - Security disclosures: [`SECURITY.md`](./SECURITY.md)
