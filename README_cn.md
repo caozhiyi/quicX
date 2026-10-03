@@ -7,9 +7,10 @@
   <img src="https://img.shields.io/badge/interop-24%20scenarios%20%C3%97%2017%20peers%20%7C%2090.60%25-brightgreen.svg" alt="Interop">
   <img src="https://img.shields.io/badge/C%2B%2B-17-blue.svg" alt="C++17">
   <img src="https://img.shields.io/badge/RFC-9000%20%2F%209369%20%2F%209114-informational.svg" alt="RFC">
+  <a href="https://caozhiyi.cc/docs/quicx/"><img src="https://img.shields.io/badge/%E5%AE%98%E6%96%B9%E7%BD%91%E7%AB%99-caozhiyi.cc-8A2BE2.svg" alt="Website"></a>
 </p>
 
-[English](./README.md)
+[English](./README.md) | [官方网站](https://caozhiyi.cc/docs/quicx/)
 ---
 
 **QuicX** 是一套自包含的 C++17 QUIC / HTTP/3 协议栈：从 UDP socket、TLS 1.3（BoringSSL）、QUIC 流，一路到 HTTP/3 路由、QPACK 与服务端推送，全部在同一个仓库里实现，不依赖任何外部 HTTP 框架。
@@ -157,6 +158,7 @@ cmake --build build_fuzz
 
 ## 进一步阅读
 
+- **官方网站**：https://caozhiyi.cc/docs/quicx/（也可以直接阅读仓库内的 [`docs/zh/`](./docs/zh/README.md)）
 - 中文文档入口：[`README`](./docs/zh/README.md)（`getting-started/` · `tutorial/` · `guide/` · `reference/` · `reports/` · `design/`）
 - 变更历史：[`CHANGELOG.md`](./CHANGELOG.md)
 - 安全披露：[`SECURITY.md`](./SECURITY.md)
