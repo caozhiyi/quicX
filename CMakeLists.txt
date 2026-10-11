@@ -294,6 +294,12 @@ if(ENABLE_PERF_TESTS)
     add_subdirectory(test/perf)
 endif()
 
+# Interop test programs (test/interop, used by the quic-interop-runner docker image)
+option(ENABLE_INTEROP "Enable building of interop test programs" OFF)
+if(ENABLE_INTEROP)
+    add_subdirectory(test/interop)
+endif()
+
 # ---------------------------------------------------------------------------
 # Install rules
 # ---------------------------------------------------------------------------
