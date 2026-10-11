@@ -184,16 +184,25 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
         const bool local_socket_changed = connection->OnRxSocket(rx_sock.fd);
 
         connection->SetSocket(rx_sock);
+        // Record received bytes on the candidate path BEFORE reporting the
+        // address change. StartPathValidationProbe fires a padded (1200 B)
+        // PATH_CHALLENGE through the immediate-probe path, which passes the
+        // same RFC 9000 §8.1 3x anti-amplification gate as any other
+        // datagram; with this datagram's bytes still unaccounted the budget
+        // reads as zero and the probe falls back to the queued path — letting
+        // the immediate ACK for this very packet become the new path's first
+        // outbound datagram, which the rebind/connectionmigration checks
+        // treat as a missing PATH_CHALLENGE. Accounting first keeps the
+        // probe ahead of that ACK.
+        if (packet_info.net_packet_->GetData()) {
+            connection->OnCandidatePathDatagramReceived(
+                packet_info.net_packet_->GetAddress(), packet_info.net_packet_->GetData()->GetDataLength());
+        }
         // report observed address for path change detection
         auto& observed_addr = packet_info.net_packet_->GetAddress();
         connection->OnObservedPeerAddress(observed_addr);
         if (local_socket_changed) {
             connection->OnLocalSocketAddressChanged();
-        }
-        // record received bytes on candidate path to unlock anti-amplification budget
-        if (packet_info.net_packet_->GetData()) {
-            connection->OnCandidatePathDatagramReceived(
-                observed_addr, packet_info.net_packet_->GetData()->GetDataLength());
         }
         connection->SetPendingEcn(packet_info.net_packet_->GetEcn());
         connection->OnPackets(packet_info.net_packet_->GetTime(), packet_info.packets_, packet_info.datagram_size_);

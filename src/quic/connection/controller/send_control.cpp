@@ -95,6 +95,13 @@ void SendControl::TrackPacketInCongestionControl(
     // monotonic, otherwise a backwards step desynchronises every CC epoch.)
     congestion_control_->OnPacketSent(SentPacketEvent{packet->GetPacketNumber(), pkt_len, now * 1000, false});
 
+    // ACK-eliciting bytes are on the wire: the PTO cycle's purpose (RFC 9002
+    // §6.2.4 — elicit an ACK) is served, cancel any deferred probe.
+    // TrackPacketInCongestionControl only runs for ACK-eliciting packets, so
+    // a lone ACK-only send does NOT clear it (an ACK-only packet elicits
+    // nothing and the probe must still go out).
+    pto_probe_pending_ = false;
+
     // Track when we last sent ack-eliciting data for PTO timer
     last_ack_eliciting_sent_time_ = now;
 }
@@ -1142,6 +1149,19 @@ void SendControl::OnPTOTimer() {
     if (!found_retransmit && lost_packets_.empty() && !handshake_complete_ && probe_needed_cb_) {
         LOG_WARN("SendControl::OnPTOTimer: handshake not complete, no data to retransmit, sending probe");
         probe_needed_cb_();
+    }
+
+    // RFC 9002 §6.2.4 completion: the guard above skips the immediate probe
+    // whenever a retransmission is queued (found_retransmit / non-empty
+    // lost_packets_), assuming it will put bytes on the wire. That assumption
+    // does not hold for pre-handshake pure-CRYPTO entries: TrySendRetransmit
+    // DROPS them (frame-level recovery owns the bytes) and when their CRYPTO
+    // offsets were already acked through a later packet's delivery, the
+    // frame-level queues stay empty too — the whole PTO round emits nothing.
+    // Arm the deferred probe for that case; the send round consumes it only
+    // if it ends with zero packets emitted (see ConsumePendingPtoProbe).
+    if (found_retransmit && !handshake_complete_) {
+        pto_probe_pending_ = true;
     }
 
     // RFC 9002 §6.2.4 (Bug-19 fix): post-handshake probe with PING.

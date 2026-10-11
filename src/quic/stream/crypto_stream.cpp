@@ -474,8 +474,19 @@ void CryptoStream::OnFrameDelivery(uint8_t level, uint64_t offset, uint32_t leng
     }
 
     if (state == FrameDeliveryState::kAcked) {
-        if (offset + length > acked_offset_[level]) {
-            acked_offset_[level] = offset + length;
+        // Continuous-prefix semantics. Only a segment that starts at or
+        // before the current prefix end may extend the prefix; an ACK for a
+        // segment beyond a gap (start > prefix end) must be ignored for the
+        // prefix. With the old max() advance, a Handshake flight where
+        // segment N was lost reported segment N+1 as "acked", the prefix
+        // jumped the gap, and the later kLost for segment N was then
+        // swallowed by the "offset + length <= acked_offset_" check below
+        // (and its retained chunk was pruned): the lost CRYPTO bytes were
+        // never retransmitted and the peer's handshake timed out
+        // (amplificationlimit interop, 8/14 clients failing).
+        const uint64_t seg_end = offset + length;
+        if (offset <= acked_offset_[level] && seg_end > acked_offset_[level]) {
+            acked_offset_[level] = seg_end;
         }
         // A late ACK (the packet was already declared lost and its range
         // re-queued) retires the re-queued segment so we stop re-sending.

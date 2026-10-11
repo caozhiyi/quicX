@@ -15,8 +15,18 @@ namespace quic {
 // ============================================================================
 
 // Default destination Connection ID length for short header packets (RFC 9000 Section 17.3)
-// 20 bytes is the maximum CID length, used when encoding short headers
-static constexpr uint32_t kDefaultDestinationCidLength = 20;
+//
+// The short header does not encode the DCID length on the wire, so the receiver
+// must know it out of band: the DCID of a short-header packet received by an
+// endpoint is always a CID *that endpoint itself issued*. This constant MUST
+// therefore stay equal to the length of the CIDs quicX issues
+// (ConnectionIDManager::Generator() and kRetryCidLength both use 8).
+//
+// Do NOT set this to the 20-byte protocol maximum unless Generator() is changed
+// to match: an incoming short header would then be parsed with a DCID length
+// that no live connection ever uses, routing would fail, and every 1-RTT
+// packet would be dropped.
+static constexpr uint32_t kDefaultDestinationCidLength = 8;
 
 // Maximum payload size for a single frame (bytes)
 // 1420 bytes fits within MTU 1500 after QUIC header + AEAD tag + IP/UDP headers

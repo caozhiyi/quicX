@@ -19,7 +19,7 @@ QuicX 是 **QUIC / HTTP/3 的教学参考实现**：
 
 ## 已具备
 
-- 24 场景 × 17 对端互通基线：综合有效通过率 **90.60%**（
+- 24 场景 × 17 对端互通基线：综合有效通过率 **92.87%**（
   见 `docs/zh/reports/interop_status.md`）；
 - `test/perf` 性能基准与 SIGPROF 采样 profiler（排查记录见
   `perf_flamegraph_analysis.md`）；

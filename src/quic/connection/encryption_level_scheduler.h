@@ -2,6 +2,7 @@
 #define QUIC_CONNECTION_ENCRYPTION_LEVEL_SCHEDULER
 
 #include <cstdint>
+#include <functional>
 
 #include "quic/crypto/tls/type.h"
 #include "quic/packet/type.h"
@@ -106,6 +107,25 @@ public:
      */
     bool IsInitialPacketSent() const { return initial_packet_sent_; }
 
+    /**
+     * @brief Set a provider for the lowest encryption level that still has
+     *        unsent CRYPTO stream data queued (frame-level retransmissions
+     *        included).
+     *
+     * The TLS stack advances its "current" level as soon as it has produced
+     * all handshake messages for the previous level. If CRYPTO data of a
+     * lower level is later declared lost, it must still be retransmitted at
+     * that lower level (RFC 9001 §4.1.3); without this provider the
+     * scheduler would keep picking the (higher) current level and the lost
+     * handshake data would starve forever.
+     *
+     * The provider should return the lowest level with pending data, or
+     * kApplication when there is none.
+     */
+    void SetPendingCryptoLevelProvider(std::function<uint8_t()> provider) {
+        pending_crypto_level_provider_ = std::move(provider);
+    }
+
 private:
     /**
      * @brief Check if there are cross-level pending ACKs
@@ -143,6 +163,7 @@ private:
 
     bool has_early_data_pending_;  // Whether there's application data waiting (0-RTT)
     bool initial_packet_sent_;     // Whether Initial packet was sent (for 0-RTT ordering)
+    std::function<uint8_t()> pending_crypto_level_provider_;  // Lowest level with queued CRYPTO data
 };
 
 }  // namespace quic

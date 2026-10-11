@@ -159,6 +159,15 @@ public:
         bool add_padding;   // Whether to pad to 1200 bytes
         uint32_t min_size;  // Minimum packet size (for padding)
 
+        // RFC 9000 §8.2.1 waiver flag: set when the caller has already
+        // decided (typically because the §8.1 anti-amplification budget on an
+        // unvalidated path cannot cover a 1200 B datagram) that a packet
+        // carrying PATH_CHALLENGE/PATH_RESPONSE must NOT be padded. Inhibits
+        // the frame-type-based fallback padding in BuildDataPacket, which
+        // would otherwise re-pad the packet and get it refused by the
+        // emit-time §8.1 gate.
+        bool suppress_path_frame_padding;
+
         DataPacketContext():
             level(kInitial),
             local_cid_manager(nullptr),
@@ -169,7 +178,8 @@ public:
             include_stream_data(true),
             max_stream_data_size(1300),  // Default to reasonable packet size
             add_padding(false),
-            min_size(1200) {}
+            min_size(1200),
+            suppress_path_frame_padding(false) {}
     };
 
     /**
@@ -234,13 +244,20 @@ public:
      * @param output_buffer Output buffer to write encoded packet
      * @param packet_number Packet number manager
      * @param send_control Send control
+     * @param pad_path_frames Pad a 1-RTT PATH_CHALLENGE/PATH_RESPONSE datagram to
+     *        the minimum MTU (RFC 9000 §8.2.1). Callers on an unvalidated path
+     *        whose §8.1 budget cannot cover 1200 B must pass false: §8.2.1
+     *        explicitly waives the padding when "the anti-amplification limit
+     *        for the path does not permit sending a datagram of this size", and
+     *        a padded build would instead be dropped by the emit-time §8.1
+     *        gate, deferring the probe behind unrelated traffic.
      * @return BuildResult with success status and packet info
      */
     BuildResult BuildImmediatePacket(const std::shared_ptr<IFrame>& frame, EncryptionLevel level,
         const std::shared_ptr<ICryptographer>& cryptographer, ConnectionIDManager* local_cid_mgr,
         ConnectionIDManager* remote_cid_mgr, const std::shared_ptr<common::IBuffer>& output_buffer,
         PacketNumber& packet_number, SendControl& send_control, uint32_t quic_version = 0, uint8_t key_phase = 0,
-        const std::string& token = "");
+        const std::string& token = "", bool pad_path_frames = true);
 
 private:
     /**

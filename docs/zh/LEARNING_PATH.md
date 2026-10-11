@@ -1,6 +1,6 @@
 # QuicX 源码学习路径（Learning Path）
 
-QuicX 是一套**面向生产**的 QUIC / HTTP/3 协议栈：1523 个单元与集成测试、干净的 ASan / UBSan / TSan 运行、90.60% 的互通矩阵通过率；代码同时保持可读、注释完整、测试与文档自洽。自 1.0 起，公有 C++ API 遵循语义化版本（SemVer）——详见 [`api_stability.md`](./reference/api_stability.md)。
+QuicX 是一套**面向生产**的 QUIC / HTTP/3 协议栈：1523 个单元与集成测试、干净的 ASan / UBSan / TSan 运行、92.87% 的互通矩阵通过率；代码同时保持可读、注释完整、测试与文档自洽。自 1.0 起，公有 C++ API 遵循语义化版本（SemVer）——详见 [`api_stability.md`](./reference/api_stability.md)。
 
 本文是阅读源码的**总入口**：按「一个包从网卡到 HTTP/3 handler 的完整旅程」排序，每一站都给出源码目录、配套设计文档与动手实验。全部路径均相对仓库根目录。
 

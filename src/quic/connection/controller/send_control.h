@@ -236,7 +236,36 @@ public:
     void SetApplicationProbeCallback(ApplicationProbeCallback callback) { application_probe_cb_ = callback; }
 
     // Mark handshake as complete (disables handshake probe timer)
-    void SetHandshakeComplete() { handshake_complete_ = true; }
+    void SetHandshakeComplete() {
+        handshake_complete_ = true;
+        pto_probe_pending_ = false;  // probes are pre-handshake only
+    }
+
+    // RFC 9002 §6.2.4 completion guarantee: every PTO cycle MUST put at least
+    // one ack-eliciting packet on the wire. The immediate probe in OnPTOTimer
+    // only fires when nothing at all is queued for retransmission. When a
+    // retransmission IS queued, it may still produce zero bytes: pre-handshake
+    // pure-CRYPTO packets are dropped by TrySendRetransmit (frame-level
+    // recovery owns them) and their CRYPTO segments may already be acked via a
+    // LATER packet's frame delivery — the earlier packets then survive as
+    // zombie unacked entries that every PTO re-queues and re-drops. OnPTOTimer
+    // arms this flag in that case; the send round consumes it only if it ends
+    // with zero packets emitted, injecting a PING probe then. Any successful
+    // ACK-ELICITING send clears the flag (TrackPacketInCongestionControl):
+    // the cycle's purpose — elicit an ACK — is then already served.
+    //
+    // Observed deadlock (L1 handshakeloss, quicx-client vs xquic-server): CH
+    // retransmitted 3x, the 3rd copy ACKed → all Initial CRYPTO acked at frame
+    // level, pn 1/2 zombies re-queued and dropped every PTO, zero packets out;
+    // the server, amplification-limited (§8.1), waited for client bytes to
+    // recharge its budget — both sides silent until the idle timeout.
+    bool ConsumePendingPtoProbe() {
+        if (!pto_probe_pending_ || handshake_complete_) {
+            return false;
+        }
+        pto_probe_pending_ = false;
+        return true;
+    }
 
     // When the peer has sent undecryptable 1-RTT packets, its Finished was
     // lost.  Skip Initial packets during PTO so the probe targets Handshake
@@ -338,6 +367,9 @@ private:
     ProtocolViolationCallback protocol_violation_cb_;
     bool handshake_complete_ = false;
     bool skip_initial_for_pto_ = false;
+    // Armed by OnPTOTimer when a retransmission is queued but may not be
+    // sendable; see ConsumePendingPtoProbe().
+    bool pto_probe_pending_ = false;
 
     uint64_t pkt_num_largest_sent_[PacketNumberSpace::kNumberSpaceCount] = {0};
     uint64_t pkt_num_largest_acked_[PacketNumberSpace::kNumberSpaceCount] = {0};

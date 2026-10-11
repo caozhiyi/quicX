@@ -54,6 +54,25 @@ EncryptionLevelScheduler::SendContext EncryptionLevelScheduler::GetNextSendConte
 
     // Priority 4: Current encryption level (normal flow)
     ctx.level = crypto_.GetCurEncryptionLevel();
+
+    // RFC 9001 §4.1.3: CRYPTO data of a lower encryption level may still be
+    // queued (e.g. re-queued by frame-level loss recovery) after the TLS
+    // stack has already advanced its current level. Such data can only be
+    // sent at its own level, so override the level selection while any
+    // lower-level CRYPTO data is pending. Without this override the
+    // amplificationlimit interop scenario dead-locks: a lost Handshake
+    // CRYPTO segment is re-queued but the scheduler keeps selecting
+    // kApplication, the segment is never retransmitted, and the peer
+    // eventually hits its handshake timeout.
+    if (pending_crypto_level_provider_) {
+        uint8_t pending_level = pending_crypto_level_provider_();
+        if (pending_level < ctx.level) {
+            LOG_INFO("EncryptionLevelScheduler: lower-level CRYPTO data pending (level=%d < cur=%d), overriding",
+                pending_level, ctx.level);
+            ctx.level = static_cast<EncryptionLevel>(pending_level);
+        }
+    }
+
     ctx.has_pending_ack = false;
     ctx.is_path_probe = false;
 

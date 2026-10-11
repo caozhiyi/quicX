@@ -296,6 +296,24 @@ PacketBuilder::BuildResult PacketBuilder::BuildDataPacket(const DataPacketContex
     visitor.SetStreamDataSizeLimit(std::min<uint64_t>(ctx.max_stream_data_size, visitor_budget));
 
     // 3. Add all control frames
+    // RFC 9000 §8.2.1/§8.2.2: a datagram carrying a PATH_CHALLENGE (or
+    // PATH_RESPONSE) on a path whose MTU is not yet validated MUST be
+    // expanded to the smallest allowed maximum datagram size. Path probes
+    // can reach this builder both via the immediate-probe path (which sets
+    // add_padding itself) and via the queued-frame fallback in the
+    // PathManager; catch the latter here so no probe leaves unpadded.
+    bool pad = ctx.add_padding;
+    uint32_t min_size = ctx.min_size;
+    if (ctx.level == kApplication && !pad && !ctx.suppress_path_frame_padding) {
+        for (auto& frame : ctx.frames) {
+            if (frame->GetType() == FrameType::kPathChallenge ||
+                frame->GetType() == FrameType::kPathResponse) {
+                pad = true;
+                min_size = kMinInitialPacketSize;
+                break;
+            }
+        }
+    }
     for (auto& frame : ctx.frames) {
         if (!visitor.HandleFrame(frame)) {
             // Check if it's insufficient space or real error
@@ -339,7 +357,7 @@ PacketBuilder::BuildResult PacketBuilder::BuildDataPacket(const DataPacketContex
     // PADDING frames. All existing single-Initial callers still work
     // unchanged because they continue to pass add_padding=true with
     // min_size=kMinInitialPacketSize.
-    if (ctx.add_padding) {
+    if (pad) {
         // RFC 9000 §14.1 requires the *on-wire datagram* to be at least
         // kMinInitialPacketSize (1200 B). That floor includes the token plus a
         // fixed header + AEAD-tag envelope on top of the plaintext payload.
@@ -352,7 +370,7 @@ PacketBuilder::BuildResult PacketBuilder::BuildDataPacket(const DataPacketContex
         // envelope estimate so the *datagram* reaches ~1200 B. Using a small
         // (under-)estimate is the safe direction: it can only make the datagram
         // a few bytes OVER 1200, never under, so §14.1 still holds.
-        uint32_t effective_min_size = ctx.min_size;
+        uint32_t effective_min_size = min_size;
         if (ctx.level == kInitial) {
             constexpr uint32_t kInitialEnvelopeEstimate = 20;  // PN(<=4) + AEAD tag(16); lower bound, safe
             uint32_t token_len = !ctx.token.empty() ? static_cast<uint32_t>(ctx.token.length()) : 0;
@@ -565,7 +583,7 @@ PacketBuilder::BuildResult PacketBuilder::BuildImmediatePacket(const std::shared
     EncryptionLevel level, const std::shared_ptr<ICryptographer>& cryptographer, ConnectionIDManager* local_cid_mgr,
     ConnectionIDManager* remote_cid_mgr, const std::shared_ptr<common::IBuffer>& output_buffer,
     PacketNumber& packet_number, SendControl& send_control, uint32_t quic_version, uint8_t key_phase,
-    const std::string& token) {
+    const std::string& token, bool pad_path_frames) {
     // Simplified: use DataPacketContext with single frame
     DataPacketContext ctx;
     ctx.level = level;
@@ -580,6 +598,22 @@ PacketBuilder::BuildResult PacketBuilder::BuildImmediatePacket(const std::shared
     ctx.frames.push_back(frame);
     ctx.include_stream_data = false;  // Immediate packets don't include stream data
     ctx.add_padding = false;          // No padding for immediate packets (except Initial)
+    // RFC 9000 §8.2.1: an endpoint MUST expand datagrams that contain a
+    // PATH_CHALLENGE frame to at least the smallest allowed maximum datagram
+    // size, unless the path MTU to the new path is already known. The same
+    // applies to PATH_RESPONSE (§8.2.2). A bare 1-RTT probe not only violates
+    // that MUST but also breaks passive decryption of the new path's first
+    // packet by tools like tshark, which the interop runner's rebind checks
+    // rely on to find the path_challenge frame.
+    if (pad_path_frames && level == kApplication &&
+        (frame->GetType() == FrameType::kPathChallenge || frame->GetType() == FrameType::kPathResponse)) {
+        ctx.add_padding = true;
+        ctx.min_size = kMinInitialPacketSize;
+    } else if (!pad_path_frames) {
+        // Make sure the frame-type-based fallback padding in BuildDataPacket
+        // does not re-pad what the caller explicitly decided to send small.
+        ctx.suppress_path_frame_padding = true;
+    }
 
     LOG_DEBUG("PacketBuilder::BuildImmediatePacket: building immediate packet with frame type=%d at level=%d",
         frame->GetType(), level);
