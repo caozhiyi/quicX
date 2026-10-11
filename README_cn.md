@@ -4,7 +4,7 @@
   <a href="https://opensource.org/licenses/BSD-3-Clause"><img src="https://img.shields.io/badge/license-BSD--3--Clause-orange.svg" alt="License"></a>
   <img src="https://img.shields.io/badge/version-1.0.0-blue.svg" alt="Version">
   <img src="https://img.shields.io/badge/status-stable--v1.0.0-brightgreen.svg" alt="Status">
-  <img src="https://img.shields.io/badge/interop-24%20scenarios%20%C3%97%2017%20peers%20%7C%2090.60%25-brightgreen.svg" alt="Interop">
+  <img src="https://img.shields.io/badge/interop-24%20scenarios%20%C3%97%2017%20peers%20%7C%2092.87%25-brightgreen.svg" alt="Interop">
   <img src="https://img.shields.io/badge/C%2B%2B-17-blue.svg" alt="C++17">
   <img src="https://img.shields.io/badge/RFC-9000%20%2F%209369%20%2F%209114-informational.svg" alt="RFC">
   <a href="https://caozhiyi.cc/docs/quicx/"><img src="https://img.shields.io/badge/%E5%AE%98%E6%96%B9%E7%BD%91%E7%AB%99-caozhiyi.cc-8A2BE2.svg" alt="Website"></a>
@@ -15,7 +15,7 @@
 
 **QuicX** 是一套自包含的 C++17 QUIC / HTTP/3 协议栈：从 UDP socket、TLS 1.3（BoringSSL）、QUIC 流，一路到 HTTP/3 路由、QPACK 与服务端推送，全部在同一个仓库里实现，不依赖任何外部 HTTP 框架。
 
-**QuicX 是面向生产的 QUIC / HTTP/3 协议栈**：1523 项单元与集成测试、干净的 ASan / UBSan / TSan 结果、与 17 个主流实现 24 场景互通矩阵 90.60% 的通过率——健壮性经得起生产检验。代码库同时保持工程级可读，从网卡到 HTTP/3 handler 逐层贯通（阅读路径见 `docs/zh/LEARNING_PATH.md`），排查问题与二次开发都省力。自 1.0 起公开 API 遵循语义化版本。
+**QuicX 是面向生产的 QUIC / HTTP/3 协议栈**：1523 项单元与集成测试、干净的 ASan / UBSan / TSan 结果、与 17 个主流实现 24 场景互通矩阵 92.87% 的通过率——健壮性经得起生产检验。代码库同时保持工程级可读，从网卡到 HTTP/3 handler 逐层贯通（阅读路径见 `docs/zh/LEARNING_PATH.md`），排查问题与二次开发都省力。自 1.0 起公开 API 遵循语义化版本。
 
 ---
 
@@ -87,7 +87,7 @@ QuicX 持续使用 [`quic-interop-runner`](https://github.com/quic-interop/quic-
 | 通过 | **588** |
 | 失败 | **61** |
 | 不支持 | 95 |
-| **通过率**（剔除不支持） | **90.60%** |
+| **通过率**（剔除不支持） | **92.87%** |
 | Goodput / Crosstraffic | 30/30 / 27/30 |
 
 按对端实现统计，按综合有效通过率排序（`N/A` = 对端未提供该角色；`chrome` 仅支持 HTTP/3 客户端）：

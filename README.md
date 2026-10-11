@@ -4,7 +4,7 @@
   <a href="https://opensource.org/licenses/BSD-3-Clause"><img src="https://img.shields.io/badge/license-BSD--3--Clause-orange.svg" alt="License"></a>
   <img src="https://img.shields.io/badge/version-1.0.0-blue.svg" alt="Version">
   <img src="https://img.shields.io/badge/status-stable--v1.0.0-brightgreen.svg" alt="Status">
-  <img src="https://img.shields.io/badge/interop-24%20scenarios%20%C3%97%2017%20peers%20%7C%2090.60%25-brightgreen.svg" alt="Interop">
+  <img src="https://img.shields.io/badge/interop-24%20scenarios%20%C3%97%2017%20peers%20%7C%2092.87%25-brightgreen.svg" alt="Interop">
   <img src="https://img.shields.io/badge/C%2B%2B-17-blue.svg" alt="C++17">
   <img src="https://img.shields.io/badge/RFC-9000%20%2F%209369%20%2F%209114-informational.svg" alt="RFC">
   <a href="https://caozhiyi.cc/docs/quicx/en/"><img src="https://img.shields.io/badge/website-caozhiyi.cc-8A2BE2.svg" alt="Website"></a>
@@ -15,7 +15,7 @@
 
 **QuicX** is a self-contained C++17 QUIC / HTTP/3 protocol stack: from UDP socket, TLS 1.3 (BoringSSL), QUIC stream, all the way to HTTP/3 routing, QPACK, and server push, all implemented in a single repository without depending on any external HTTP framework.
 
-**QuicX is a production-ready QUIC / HTTP/3 protocol stack**: 1523 unit and integration tests, clean ASan / UBSan / TSan runs, and a 90.60% pass rate across a 24-scenario × 17-peer interop matrix — robustness that holds up in production. The codebase is also deliberately readable, walking through every layer from the network card to the HTTP/3 handler (`docs/zh/LEARNING_PATH.md`), making debugging and extension straightforward. Since 1.0, the public C++ API follows semantic versioning.
+**QuicX is a production-ready QUIC / HTTP/3 protocol stack**: 1523 unit and integration tests, clean ASan / UBSan / TSan runs, and a 92.87% pass rate across a 24-scenario × 17-peer interop matrix — robustness that holds up in production. The codebase is also deliberately readable, walking through every layer from the network card to the HTTP/3 handler (`docs/zh/LEARNING_PATH.md`), making debugging and extension straightforward. Since 1.0, the public C++ API follows semantic versioning.
 
 ---
 
@@ -87,7 +87,7 @@ QuicX is continuously tested against major QUIC implementations using [`quic-int
 | Pass | **588** |
 | Fail | **61** |
 | Unsupported | 95 |
-| **Pass Rate** (excluding unsupported) | **90.60%** |
+| **Pass Rate** (excluding unsupported) | **92.87%** |
 | Goodput / Crosstraffic | 30/30 / 27/30 |
 
 By peer implementation, sorted by overall effective pass rate (`N/A` = the peer does not ship that role; `chrome` is HTTP/3-client-only):
