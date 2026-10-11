@@ -167,6 +167,15 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_
     // Initialize encryption level scheduler (refactored) - centralizes encryption level selection
     encryption_scheduler_ =
         std::make_unique<EncryptionLevelScheduler>(connection_crypto_, recv_control_, *path_manager_);
+    // The TLS stack's "current" level advances as soon as all handshake
+    // messages of a level have been produced; CRYPTO data of a lower level
+    // that is later declared lost must still be retransmitted at its own
+    // level (RFC 9001 §4.1.3). Expose the lowest level with queued CRYPTO
+    // data to the scheduler.
+    encryption_scheduler_->SetPendingCryptoLevelProvider([this]() -> uint8_t {
+        auto cs = connection_crypto_.GetCryptoStream();
+        return cs ? cs->GetWaitSendEncryptionLevel() : static_cast<uint8_t>(kApplication);
+    });
 
     // Sole owner of the egress path. The address provider warms the sockaddr
     // cache on peer_addr_ — our long-lived storage — before handing out the
@@ -741,6 +750,18 @@ bool BaseConnection::DispatchByType(const std::shared_ptr<IPacket>& packet) {
             if (auto cs = connection_crypto_.GetCryptoStream()) {
                 cs->MarkInitialConsumedByPeer();
             }
+            // RFC 9000 §4.9.1: the peer discarded its Initial keys when it
+            // first processed our Initial flight (that is what let it send
+            // this Handshake packet), so it can never ACK anything of ours in
+            // the Initial space again. Any Initial packet still in
+            // unacked_packets_ is an un-ACKable zombie: every per-packet
+            // timer / PTO expiry would clone it into a fresh 1200 B
+            // datagram forever (observed in the amplificationlimit interop:
+            // Initial re-sent every ~48 ms until the peer's handshake
+            // timeout, 200+ datagrams of pure amplification). Discard the
+            // send-side Initial packet number space right here.
+            send_manager_.DiscardPacketNumberSpace(PacketNumberSpace::kInitialNumberSpace);
+            recv_control_.DiscardPacketNumberSpace(PacketNumberSpace::kInitialNumberSpace);
             return true;
         }
         case PacketType::kRetryPacketType:
@@ -1882,7 +1903,8 @@ bool BaseConnection::TrySendRetransmit() {
     // skipped: their re-encode is still the STREAM recovery path.
     if (crypto_level != kApplication &&
         (lost_pkt->GetFrameTypeBit() &
-            ~(FrameTypeBit::kCryptoBit | FrameTypeBit::kAckBit | FrameTypeBit::kPaddingBit)) == 0) {
+            ~(FrameTypeBit::kCryptoBit | FrameTypeBit::kAckBit | FrameTypeBit::kAckEcnBit |
+                FrameTypeBit::kPaddingBit)) == 0) {
         LOG_INFO("BaseConnection::TrySendRetransmit: dropping pure-CRYPTO retransmission, "
                  "frame-level path owns the recovery");
         return !lost_packets.empty();  // try next lost packet
@@ -2214,6 +2236,26 @@ int BaseConnection::TrySendBurst(int budget) {
         }
     }
     if (sent < budget) {
+        sent += TrySendNewBurst(budget - sent);
+    }
+
+    // RFC 9002 §6.2.4 completion: a fired PTO MUST still put at least one
+    // ack-eliciting packet on the wire. The retransmit loop above can consume
+    // lost entries as pure-CRYPTO drops (frame-level recovery owns the bytes)
+    // and when those CRYPTO offsets were already acked via a later packet's
+    // delivery, the fresh-data path has nothing either — the round ends with
+    // sent==0 and the connection goes silent. The peer (amplification-limited
+    // under RFC 9000 §8.1 until it hears from us again) stays silent too, and
+    // both sides wait each other out to the idle timeout. Observed as the
+    // L1×xquic 1/50 failure: CH retransmitted, 3rd copy ACKed, pn 1/2 zombies
+    // re-queued+dropped every PTO for 29 s. Inject the deferred probe PING and
+    // retry the fresh-data path once; ConsumePendingPtoProbe() is armed only
+    // by a PTO expiry and cleared by any ACK-eliciting send, so this cannot
+    // loop and only fires when the round genuinely emitted nothing.
+    if (sent == 0 && send_manager_.GetSendControl().ConsumePendingPtoProbe()) {
+        LOG_INFO("BaseConnection::TrySendBurst: PTO round emitted nothing, injecting PING probe");
+        auto ping = std::make_shared<PingFrame>();
+        OnFrameReady(ping);
         sent += TrySendNewBurst(budget - sent);
     }
     if (sent > 0) {
@@ -2911,10 +2953,34 @@ bool BaseConnection::SendImmediateProbe(const std::shared_ptr<IFrame>& frame, En
 
     auto scope = emitter_->Open();
 
+    // RFC 9000 §8.2.1 requires a datagram carrying PATH_CHALLENGE to be padded
+    // to the minimum MTU "unless the anti-amplification limit for the path does
+    // not permit sending a datagram of this size". On an unvalidated candidate
+    // path whose first inbound datagram was small (e.g. a ~30 B ACK right after
+    // a port rebind), the §8.1 3x budget can be far below 1200 B. Building the
+    // probe padded anyway would have it refused by the emit-time §8.1 gate,
+    // falling back to the queued path — and the immediate ACK for that very
+    // inbound datagram then becomes the new path's FIRST outbound packet
+    // without PATH_CHALLENGE, which the rebind-addr/rebind-port/
+    // connectionmigration checks all reject. Take the §8.2.1 waiver instead:
+    // build the probe unpadded so it still leaves synchronously, ahead of the
+    // ACK. (PTO probes with PingFrame at kInitial/kHandshake are unaffected —
+    // they were never padded here.)
+    bool pad_path_frames = true;
+    const uint64_t amp_remaining = send_manager_.GetAmpBudgetRemaining();
+    if (amp_remaining != UINT64_MAX &&
+        amp_remaining < static_cast<uint64_t>(kMinInitialPacketSize) + kAmpOverheadReserve) {
+        pad_path_frames = false;
+        LOG_DEBUG(
+            "BaseConnection::SendImmediateProbe: 8.1 budget (%llu) below padded probe size; sending unpadded per RFC "
+            "9000 8.2.1",
+            (unsigned long long)amp_remaining);
+    }
+
     auto result = packet_builder_->BuildImmediatePacket(frame, level, cryptographer,
         cid_coordinator_->GetLocalConnectionIDManager().get(), cid_coordinator_->GetRemoteConnectionIDManager().get(),
         buffer, send_manager_.GetPacketNumber(), send_manager_.GetSendControl(), connection_crypto_.GetVersion(),
-        connection_crypto_.GetCurrentKeyPhase());
+        connection_crypto_.GetCurrentKeyPhase(), "", pad_path_frames);
 
     if (!result.success) {
         LOG_ERROR("BaseConnection::SendImmediateProbe: failed to build packet: %s", result.error_message.c_str());

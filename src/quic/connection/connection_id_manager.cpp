@@ -1,5 +1,6 @@
 #include "common/log/log.h"
 
+#include "quic/config.h"
 #include "quic/connection/connection_id_generator.h"
 #include "quic/connection/connection_id_manager.h"
 
@@ -8,6 +9,22 @@ namespace quic {
 
 ConnectionID ConnectionIDManager::Generator() {
     ConnectionID id;
+    // RFC 9000 §7.2: 8 bytes is the recommended CID length for endpoints that
+    // use CIDs. The length MUST equal kDefaultDestinationCidLength: that is the
+    // length ShortHeader::DecodeHeader assumes when parsing the DCID of
+    // incoming short-header packets (the wire format does not encode it).
+    // There is also an interop reason not to use the 20-byte maximum:
+    // Wireshark's QUIC dissector (used by quic-interop-runner to verify
+    // connection migration) only attaches an existing connection to a
+    // *migrated* 5-tuple conversation when a short-header packet's DCID is
+    // found through its length-decrement fallback path. A 20-byte DCID is
+    // matched by the very first lookup at the assumed maximum length, skipping
+    // the fallback, so the conversation is never attached and the peer's
+    // zero-length-SCID (e.g. quic-go client) packets on the new path can never
+    // be associated or decrypted. An 8-byte DCID takes the fallback path and
+    // the connection gets attached (verified against picoquic, which uses
+    // 8-byte CIDs and passes rebind-addr).
+    id.length_ = kDefaultDestinationCidLength;
     if (!ConnectionIDGenerator::Instance().Generator(id.id_, id.length_)) {
         // The id is zeroed on failure. Surface it here rather than letting a
         // predictable CID silently enter the pool.

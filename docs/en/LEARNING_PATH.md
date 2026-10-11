@@ -1,6 +1,6 @@
 # QuicX Source-Code Learning Path
 
-QuicX is a **production-oriented** QUIC / HTTP/3 protocol stack: 1523 unit and integration tests, clean ASan / UBSan / TSan runs, and a 90.60% pass rate across the interop matrix; the code is at the same time deliberately readable, well-commented, with self-consistent tests and documentation. Since 1.0, the public C++ API follows semantic versioning — see [`api_stability.md`](./reference/api_stability.md).
+QuicX is a **production-oriented** QUIC / HTTP/3 protocol stack: 1523 unit and integration tests, clean ASan / UBSan / TSan runs, and a 92.87% pass rate across the interop matrix; the code is at the same time deliberately readable, well-commented, with self-consistent tests and documentation. Since 1.0, the public C++ API follows semantic versioning — see [`api_stability.md`](./reference/api_stability.md).
 
 This document is the **main entry point** for reading the source: ordered by "the complete journey of a packet from the NIC to an HTTP/3 handler", each station lists its source directory, the accompanying design documents, and hands-on experiments. All paths are relative to the repo root.
 
