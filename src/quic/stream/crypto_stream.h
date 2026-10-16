@@ -41,6 +41,21 @@ public:
     // send state so loss notifications on that level stop re-queueing.
     void MarkInitialConsumedByPeer();
 
+    // RFC 9001 4.9.1: an endpoint MUST discard its handshake keys when the
+    // TLS handshake is confirmed (client: HANDSHAKE_DONE / first 1-RTT
+    // packet; server: first successfully processed 1-RTT packet). By then the
+    // peer has either consumed our Handshake CRYPTO flight or has dropped its
+    // handshake keys — either way the flight can never be acknowledged again.
+    // The connection layer calls this from the handshake-confirmation point;
+    // it drops the Handshake-level retransmit state (retained segments) and
+    // makes OnFrameDelivery ignore further kLost at that level, so loss
+    // notifications stop re-queueing. Unsent outgoing bytes are kept for one
+    // final transmission. Without it, one lost Handshake flight packet under
+    // cross traffic keeps re-queueing forever (~200pps Handshake PING+CRYPTO
+    // probes for the whole connection, crosstraffic interop failure against
+    // 8 servers).
+    void MarkHandshakeConfirmed();
+
     virtual void Close();
 
     virtual uint32_t OnFrame(std::shared_ptr<IFrame> frame) override;
@@ -158,6 +173,10 @@ private:
     uint64_t acked_offset_[kNumEncryptionLevels];
     // Set by MarkInitialConsumedByPeer(); Initial-level kLost is ignored after.
     bool initial_consumed_by_peer_{false};
+    // Set by MarkHandshakeConfirmed(); Handshake-level kLost is ignored and
+    // already-sent segments are not re-queued after. Unsent outgoing bytes
+    // still get one final transmission.
+    bool handshake_confirmed_{false};
 
     // read buffers for each encryption level
     std::shared_ptr<common::MultiBlockBuffer> read_buffers_[kNumEncryptionLevels];

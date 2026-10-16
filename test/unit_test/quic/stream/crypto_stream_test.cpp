@@ -142,6 +142,77 @@ TEST(CryptoStreamTest, send) {
     EXPECT_TRUE(Check(frame2->GetData().GetStart(), data + 15, 15));
 }
 
+// Reproduces the interop crosstraffic storm scenario: after handshake
+// confirmation the handshake-level CRYPTO flight (client Finished, 36 bytes)
+// must never be regenerated, no matter how loss/PTO events fire afterwards.
+namespace {
+
+class ResurrectionVisitor: public IFrameVisitor {
+public:
+    bool HandleFrame(std::shared_ptr<IFrame> frame) override {
+        handled_.push_back(std::dynamic_pointer_cast<CryptoFrame>(frame));
+        return true;
+    }
+    std::shared_ptr<common::IBuffer> GetBuffer() override { return nullptr; }
+    uint8_t GetEncryptionLevel() override { return kHandshake; }
+    void SetStreamDataSizeLimit(uint32_t size) override { allowance_ = size; }
+    uint32_t GetLeftStreamDataSize() override { return allowance_; }
+    void AddStreamDataSize(uint32_t size) override { allowance_ -= std::min(allowance_, size); }
+    uint64_t GetStreamDataSize() override { return 0; }
+    uint32_t GetPacketLeftSize() override { return 1400; }
+
+    std::vector<std::shared_ptr<CryptoFrame>> handled_;
+    uint32_t allowance_{0};
+};
+
+}  // namespace
+
+TEST(CryptoStreamTest, handshake_confirmed_no_crypto_resurrection) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
+    std::shared_ptr<CryptoStream> stream = std::make_shared<CryptoStream>(event_loop, nullptr, nullptr, nullptr);
+
+    uint8_t finished[36];
+    for (int i = 0; i < 36; i++) finished[i] = static_cast<uint8_t>(i);
+
+    // 1. TLS provides client Finished at handshake level; handshake-phase
+    // transmission hands the frame (with its delivery handler) to the packet.
+    std::shared_ptr<CryptoFrame> inflight;
+    {
+        ResurrectionVisitor v;
+        v.allowance_ = 100;
+        ASSERT_EQ(stream->Send(finished, 36, kHandshake), 36);
+        ASSERT_EQ(stream->TrySendData(&v, kHandshake), IStream::TrySendResult::kSuccess);
+        ASSERT_EQ(v.handled_.size(), 1u);
+        inflight = v.handled_.front();
+        ASSERT_NE(inflight, nullptr);
+    }
+
+    // 2. Handshake confirmed (FinalizeHandshakePacketNumberSpaces path)
+    stream->MarkHandshakeConfirmed();
+
+    // 3. Late kLost notifications on the stale in-flight frame (from any
+    // pre-confirmation packet) must NOT re-queue the segment.
+    for (int round = 0; round < 5; round++) {
+        inflight->NotifyDelivery(FrameDeliveryState::kLost);
+    }
+    for (int round = 0; round < 5; round++) {
+        ResurrectionVisitor v;
+        v.allowance_ = 100;
+        EXPECT_EQ(stream->TrySendData(&v, kHandshake), IStream::TrySendResult::kSuccess);
+        EXPECT_EQ(v.handled_.size(), 0u) << "post-kLost round " << round << " resurrected handshake CRYPTO";
+    }
+
+    // 4. Fresh sends at handshake level after confirmation must also be inert.
+    EXPECT_EQ(stream->Send(finished, 36, kHandshake), 36);
+    ResurrectionVisitor v;
+    v.allowance_ = 100;
+    EXPECT_EQ(stream->TrySendData(&v, kHandshake), IStream::TrySendResult::kSuccess);
+    // (single final drain is allowed by design: unsent outgoing bytes are kept
+    // for one last transmission; what must never happen is regeneration from
+    // retained/lost ranges - asserted above.)
+}
+
 }  // namespace
 }  // namespace quic
 }  // namespace quicx

@@ -240,6 +240,12 @@ public:
         handshake_complete_ = true;
         pto_probe_pending_ = false;  // probes are pre-handshake only
     }
+    // Whether the TLS handshake is confirmed (RFC 9001 4.9.1). Read by the
+    // connection layer's retransmit path to stop re-sending Initial /
+    // Handshake packets whose ACK can never arrive anymore.
+    bool IsHandshakeComplete() const {
+        return handshake_complete_;
+    }
 
     // RFC 9002 §6.2.4 completion guarantee: every PTO cycle MUST put at least
     // one ack-eliciting packet on the wire. The immediate probe in OnPTOTimer

@@ -39,8 +39,14 @@ protected:
     // Unregister the qlog trace under the (possibly rotated) remote CID hash; see the Base declaration
     virtual std::string GetQlogTraceIdForCleanup() const override;
 
-    // HANDSHAKE_DONE frame handler (set as callback to frame processor)
-    bool HandleHandshakeDoneFrame(std::shared_ptr<IFrame> frame);
+    // HANDSHAKE_DONE frame handler (set as callback to frame processor).
+    // |confirmed_by_peer|: true when the server demonstrably received our
+    // flight (HANDSHAKE_DONE frame or a decryptable 1-RTT packet); false when
+    // only our own TLS completed (Finished possibly still in flight/lost) —
+    // in that case the application-level side effects run but
+    // FinalizeHandshakePacketNumberSpaces stays deferred so the Handshake
+    // retransmit state survives until real confirmation (RFC 9001 4.9.1).
+    bool HandleHandshakeDoneFrame(std::shared_ptr<IFrame> frame, bool confirmed_by_peer = true);
 
     // RFC 9000 §4.1.2: confirm the handshake when a 1-RTT packet is received,
     // not only on HANDSHAKE_DONE.  Implements the base-class hook
@@ -75,7 +81,16 @@ private:
     // handshake_done_cb_, which makes ClientWorker re-announce
     // kConnectionCreate to the application layer for an already-established
     // connection.
+    // Set once the application-level HANDSHAKE_DONE side effects ran (either
+    // from OnTlsHandshakeComplete or the real frame / 1-RTT fallback).
     bool handshake_done_processed_{false};
+    // Set once FinalizeHandshakePacketNumberSpaces() actually ran. Distinct
+    // from handshake_done_processed_: the TLS-complete path defers the
+    // Finalize until real peer confirmation arrives (HANDSHAKE_DONE frame or
+    // decryptable 1-RTT packet), so the two flags can be set at different
+    // times — and the deferred Finalize must still fire when confirmation
+    // arrives after the early-return idempotency guard.
+    bool handshake_finalized_{false};
 
     // TLS settings for Retry (need to restore after Reset)
     std::string saved_alpn_;

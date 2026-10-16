@@ -1554,18 +1554,36 @@ void BaseConnection::FinalizeHandshakePacketNumberSpaces() {
     recv_control_.DiscardPacketNumberSpace(PacketNumberSpace::kHandshakeNumberSpace);
     send_manager_.DiscardPacketNumberSpace(PacketNumberSpace::kInitialNumberSpace);
     send_manager_.DiscardPacketNumberSpace(PacketNumberSpace::kHandshakeNumberSpace);
+
+    // RFC 9001 4.9.1: discard the Handshake-level crypto retransmit state as
+    // well. The packet-number-space discard above only clears the *sent*
+    // unacked table; it does NOT stop the frame-level re-queue engine. A lost
+    // Handshake CRYPTO segment fires kLost -> OnFrameDelivery re-queues the
+    // retained bytes -> TrySend builds a brand-new Handshake packet -> it
+    // enters unacked_packets_[kHandshake] again -> no ACK can ever arrive
+    // (the peer dropped its handshake keys at its own confirmation) -> loss
+    // declared again. That loop ran at ~200pps for the entire connection in
+    // the crosstraffic interop (quicx client vs 8 servers): the flood of
+    // undecryptable PING+CRYPTO probes + the never-idle PTO state collapsed
+    // the server's cwnd to its floor (25MB download stuck at ~10.7MB,
+    // exponential goodput decay, Download timeout). MarkHandshakeConfirmed()
+    // drops the retained segments and ignores further kLost at this level,
+    // stopping the engine at its source. Bytes still queued unsent
+    // (outgoing) are kept for exactly one final transmission — the
+    // confirmation signal can overtake our own Finished (see CryptoStream::
+    // MarkHandshakeConfirmed).
+    if (auto cs = connection_crypto_.GetCryptoStream()) {
+        cs->MarkHandshakeConfirmed();
+    }
     LOG_INFO("Discarded Initial and Handshake packet number spaces per RFC 9000");
 
-    // Deliberately do NOT drop pending CRYPTO data still queued at Initial /
-    // Handshake level here. That data has not been transmitted yet (bytes are
-    // consumed from the crypto stream's send buffer only when they are packed
-    // into a packet), and it may be the flight the peer is still waiting for —
-    // e.g. the client's Finished, generated while processing the server's
-    // flight: dropping it leaves the server stuck at the Handshake level
-    // forever (it never installs 1-RTT keys). Once the pending bytes are sent
-    // the buffer drains on its own and this stream stops re-sending;
-    // retransmission of already-sent bytes is owned by SendControl's loss
-    // recovery, which is stopped by the packet number space discard above.
+    // Note: pending CRYPTO bytes still queued at Initial/Handshake level are
+    // NOT retransmitted after this point. For Initial this is RFC-mandated
+    // (MarkInitialConsumedByPeer at the Handshake dispatch point). For
+    // Handshake this is the same logic one level up: by the time the
+    // handshake is confirmed the peer either consumed the flight already or
+    // dropped its handshake keys, so the bytes can never be ACKed — holding
+    // them only feeds the re-queue loop described above.
 
     // Log key_discarded events for Initial and Handshake keys
     if (qlog_trace_) {
@@ -1855,6 +1873,34 @@ bool BaseConnection::TrySendRetransmit() {
     // packet number and re-encrypted, then sent as a brand-new packet.
     auto& send_control = send_manager_.GetSendControl();
     auto& lost_packets = send_control.GetLostPacket();
+
+    // RFC 9001 4.9.1/4.9.2 terminal gate: after handshake confirmation the
+    // peer has dropped (or is dropping) its Initial/Handshake keys, so a
+    // re-sent Initial/Handshake packet can never be decrypted, let alone
+    // ACKed. Entries can still land here from windows where the space
+    // discard had not run yet (e.g. declared lost before confirmation, the
+    // retransmit attempt happens after). Re-sending them re-enters the
+    // unacked table and re-arms loss detection — the self-sustaining
+    // ~200pps probe storm of the crosstraffic interop failure. Drain such
+    // entries instead of re-sending them.
+    while (!lost_packets.empty()) {
+        auto& stale_pkt = lost_packets.front().packet;
+        if (stale_pkt && send_control.IsHandshakeComplete() &&
+            (stale_pkt->GetCryptoLevel() == kInitial || stale_pkt->GetCryptoLevel() == kHandshake)) {
+            LOG_INFO(
+                "BaseConnection::TrySendRetransmit: handshake confirmed, dropping stale %s-level retransmission "
+                "pn=%llu",
+                stale_pkt->GetCryptoLevel() == kInitial ? "Initial" : "Handshake",
+                (unsigned long long)stale_pkt->GetPacketNumber());
+            lost_packets.pop_front();
+            continue;
+        }
+        break;
+    }
+    if (lost_packets.empty()) {
+        return false;
+    }
+
     auto lost_entry = lost_packets.front();
     lost_packets.pop_front();
     auto lost_pkt = lost_entry.packet;
@@ -2550,6 +2596,24 @@ bool BaseConnection::EmitOnePacket(PacketBuilder::DataPacketContext& tmpl, const
         build_ctx, buffer, send_manager_.GetPacketNumber(), send_manager_.GetSendControl());
 
     if (!result.success) {
+        // "no data to send" (packet_builder.cpp BuildDataPacket step 5) is NOT
+        // a failure: the burst-loop entry guard at the GatherBurstFrames call
+        // site only skips when frames are empty AND stream data is excluded,
+        // so a pass with include_stream_data=true and an idle stream set can
+        // legitimately reach here with an empty payload. Same situation as
+        // that guard: terminate the burst quietly, no flow-control side
+        // effects, no build-fail metric — count it as the no-data outcome
+        // instead. This fires once per wakeup on quiescent connections
+        // (observed 5000+/run in interop resumption/zerortt server logs); it
+        // must not spam LOG_ERROR and drown out real build failures.
+        if (result.error_message == "no data to send") {
+            LOG_DEBUG("BaseConnection::TrySendBurst: no data to send "
+                      "[max_bytes=%u, min_size=%u, max_stream_data_size=%u, frames=%zu, include_stream_data=%d]",
+                policy.max_bytes, build_ctx.min_size, build_ctx.max_stream_data_size, build_ctx.frames.size(),
+                policy.include_stream_data ? 1 : 0);
+            Metrics::CounterInc(common::MetricsStd::DiagTrySendNoData);
+            return false;
+        }
         LOG_ERROR("BaseConnection::TrySendBurst: failed to build packet: %s "
                   "[max_bytes=%u, min_size=%u, max_stream_data_size=%u, frames=%zu, include_stream_data=%d]",
             result.error_message.c_str(), policy.max_bytes, build_ctx.min_size, build_ctx.max_stream_data_size,

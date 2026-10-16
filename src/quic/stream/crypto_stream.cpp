@@ -468,6 +468,36 @@ void CryptoStream::MarkInitialConsumedByPeer() {
     LOG_INFO("CryptoStream::MarkInitialConsumedByPeer: dropping Initial send state, peer already consumed the flight");
 }
 
+void CryptoStream::MarkHandshakeConfirmed() {
+    if (handshake_confirmed_) {
+        return;
+    }
+    handshake_confirmed_ = true;
+    // RFC 9001 4.9.1: handshake keys are discarded at confirmation. The peer
+    // that already confirmed on its side dropped its handshake keys and can
+    // never decrypt — let alone ACK — anything we still hold at this level.
+    // Retransmission is therefore pointless and is stopped two ways: the
+    // retained (already-sent) segments are dropped here, and OnFrameDelivery
+    // ignores further kLost at this level so nothing re-queues again — that
+    // re-queue loop was the ~200pps eternal Handshake PING+CRYPTO probe storm
+    // in the crosstraffic interop failure.
+    //
+    // outgoing_ (bytes queued but NOT yet packed into a packet) is
+    // deliberately KEPT: the confirmation signal can overtake our own flight.
+    // The client's Finished is queued by the TLS stack while processing the
+    // server's Handshake flight, and the very next server datagram (1-RTT
+    // frames — NEW_CONNECTION_ID, NST, even HANDSHAKE_DONE) triggers the
+    // confirmation path BEFORE the Finished ever left. Dropping it deadlocks
+    // the handshake: the server never sees the Finished, never completes TLS,
+    // and the connection dies (connection_close/resumption unit tests). Those
+    // bytes get exactly one final transmission attempt; their loss is then
+    // final, which the peer's dropped keys make correct.
+    retained_[kHandshake].clear();
+    LOG_INFO("CryptoStream::MarkHandshakeConfirmed: dropping Handshake retransmit state, handshake confirmed "
+             "(outgoing kept: %zu segments)",
+        outgoing_[kHandshake].size());
+}
+
 void CryptoStream::OnFrameDelivery(uint8_t level, uint64_t offset, uint32_t length, FrameDeliveryState state) {
     if (level >= kNumEncryptionLevels) {
         return;
@@ -517,6 +547,16 @@ void CryptoStream::OnFrameDelivery(uint8_t level, uint64_t offset, uint32_t leng
     // would spin the PTO forever (quinn handshakecorruption: [0,733) re-queued
     // every 15 s until the handshake timeout).
     if (level == kInitial && initial_consumed_by_peer_) {
+        return;
+    }
+
+    // Handshake-level loss after handshake confirmation: the peer dropped its
+    // handshake keys at its own confirmation point (RFC 9001 4.9.1), so this
+    // range can never be ACKed. Re-queueing would spin a no-backoff PTO loop
+    // for the rest of the connection (crosstraffic: ~200pps Handshake
+    // PING+CRYPTO probes starving the server's cwnd to its floor against 8
+    // servers, 25MB download stuck at ~10.7MB).
+    if (level == kHandshake && handshake_confirmed_) {
         return;
     }
 

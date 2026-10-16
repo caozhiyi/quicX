@@ -4,9 +4,9 @@
 # versions, while the CMAKE_CXX_COMPILER_FRONTEND_VARIANT variable has been
 # set by CMake since 3.0.
 if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" OR CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
-    add_compile_options(/wd4101 /wd4189 /wd4505)
+    add_compile_options(/wd4100 /wd4101 /wd4189 /wd4505)
 else()
-    add_compile_options(-Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function)
+    add_compile_options(-Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function -Wno-unused-parameter)
 endif()
 
 add_subdirectory(hello_world)
