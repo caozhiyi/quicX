@@ -158,6 +158,24 @@ std::function<void()> SendControl::MakeRetransmitTimeoutHandler(
             return;  // Already handled by DetectLostPackets or a previous timer
         }
 
+        // RFC 9001 4.9.1/4.9.2: handshake confirmed — this space can never be
+        // ACKed again. Drop the entry instead of declaring loss: a loss
+        // declaration feeds lost_packets_, whose re-sends re-enter this map
+        // and re-arm this timer — the self-sustaining probe storm. Return the
+        // in-flight bytes via the discard path, not OnPacketLost (which would
+        // wrongly cut the cwnd).
+        if (handshake_complete_ &&
+            (ns == PacketNumberSpace::kInitialNumberSpace || ns == PacketNumberSpace::kHandshakeNumberSpace)) {
+            it->second.timer_.Cancel();
+            congestion_control_->OnPacketsDiscarded(it->second.pkt_len_);
+            LOG_INFO(
+                "SendControl::MakeRetransmitTimeoutHandler: handshake confirmed, discarding unacked entry ns=%d "
+                "pn=%llu instead of loss",
+                ns, (unsigned long long)packet->GetPacketNumber());
+            unacked_packets_[ns].erase(it);
+            return;
+        }
+
         it->second.is_lost = true;
         // Frame-level delivery: this packet is declared lost, notify any
         // tracked frames before the entry is (later) reaped.
@@ -201,14 +219,33 @@ void SendControl::TrackPacketForRetransmission(const std::shared_ptr<IPacket>& p
     // in ~SendControl (per-packet timer callbacks that captured `this`) was
     // fixed by delegating to ClearRetransmissionData(), it is safe to route
     // all four PTO callsites through the accessor.
+    // RFC 9001 4.9.1/4.9.2 gate: once the handshake is confirmed, Initial /
+    // Handshake keys are (being) discarded on both sides, so a packet in
+    // those spaces can never be ACKed. The final outgoing Handshake flight
+    // (e.g. the client's Finished, which may still be queued when the
+    // confirmation signal arrives) is transmitted exactly once by the crypto
+    // stream — but it must NOT enter loss recovery. An entry here arms the
+    // per-packet retransmit timer, whose loss declaration feeds the
+    // lost_packets_ queue, and TrySendBurst re-sends from that queue on every
+    // worker tick: an un-ACKable entry turns that into the eternal ~200pps
+    // Handshake probe storm (crosstraffic interop: server cwnd collapsed to
+    // its floor, 25MB download stuck). Bytes were already counted as
+    // in-flight by OnPacketSent() above, so return them via the discard path
+    // (NOT OnPacketLost, which would wrongly collapse the cwnd).
+    if (handshake_complete_ &&
+        (ns == PacketNumberSpace::kInitialNumberSpace || ns == PacketNumberSpace::kHandshakeNumberSpace)) {
+        congestion_control_->OnPacketsDiscarded(pkt_len);
+        LOG_INFO(
+            "SendControl::TrackPacketForRetransmission: handshake confirmed, tracking-free final send at ns=%d "
+            "pn=%llu len=%u",
+            ns, (unsigned long long)packet->GetPacketNumber(), pkt_len);
+        return;
+    }
+
     common::Timer retransmit_timer = scheduler_->AddTimer(life_token_, MakeRetransmitTimeoutHandler(packet, pkt_len, ns),
         static_cast<uint32_t>(rtt_calculator_.GetPTOInterval(GetEffectiveMaxAckDelay())));
     unacked_packets_[ns][packet->GetPacketNumber()] =
         PacketTimerInfo(largest_sent_time_[ns], pkt_len, std::move(retransmit_timer), stream_data, packet);
-    LOG_DEBUG(
-        "SendControl::OnPacketSend: saved packet %llu to unacked_packets[%d], stream_data count=%zu, "
-        "unacked_packets[%d] size=%zu",
-        packet->GetPacketNumber(), ns, stream_data.size(), ns, unacked_packets_[ns].size());
 
     // RFC 9002: Schedule PTO timer to detect persistent timeouts.
     // Rearm splices the existing node instead of freeing and reallocating one,
@@ -927,6 +964,22 @@ void SendControl::DetectLostPackets(uint64_t now, PacketNumberSpace ns, uint64_t
     for (uint64_t pkt_num : lost_packet_nums) {
         auto it = unacked_packets_[ns].find(pkt_num);
         if (it != unacked_packets_[ns].end()) {
+            // RFC 9001 4.9.1/4.9.2: handshake confirmed — Initial/Handshake
+            // entries can never be ACKed again. Discard them (no loss
+            // declaration, no retransmission queue) so the threshold
+            // detector does not re-seed the probe storm; return the bytes
+            // via the discard path instead of OnPacketLost.
+            if (handshake_complete_ &&
+                (ns == PacketNumberSpace::kInitialNumberSpace || ns == PacketNumberSpace::kHandshakeNumberSpace)) {
+                it->second.timer_.Cancel();
+                congestion_control_->OnPacketsDiscarded(it->second.pkt_len_);
+                LOG_INFO(
+                    "SendControl::DetectLostPackets: handshake confirmed, discarding unacked entry ns=%d pn=%llu "
+                    "instead of loss",
+                    ns, (unsigned long long)pkt_num);
+                unacked_packets_[ns].erase(it);
+                continue;
+            }
             it->second.timer_.Cancel();  // Cancel PTO timer
 
             // Add to lost_packets_ list for retransmission, carrying the
@@ -1012,6 +1065,19 @@ void SendControl::OnPTOTimer() {
         // Find the oldest unacked packet to probe with
         // This ensures a probe is sent even if per-packet timers haven't fired yet
         for (int ns = 0; ns < PacketNumberSpace::kNumberSpaceCount; ns++) {
+            // RFC 9001 4.9.1/4.9.2: once the handshake is confirmed the
+            // Initial/Handshake keys are discarded on both sides, so nothing
+            // in those spaces can ever be ACKed again — a PTO probe there is
+            // pure poison on the wire (crosstraffic: eternal ~200pps
+            // Handshake PING+CRYPTO probes). Defense in depth on top of
+            // CryptoStream::MarkHandshakeConfirmed(), which drains the
+            // re-queue engine at its source: any entry that still slips into
+            // these spaces (e.g. a send already in flight when confirmation
+            // landed) must not be probed.
+            if (handshake_complete_ &&
+                (ns == PacketNumberSpace::kInitialNumberSpace || ns == PacketNumberSpace::kHandshakeNumberSpace)) {
+                continue;
+            }
             // When the peer has sent undecryptable 1-RTT, its Finished was
             // lost.  Skip Initial packets so the PTO probe targets Handshake
             // level, which elicits an ACK exposing the missing Finished.

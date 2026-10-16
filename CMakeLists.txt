@@ -234,7 +234,7 @@ endif()
 # GoogleTest/Google Benchmark) the wrong flag must never reach MSVC's `cl`.
 # Use generator expressions so the correct spelling is selected per compiler
 # regardless of how MSVC/clang-cl detection resolves at configure time.
-function(quicx_suppress_example_test_unused_warnings)
+function(quicx_suppress_test_unused_warnings)
     # MSVC (cl.exe) and clang-cl both accept the /wd#### spelling, while GCC and
     # plain Clang/AppleClang need the -Wno-* spelling. The wrong flag must never
     # reach MSVC's `cl` (which would fail with D8021). CMAKE_CXX_COMPILER_FRONTEND_VARIANT
@@ -244,9 +244,9 @@ function(quicx_suppress_example_test_unused_warnings)
     # docker builder's cmake may not satisfy. Compiler identity variables are set
     # during compiler detection, before any project logic runs, so this is equivalent.
     if(MSVC OR CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
-        add_compile_options(/wd4101 /wd4189 /wd4505)
+        add_compile_options(/wd4100 /wd4101 /wd4189 /wd4505)
     else()
-        add_compile_options(-Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function)
+        add_compile_options(-Wno-unused-parameter -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function)
     endif()
 endfunction()
 

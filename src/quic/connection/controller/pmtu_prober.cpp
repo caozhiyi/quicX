@@ -68,10 +68,25 @@ bool PmtuProber::CheckAckCoversProbe(std::shared_ptr<IFrame> frame) {
     // Walk additional ACK ranges. Per RFC 9000 §19.3.1, gap_value is the
     // unacked-count minus one, so the next range's largest PN is
     // cursor - gap_value - 2.
+    //
+    // Underflow guards: a malformed (or hostile) ACK frame can claim a first
+    // range or gap that reaches below packet number 0. Both subtractions
+    // below would then wrap uint64_t to a huge value, and the probe PN would
+    // spuriously fall "inside" the wrapped range — reporting the PMTU probe
+    // as acknowledged when it was not. Clamp instead and stop walking: every
+    // later range is anchored even lower, so once one gap is invalid the
+    // rest of the frame is invalid too.
+    if (first_range > largest) {
+        return false;
+    }
     uint64_t cursor = largest - first_range;
     auto ranges = ack->GetAckRange();
     for (auto it = ranges.begin(); it != ranges.end(); ++it) {
-        uint64_t range_high = cursor - it->GetGap() - 2;
+        const uint64_t gap = it->GetGap();
+        if (gap + 2 > cursor) {
+            break;  // range would reach below PN 0: malformed ACK frame
+        }
+        uint64_t range_high = cursor - gap - 2;
         uint64_t range_low = (range_high >= it->GetAckRangeLength()) ? (range_high - it->GetAckRangeLength()) : 0;
         if (probe >= range_low && probe <= range_high) {
             OnProbeResult(true);

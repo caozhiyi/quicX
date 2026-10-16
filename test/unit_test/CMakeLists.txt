@@ -23,6 +23,11 @@ else()
   message(FATAL_ERROR "third/googletest submodule missing. Please init submodules or set GTest_DIR.")
 endif()
 
+# Test lambdas/callbacks keep full protocol signatures while often using only
+# a subset of parameters; exempt -Wunused-parameter here only (src/ still
+# fails CI on it via QUICX_WARNINGS_AS_ERRORS).
+quicx_suppress_test_unused_warnings()
+
 # Collect all test sources under unit_test
 file(GLOB_RECURSE test_files
     ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp

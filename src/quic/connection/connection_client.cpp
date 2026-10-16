@@ -295,16 +295,26 @@ void ClientConnection::OnApplicationDataPacketProcessed() {
     // Connecting state forever, never issuing its request, and the interop
     // handshakecorruption / handshakeloss tests would time out.
     if (!handshake_done_processed_) {
-        HandleHandshakeDoneFrame(nullptr);
+        HandleHandshakeDoneFrame(nullptr, /*confirmed_by_peer=*/true);
     }
 }
 
-bool ClientConnection::HandleHandshakeDoneFrame(std::shared_ptr<IFrame> /*frame*/) {
+bool ClientConnection::HandleHandshakeDoneFrame(std::shared_ptr<IFrame> /*frame*/, bool confirmed_by_peer) {
     LOG_DEBUG("ClientConnection::HandleHandshakeDoneFrame called");
     // Idempotency guard: a retransmitted HANDSHAKE_DONE must be accepted (so it
     // still gets ACKed by the caller) but must not repeat any side effect.
     if (handshake_done_processed_) {
         LOG_DEBUG("HANDSHAKE_DONE already processed, ignoring duplicate frame");
+        // The first pass may have run from OnTlsHandshakeComplete() with
+        // confirmed_by_peer=false (Finished possibly still in flight). The
+        // application-level side effects already ran there, but the DEFERRED
+        // FinalizeHandshakePacketNumberSpaces has not — run it now that the
+        // peer has demonstrably received our flight, or the handshake-level
+        // retransmit gates would never arm (storm window reopens).
+        if (confirmed_by_peer && !handshake_finalized_) {
+            handshake_finalized_ = true;
+            FinalizeHandshakePacketNumberSpaces();
+        }
         return true;
     }
     handshake_done_processed_ = true;
@@ -400,7 +410,22 @@ bool ClientConnection::HandleHandshakeDoneFrame(std::shared_ptr<IFrame> /*frame*
 
     // Stop PTO probing, drop Initial/Handshake number spaces (RFC 9000 §4.10),
     // qlog key_discarded events — shared with the server's completion path.
-    FinalizeHandshakePacketNumberSpaces();
+    //
+    // Only run this when the SERVER has actually confirmed receiving our
+    // flight (HANDSHAKE_DONE frame or a decryptable 1-RTT packet arrived —
+    // both prove the server consumed our Finished). Running it merely because
+    // our own TLS completed would discard the Handshake retransmit state
+    // while our Finished might still be in flight or lost: the server cannot
+    // complete TLS without it, so no HANDSHAKE_DONE / 1-RTT can ever arrive,
+    // and the handshake deadlocks until idle timeout (observed as 0/15 in
+    // handshakeloss / handshakecorruption after the retransmit gates were
+    // added — the gates depend on this confirmation being honest). Keeping
+    // the Handshake keys and retransmit state alive for this window matches
+    // RFC 9001 §4.9.1 as implemented by ngtcp2/quiche/aioquic.
+    if (confirmed_by_peer && !handshake_finalized_) {
+        handshake_finalized_ = true;
+        FinalizeHandshakePacketNumberSpaces();
+    }
 
     LOG_DEBUG("handshake_done_cb_ is %s", handshake_done_cb_ ? "SET" : "NULL");
     if (handshake_done_cb_) {
@@ -615,18 +640,23 @@ bool ClientConnection::OnRetryPacket(const std::shared_ptr<IPacket>& packet) {
 
 void ClientConnection::OnTlsHandshakeComplete() {
     LOG_DEBUG("handshake done.");
-    // RFC 9000 §4.1.2: the client considers the handshake confirmed once its
-    // own handshake is complete (server CRYPTO received + client Finished
-    // sent).  This is symmetric to the server confirming on receiving the
-    // client's Finished (ServerConnection::OnTlsHandshakeComplete).  It is
-    // essential under packet corruption/loss, where the server's
-    // HANDSHAKE_DONE frame and/or its first 1-RTT packet can both be lost
-    // while the handshake itself already succeeded — without this the client
-    // would stay in Connecting forever, never issue its request, and the
-    // interop handshakecorruption / handshakeloss tests would time out.  (We
-    // still also confirm on HANDSHAKE_DONE and on any received 1-RTT packet.)
+    // RFC 9000 §4.1.2: the client may move to the established state (issue
+    // requests, install keep-alive, export the session) once its own TLS
+    // handshake is complete — the server CRYPTO flight was received and the
+    // client Finished has been queued for transmission.  This is essential
+    // under packet corruption/loss, where the server's HANDSHAKE_DONE frame
+    // and/or its first 1-RTT packet can both be lost while the handshake
+    // itself already succeeded.
+    //
+    // However this is NOT the RFC 9001 §4.9.1 confirmation point: our
+    // Finished may still be lost on the wire, and until the server actually
+    // acknowledges our flight (HANDSHAKE_DONE or any decryptable 1-RTT
+    // packet — both paths below) the Handshake retransmit machinery must
+    // stay alive so a lost Finished can still be recovered.  Hence
+    // confirmed_by_peer=false here: all the "start the application" side
+    // effects run, but FinalizeHandshakePacketNumberSpaces is deferred.
     if (!handshake_done_processed_) {
-        HandleHandshakeDoneFrame(nullptr);
+        HandleHandshakeDoneFrame(nullptr, /*confirmed_by_peer=*/false);
     }
 }
 
