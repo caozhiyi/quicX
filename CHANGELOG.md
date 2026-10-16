@@ -12,6 +12,44 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
 
 ## [Unreleased]
 
+---
+
+## [1.0.1]
+
+### Fixed
+
+- Interop: parse short-header DCIDs with the 8-byte CIDs quicX actually
+  issues instead of the 20-byte protocol maximum, so incoming 1-RTT
+  packets route to the right connection (RFC 9000 17.3).
+- Interop: guarantee at least one ack-eliciting packet per PTO cycle
+  (RFC 9002 6.2.4), fixing the `handshakeloss` deadlock against xquic
+  where stale retransmit entries starved output on the
+  amplification-limited server.
+- Interop: retransmit lost CRYPTO data at its original (lower)
+  encryption level via the pending-crypto-level provider (RFC 9001
+  4.1.3).
+- Interop: discard Handshake-level keys and retransmit state once the
+  handshake is confirmed (RFC 9001 4.9); a single lost Handshake flight
+  packet previously re-queued forever (~200pps PING+CRYPTO probes),
+  which broke `crosstraffic` against 8 servers. Together with the fixes
+  above this raised the 24-scenario × 17-peer interop matrix effective
+  pass rate from 90.60% (588/649) to **92.87%** (625/673).
+- Build: wired `ENABLE_INTEROP` into the root `CMakeLists.txt`
+  (`add_subdirectory(test/interop)` behind the option), so the
+  `interop_server` / `interop_client` targets build again — the
+  interop Docker image had been failing with "No rule to make target".
+- Build: renamed `quicx_suppress_example_test_unused_warnings` to
+  `quicx_suppress_test_unused_warnings` to match the (only) call site,
+  fixing CMake configure errors in `test/unit_test`; the test scopes
+  now also exempt `-Wunused-parameter` (`src/` still errors via
+  `QUICX_WARNINGS_AS_ERRORS`).
+- Docs: added the official website (https://caozhiyi.cc) links to
+  README / README_cn and refreshed the interop badges to the 92.87%
+  round; polished the quick-start transition sentence.
+- Version: bumped the product version to 1.0.1 across
+  `CMakeLists.txt`, `include/quicx/common/version.h`, `MODULE.bazel`,
+  `VERSION.txt`, and the README badges.
+
 ### Changed
 
 - Refreshed the interop baseline to the latest upstream
@@ -418,6 +456,7 @@ upgrade, and a curl-like CLI client (`quicx_curl`).
 
 ---
 
-[Unreleased]: https://github.com/caozhiyi/quicX/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/caozhiyi/quicX/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/caozhiyi/quicX/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/caozhiyi/quicX/compare/v0.1.0...v1.0.0
 [0.1.0]: https://github.com/caozhiyi/quicX/releases/tag/v0.1.0

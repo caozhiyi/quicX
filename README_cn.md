@@ -2,8 +2,8 @@
 
 <p align="left">
   <a href="https://opensource.org/licenses/BSD-3-Clause"><img src="https://img.shields.io/badge/license-BSD--3--Clause-orange.svg" alt="License"></a>
-  <img src="https://img.shields.io/badge/version-1.0.0-blue.svg" alt="Version">
-  <img src="https://img.shields.io/badge/status-stable--v1.0.0-brightgreen.svg" alt="Status">
+  <img src="https://img.shields.io/badge/version-1.0.1-blue.svg" alt="Version">
+  <img src="https://img.shields.io/badge/status-stable--v1.0.1-brightgreen.svg" alt="Status">
   <img src="https://img.shields.io/badge/interop-24%20scenarios%20%C3%97%2017%20peers%20%7C%2092.87%25-brightgreen.svg" alt="Interop">
   <img src="https://img.shields.io/badge/C%2B%2B-17-blue.svg" alt="C++17">
   <img src="https://img.shields.io/badge/RFC-9000%20%2F%209369%20%2F%209114-informational.svg" alt="RFC">

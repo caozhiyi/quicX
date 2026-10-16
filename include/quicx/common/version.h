@@ -24,7 +24,7 @@
 
 #define QUICX_VERSION_MAJOR 1
 #define QUICX_VERSION_MINOR 0
-#define QUICX_VERSION_PATCH 0
+#define QUICX_VERSION_PATCH 1
 
 // Helper macros to stringify the version components at preprocessing time.
 #define QUICX_VERSION_STRINGIFY_IMPL(x) #x

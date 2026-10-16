@@ -5,7 +5,7 @@ cmake_minimum_required(VERSION 3.16)
 #     include/quicx/common/version.h
 #   - the `version = "..."` field in MODULE.bazel
 #   - the version badges in README.md / README_cn.md
-project(QuicX VERSION 1.0.0 LANGUAGES C CXX)
+project(QuicX VERSION 1.0.1 LANGUAGES C CXX)
 
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
