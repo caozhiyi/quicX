@@ -36,6 +36,7 @@
 #include <memory>
 #include <mutex>
 #include <quicx/common/metrics.h>
+#include <quicx/common/version.h>
 #include <quicx/http3/if_async_handler.h>
 #include <quicx/http3/if_client.h>
 #include <quicx/http3/if_request.h>
@@ -892,7 +893,7 @@ int main(int argc, char* argv[]) {
     bool is_migration_test = testcase_env && (strcmp(testcase_env, "connectionmigration") == 0);
 
     std::cout << "========================================" << std::endl;
-    std::cout << "quicX hq-interop Client" << std::endl;
+    std::cout << "quicX hq-interop Client (QuicX " << QUICX_VERSION_STRING << ")" << std::endl;
     std::cout << "========================================" << std::endl;
     std::cout << "Server: " << server << ":" << port << std::endl;
     std::cout << "Downloads: " << downloads_dir << std::endl;
