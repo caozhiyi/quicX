@@ -54,6 +54,10 @@ public:
     // because the server's job is done after sending the response
     bool ShouldSignalCompletionAfterSend() const override { return true; }
 
+    // Set the per-process request body limit (bytes). Wired from
+    // Http3ServerConfig::max_request_body_size_ by Server::Init.
+    static void SetMaxRequestBodySize(uint64_t size) { max_request_body_size_ = size; }
+
 private:
     virtual void HandleHeaders() override;
     virtual void HandleData(const std::shared_ptr<common::IBuffer>& data, bool is_last) override;
@@ -64,8 +68,18 @@ private:
     // send response and handle push
     void HandleResponse();
 
+    // Reject the request with 413 and terminate the stream. Used when the
+    // declared or received body size exceeds max_request_body_size_.
+    void SendPayloadTooLarge();
+
 private:
-    uint32_t body_length_;
+    // Per-process upper bound (bytes) for request bodies buffered in complete
+    // mode; defends against unbounded buffering when no handler consumes the
+    // body (e.g. unmatched routes). Configurable via
+    // Http3ServerConfig::max_request_body_size_ / SetMaxRequestBodySize().
+    static uint64_t max_request_body_size_;
+
+    uint64_t body_length_ = 0;
     uint32_t received_body_length_;
     bool is_response_sent_;
     RouteConfig route_config_;

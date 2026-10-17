@@ -335,6 +335,10 @@ std::function<void(uint64_t, uint32_t)> IConnection::MakeErrorHandler() {
         if (!self) {
             return;
         }
+        // Error handlers are also used by UnidentifiedStream to signal
+        // terminal release (error_code 0 on FIN). Drop the unidentified
+        // bookkeeping before dispatching.
+        self->ReleaseUnidentifiedStream(stream_id);
         self->HandleError(stream_id, error_code);
     };
 }
@@ -406,8 +410,32 @@ void IConnection::AttachUnidentifiedStream(const std::shared_ptr<IQuicStream>& s
             self->OnStreamTypeIdentified(stream_type, s, remaining_data);
         });
 
+    // Cap the number of streams pending type identification. A peer that
+    // opens streams but never completes the type varint would otherwise pin
+    // one wrapper per stream forever (unbounded memory growth).
+    if (unidentified_stream_count_ >= kMaxUnidentifiedStreams) {
+        LOG_ERROR("IConnection: too many unidentified streams (%llu), closing connection",
+            (unsigned long long)unidentified_stream_count_);
+        Close(Http3ErrorCode::kStreamCreationError);
+        return;
+    }
+    unidentified_stream_count_++;
+
     // Store temporarily until stream type is identified
     streams_[stream->GetStreamID()] = unidentified;
+}
+
+void IConnection::ReleaseUnidentifiedStream(uint64_t stream_id) {
+    auto it = streams_.find(stream_id);
+    if (it == streams_.end()) {
+        return;
+    }
+    if (std::dynamic_pointer_cast<UnidentifiedStream>(it->second)) {
+        streams_.erase(it);
+        if (unidentified_stream_count_ > 0) {
+            unidentified_stream_count_--;
+        }
+    }
 }
 
 void IConnection::OnStreamTypeIdentified(
@@ -415,6 +443,9 @@ void IConnection::OnStreamTypeIdentified(
     LOG_DEBUG("IConnection: stream type %llu identified for stream %llu", stream_type, stream->GetStreamID());
 
     // Remove the temporary UnidentifiedStream
+    if (unidentified_stream_count_ > 0) {
+        unidentified_stream_count_--;
+    }
     streams_.erase(stream->GetStreamID());
 
     auto typed_stream = CreateTypedStream(stream_type, stream);

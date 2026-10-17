@@ -532,6 +532,11 @@ TEST_F(RecvStreamTest, OnStreamFrameMultiple) {
 TEST_F(RecvStreamTest, OnResetStreamFrameBasic) {
     auto event_loop = common::MakeEventLoop();
     ASSERT_TRUE(event_loop->Init());
+    // Track the close callback: since the fix for the receive-stream leak,
+    // delivering a RESET to the application also advances the state machine
+    // to the Reset Read terminal state and fires the close callback.
+    bool close_called = false;
+    stream_close_cb_ = [&close_called](uint64_t) { close_called = true; };
     auto stream =
         std::make_shared<RecvStream>(event_loop, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
 
@@ -559,7 +564,10 @@ TEST_F(RecvStreamTest, OnResetStreamFrameBasic) {
 
     EXPECT_TRUE(recv_callback_called_);
     EXPECT_EQ(error_code_, 0x100);
-    EXPECT_EQ(stream->GetRecvStateMachine()->GetStatus(), StreamState::kResetRecvd);
+    // The reset has been delivered to the application, so the receive side
+    // must be in its terminal Reset Read state and the stream closed.
+    EXPECT_EQ(stream->GetRecvStateMachine()->GetStatus(), StreamState::kResetRead);
+    EXPECT_TRUE(close_called);
 }
 
 // Test 3.2: final_size validate

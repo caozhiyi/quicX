@@ -18,6 +18,9 @@
 namespace quicx {
 namespace http3 {
 
+// Default request body cap: 16 MiB (see Http3ServerConfig::max_request_body_size_).
+uint64_t ResponseStream::max_request_body_size_ = 16 * 1024 * 1024;
+
 ResponseStream::ResponseStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
     const std::shared_ptr<QpackEncoder>& qpack_decoder, const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
     const std::shared_ptr<IQuicBidirectionStream>& stream, std::weak_ptr<IHttpProcessor> http_processor,
@@ -191,6 +194,14 @@ void ResponseStream::HandleHeaders() {
         }
     }
 
+    // Reject early if the declared body already exceeds the limit: complete
+    // mode would otherwise buffer the whole body with no cap (unmatched
+    // routes have no handler that consumes it).
+    if (has_content_length && body_length_ > max_request_body_size_) {
+        SendPayloadTooLarge();
+        return;
+    }
+
     route_config_ = RouteConfig();
     if (auto proc = http_processor_.lock()) {
         route_config_ = proc->MatchRoute(request_->GetMethod(), request_->GetPath(), request_);
@@ -264,8 +275,18 @@ void ResponseStream::HandleHeaders() {
 }
 
 void ResponseStream::HandleData(const std::shared_ptr<common::IBuffer>& data, bool is_last) {
-    LOG_DEBUG("ResponseStream::HandleData: data size=%zu, is_last=%d, body_length_=%u, received_body_length_=%u",
-        data->GetDataLength(), is_last, body_length_, received_body_length_);
+    LOG_DEBUG("ResponseStream::HandleData: data size=%zu, is_last=%d, body_length_=%llu, received_body_length_=%u",
+        data->GetDataLength(), is_last, (unsigned long long)body_length_, received_body_length_);
+
+    // Enforce the request body cap on actually received bytes too: a peer
+    // can under-declare content-length (or omit it) and stream more data,
+    // which would otherwise accumulate in body_ without limit in complete
+    // mode.
+    if (max_request_body_size_ > 0 &&
+        (uint64_t)received_body_length_ + data->GetDataLength() > max_request_body_size_) {
+        SendPayloadTooLarge();
+        return;
+    }
 
     // Validate data size
     if (body_length_ > 0 && received_body_length_ + data->GetDataLength() > body_length_) {
@@ -344,6 +365,22 @@ void ResponseStream::HandleData(const std::shared_ptr<common::IBuffer>& data, bo
             should_notify_completion_ = true;
         }
         return;
+    }
+}
+
+void ResponseStream::SendPayloadTooLarge() {
+    // RFC 9114 allows rejecting an oversized message either with a 413
+    // status or by aborting the stream; do both — the client gets a proper
+    // status line and the stream is terminated so no more body is buffered.
+    if (!is_response_sent_) {
+        is_response_sent_ = true;
+        auto resp = std::make_shared<Response>();
+        resp->SetStatusCode(413);
+        resp->AppendBody(std::string("Payload Too Large"));
+        SendResponse(resp);
+    }
+    if (error_handler_) {
+        error_handler_(GetStreamID(), Http3ErrorCode::kMessageError);
     }
 }
 

@@ -9,6 +9,7 @@
 #include "http3/config.h"
 #include "http3/http/server.h"
 #include "http3/metric/metrics_handler.h"
+#include "http3/stream/response_stream.h"
 
 namespace quicx {
 
@@ -40,6 +41,11 @@ Server::~Server() {
 bool Server::Init(const Http3ServerConfig& config) {
     // Store config for later use
     config_ = config;
+
+    // Propagate the request body cap to all ResponseStreams created by this
+    // server (static: one HTTP/3 server config per process is the supported
+    // deployment model).
+    ResponseStream::SetMaxRequestBodySize(config.max_request_body_size_);
 
     // Basic validation (though QuicServer might handle it)
     if ((config.quic_config_.cert_pem_ == nullptr || config.quic_config_.key_pem_ == nullptr) &&

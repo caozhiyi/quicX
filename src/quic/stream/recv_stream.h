@@ -54,6 +54,12 @@ protected:
     virtual void OnStreamDataBlockFrame(std::shared_ptr<IFrame> frame);
     virtual void OnResetStreamFrame(std::shared_ptr<IFrame> frame);
 
+    // Invoked after receive-side state transitions that may have reached a
+    // terminal state (Data Read / Reset Read, RFC 9000 §3.2). A standalone
+    // receive-only stream closes entirely there; BidirectionStream overrides
+    // this to require BOTH directions terminal (RFC 9000 §3.5).
+    virtual void CheckStreamClose();
+
 protected:
     uint64_t final_offset_;
     // Tracks whether a final offset (FIN / final size) has been received. A separate bool

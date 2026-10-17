@@ -337,6 +337,17 @@ protected:
     std::unordered_map<uint16_t, uint64_t> settings_;
     std::unordered_map<uint64_t, std::shared_ptr<IStream>> streams_;
 
+    // Number of streams currently pending stream-type identification (i.e.
+    // wrapped in UnidentifiedStream). Capped to prevent unbounded memory
+    // growth from a peer that opens unidirectional streams but never sends a
+    // complete type varint (see AttachUnidentifiedStream).
+    static constexpr uint64_t kMaxUnidentifiedStreams = 4096;
+    uint64_t unidentified_stream_count_ = 0;
+
+    // Removes the UnidentifiedStream wrapper for stream_id (if any) and
+    // decrements the pending count. Called on terminal release paths.
+    void ReleaseUnidentifiedStream(uint64_t stream_id);
+
     // Our outbound HTTP/3 control stream. Same type on both roles (the
     // server also uses ControlClientSenderStream — it sends SETTINGS and
     // GOAWAY the same way), hence owned here rather than per-subclass.

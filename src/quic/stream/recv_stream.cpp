@@ -130,6 +130,11 @@ void RecvStream::FlushBufferedData() {
     if (recv_machine_->CanAppReadAllData()) {
         recv_machine_->AppReadAllData();
     }
+
+    // The deferred delivery may have completed the stream (e.g. the FIN
+    // arrived with data that was only flushed after the read callback was
+    // installed late). Check the terminal state here too.
+    CheckStreamClose();
 }
 
 uint32_t RecvStream::OnFrame(std::shared_ptr<IFrame> frame) {
@@ -140,10 +145,18 @@ uint32_t RecvStream::OnFrame(std::shared_ptr<IFrame> frame) {
             break;
         case FrameType::kResetStream:
             OnResetStreamFrame(frame);
+            // RESET may have driven the receive side to its Reset Read
+            // terminal state — release the stream if so.
+            CheckStreamClose();
             break;
         default:
             if (StreamFrame::IsStreamFrame(frame_type)) {
-                return OnStreamFrame(frame);
+                auto result = OnStreamFrame(frame);
+                // A STREAM frame carrying the FIN may have driven the receive
+                // side to its Data Read terminal state — release the stream
+                // if so.
+                CheckStreamClose();
+                return result;
             } else {
                 LOG_ERROR("unexpected frame on recv stream. frame type:%d", frame_type);
             }
@@ -479,8 +492,14 @@ void RecvStream::OnResetStreamFrame(std::shared_ptr<IFrame> frame) {
 
     if (recv_machine_->GetStatus() == StreamState::kResetRecvd) {
         if (recv_cb_) {
-            recv_cb_(buffer_, false, reset_frame->GetAppErrorCode());
+            // RESET_STREAM replaces the FIN (RFC 9000 §3.5): deliver it with
+            // is_last=true so upper layers treat the stream as terminated.
+            recv_cb_(buffer_, true, reset_frame->GetAppErrorCode());
         }
+
+        // The reset has been surfaced to the application: consume it so the
+        // receive side reaches its Reset Read terminal state (RFC 9000 §3.2).
+        recv_machine_->AppReadAllData();
 
     } else {
         reset_error_ = reset_frame->GetAppErrorCode();
@@ -488,6 +507,21 @@ void RecvStream::OnResetStreamFrame(std::shared_ptr<IFrame> frame) {
 
     // Metrics: RESET_STREAM received
     Metrics::CounterInc(common::MetricsStd::QuicStreamsResetRx);
+}
+
+void RecvStream::CheckStreamClose() {
+    // RFC 9000 §3.2: Data Read and Reset Read are the terminal states of the
+    // receive side. For a standalone receive-only stream the whole stream ends
+    // there: fire the close callback so the connection drops its ownership.
+    // (BidirectionStream overrides this and additionally requires the send
+    // side to be terminal, per §3.5.)
+    auto status = recv_machine_->GetStatus();
+    if (status == StreamState::kDataRead || status == StreamState::kResetRead) {
+        if (stream_close_cb_) {
+            LOG_DEBUG("recv stream reached terminal state, closing. stream id:%llu", stream_id_);
+            stream_close_cb_(stream_id_);
+        }
+    }
 }
 
 }  // namespace quic
