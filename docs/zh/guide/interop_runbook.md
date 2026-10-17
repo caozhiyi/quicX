@@ -2,7 +2,7 @@
 
 本文档只描述"如何运行 quicX 的互操作性（interop）测试"。
 
-测试进度与结果矩阵见 [`reports/interop_status.md`](../reports/interop_status.md)。
+测试进度与结果矩阵见 [`reports/interop_status.md`](../reports/interop_status.md)；最新一轮结果由每周 CI 自动发布在 https://caozhiyi.cc/interop/。
 
 框架原理与官方协议细节见 [`guide/interop_overview.md`](./interop_overview.md)。
 

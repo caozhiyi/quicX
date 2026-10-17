@@ -32,6 +32,7 @@
 #include <iostream>
 #include <memory>
 #include <quicx/common/metrics.h>
+#include <quicx/common/version.h>
 #include <quicx/http3/if_request.h>
 #include <quicx/http3/if_response.h>
 #include <quicx/http3/if_server.h>
@@ -719,7 +720,7 @@ int main(int argc, char* argv[]) {
     }
 
     std::cout << "========================================" << std::endl;
-    std::cout << (enable_http3 ? "quicX HTTP/3 Interop Server" : "quicX hq-interop Server") << std::endl;
+    std::cout << (enable_http3 ? "quicX HTTP/3 Interop Server" : "quicX hq-interop Server") << " (QuicX " << QUICX_VERSION_STRING << ")" << std::endl;
     std::cout << "========================================" << std::endl;
     std::cout << "Port: " << port << std::endl;
     std::cout << "WWW: " << www_dir << std::endl;

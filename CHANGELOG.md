@@ -4,13 +4,60 @@ All notable changes to **QuicX** will be documented in this file.
 
 The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/).
 
-> **Versioning**: QuicX does **not** follow Semantic Versioning, and the public
-> C++ API may change between releases.  Pin to an exact version if you depend
-> on QuicX directly.
+> **Versioning**: since **1.0**, QuicX follows Semantic Versioning: within a
+> major version (`1.x`) the public C++ API is source-compatible — patch and
+> minor releases do not break existing callers; breaking changes land in major
+> releases only. Full policy: `docs/en/reference/api_stability.md` (no ABI
+> promise — always rebuild against the version you link).
 
 ---
 
 ## [Unreleased]
+
+### Changed
+
+- Docs: link the READMEs, interop status reports, and runbooks to the
+  live auto-published interop results at https://caozhiyi.cc/interop/;
+  fixed the stale per-round Pass/Fail counts (588/61 → 625/48) in the
+  README result tables.
+
+---
+
+## [1.0.1]
+
+### Fixed
+
+- Interop: parse short-header DCIDs with the 8-byte CIDs quicX actually
+  issues instead of the 20-byte protocol maximum, so incoming 1-RTT
+  packets route to the right connection (RFC 9000 17.3).
+- Interop: guarantee at least one ack-eliciting packet per PTO cycle
+  (RFC 9002 6.2.4), fixing the `handshakeloss` deadlock against xquic
+  where stale retransmit entries starved output on the
+  amplification-limited server.
+- Interop: retransmit lost CRYPTO data at its original (lower)
+  encryption level via the pending-crypto-level provider (RFC 9001
+  4.1.3).
+- Interop: discard Handshake-level keys and retransmit state once the
+  handshake is confirmed (RFC 9001 4.9); a single lost Handshake flight
+  packet previously re-queued forever (~200pps PING+CRYPTO probes),
+  which broke `crosstraffic` against 8 servers. Together with the fixes
+  above this raised the 24-scenario × 17-peer interop matrix effective
+  pass rate from 90.60% (588/649) to **92.87%** (625/673).
+- Build: wired `ENABLE_INTEROP` into the root `CMakeLists.txt`
+  (`add_subdirectory(test/interop)` behind the option), so the
+  `interop_server` / `interop_client` targets build again — the
+  interop Docker image had been failing with "No rule to make target".
+- Build: renamed `quicx_suppress_example_test_unused_warnings` to
+  `quicx_suppress_test_unused_warnings` to match the (only) call site,
+  fixing CMake configure errors in `test/unit_test`; the test scopes
+  now also exempt `-Wunused-parameter` (`src/` still errors via
+  `QUICX_WARNINGS_AS_ERRORS`).
+- Docs: added the official website (https://caozhiyi.cc) links to
+  README / README_cn and refreshed the interop badges to the 92.87%
+  round; polished the quick-start transition sentence.
+- Version: bumped the product version to 1.0.1 across
+  `CMakeLists.txt`, `include/quicx/common/version.h`, `MODULE.bazel`,
+  `VERSION.txt`, and the README badges.
 
 ### Changed
 
@@ -20,11 +67,12 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
   (90.15%), performance 57/60 (goodput 30/30 at an average 8.67 Mbps,
   crosstraffic 27/30). README, runbook, support matrix, and the bilingual
   interop status report were synchronized.
-- **Repositioned as a teaching / learning reference.** README, README_cn,
-  `SECURITY.md`, and the support / API-stability docs no longer frame QuicX
-  as a production-services product or claim SemVer / a frozen public API;
-  the public C++ API carries no cross-release compatibility promise (pin to
-  an exact version). The `1.0.0` notes below keep their historical wording.
+- **Docs: positioning and API-stability promise aligned.** README, README_cn,
+  `SECURITY.md`, and the support / API-stability docs consistently frame
+  QuicX as a production-grade QUIC / HTTP/3 stack whose public C++ API
+  **follows SemVer since 1.0** (source-compatible within `1.x`; see
+  `docs/en/reference/api_stability.md`). `SECURITY.md` drops the stale
+  "teaching reference only" status note.
 - **SECURITY.md**: removed the `security@quicx.invalid` placeholder mailbox
   and the stale "once the project is on GitHub" wording; the GitHub Security
   Advisory of `github.com/caozhiyi/quicX` is now the single documented
@@ -79,10 +127,10 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
 
 - **Positioned for production services.** The README, badges, and this
   changelog frame QuicX as a production-ready QUIC / HTTP/3 stack backed by
-  the unit, integration, and interop suites; the earlier goal of `1.0.0` as
-  an ABI-stability / SemVer milestone has been dropped, and the public C++
-  API carries no cross-release compatibility promise. The codebase is
-  deliberately readable and doubles as an end-to-end learning reference
+  the unit, integration, and interop suites; since 1.0 the public C++ API
+  follows Semantic Versioning (source-compatible within `1.x`; see
+  `docs/en/reference/api_stability.md`). The codebase is deliberately
+  readable and doubles as an end-to-end learning reference
   (`docs/zh/LEARNING_PATH.md`).
 - **README rewritten** for clarity (single-page narrative: positioning →
   architecture → capabilities → interop matrix → quick-start → further
@@ -418,6 +466,7 @@ upgrade, and a curl-like CLI client (`quicx_curl`).
 
 ---
 
-[Unreleased]: https://github.com/caozhiyi/quicX/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/caozhiyi/quicX/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/caozhiyi/quicX/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/caozhiyi/quicX/compare/v0.1.0...v1.0.0
 [0.1.0]: https://github.com/caozhiyi/quicX/releases/tag/v0.1.0
