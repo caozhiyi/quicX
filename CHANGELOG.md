@@ -12,6 +12,13 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
 
 ## [Unreleased]
 
+### Changed
+
+- Docs: link the READMEs, interop status reports, and runbooks to the
+  live auto-published interop results at https://caozhiyi.cc/interop/;
+  fixed the stale per-round Pass/Fail counts (588/61 → 625/48) in the
+  README result tables.
+
 ---
 
 ## [1.0.1]

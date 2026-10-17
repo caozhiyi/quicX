@@ -2,6 +2,8 @@
 
 本文档记录 quicX 与主流 QUIC 实现互操作测试的**最新基线结果**，可作为对外引用版本。
 
+在线交互矩阵——每周 CI 自动发布的最新一轮结果：**https://caozhiyi.cc/interop/**。本文档是带根因分析的基线快照。
+
 测试方法、命令与环境依赖见 [`guide/interop_runbook.md`](../guide/interop_runbook.md)。
 
 | 项 | 值 |

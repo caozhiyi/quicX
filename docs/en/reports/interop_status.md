@@ -2,6 +2,8 @@
 
 This document records the **latest baseline interoperability results** of quicX against the major QUIC implementations and is the canonical version to cite externally.
 
+Live interactive matrix — the newest round auto-published by weekly CI: **https://caozhiyi.cc/interop/**. This document is the curated baseline snapshot with root-cause analysis.
+
 For test methodology, commands, and environment, see [`guide/interop_runbook.md`](../guide/interop_runbook.md).
 
 | Item | Value |

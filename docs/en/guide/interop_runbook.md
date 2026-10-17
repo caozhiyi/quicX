@@ -2,7 +2,7 @@
 
 This document describes **how to run** QuicX's interop tests.
 
-Status & result matrix lives in [`reports/interop_status.md`](../reports/interop_status.md).
+Status & result matrix lives in [`reports/interop_status.md`](../reports/interop_status.md); the newest round is auto-published by weekly CI at https://caozhiyi.cc/interop/.
 
 Framework internals & official spec live in [`guide/interop_overview.md`](./interop_overview.md).
 

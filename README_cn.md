@@ -4,7 +4,7 @@
   <a href="https://opensource.org/licenses/BSD-3-Clause"><img src="https://img.shields.io/badge/license-BSD--3--Clause-orange.svg" alt="License"></a>
   <img src="https://img.shields.io/badge/version-1.0.1-blue.svg" alt="Version">
   <img src="https://img.shields.io/badge/status-stable--v1.0.1-brightgreen.svg" alt="Status">
-  <img src="https://img.shields.io/badge/interop-24%20scenarios%20%C3%97%2017%20peers%20%7C%2092.87%25-brightgreen.svg" alt="Interop">
+  <a href="https://caozhiyi.cc/interop/"><img src="https://img.shields.io/badge/interop-24%20scenarios%20%C3%97%2017%20peers%20%7C%2092.87%25-brightgreen.svg" alt="Interop"></a>
   <img src="https://img.shields.io/badge/C%2B%2B-17-blue.svg" alt="C++17">
   <img src="https://img.shields.io/badge/RFC-9000%20%2F%209369%20%2F%209114-informational.svg" alt="RFC">
   <a href="https://caozhiyi.cc/docs/quicx/"><img src="https://img.shields.io/badge/%E5%AE%98%E6%96%B9%E7%BD%91%E7%AB%99-caozhiyi.cc-8A2BE2.svg" alt="Website"></a>
@@ -84,8 +84,8 @@ QuicX 持续使用 [`quic-interop-runner`](https://github.com/quic-interop/quic-
 
 | 指标 | 值 |
 |---|---|
-| 通过 | **588** |
-| 失败 | **61** |
+| 通过 | **625** |
+| 失败 | **48** |
 | 不支持 | 95 |
 | **通过率**（剔除不支持） | **92.87%** |
 | Goodput / Crosstraffic | 30/30 / 27/30 |
@@ -114,6 +114,7 @@ QuicX 持续使用 [`quic-interop-runner`](https://github.com/quic-interop/quic-
 
 覆盖场景：`handshake`、`transfer`、`longrtt`、`chacha20`、`multiplexing`、`retry`、`resumption`、`zerortt`、`http3`、`blackhole`、`keyupdate`、`ecn`、`amplificationlimit`、`handshakeloss`、`transferloss`、`handshakecorruption`、`transfercorruption`、`ipv6`、`v2`、`rebind-port`、`rebind-addr`、`connectionmigration`、`goodput`、`crosstraffic`。
 
+在线交互式结果矩阵（每周 CI 自动发布）：**https://caozhiyi.cc/interop/**
 完整报告与失败根因分析：[`interop status`](./docs/zh/reports/interop_status.md)
 本地复现：[`interop runbook`](./docs/zh/guide/interop_runbook.md)。
 
