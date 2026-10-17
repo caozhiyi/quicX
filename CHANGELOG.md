@@ -4,9 +4,11 @@ All notable changes to **QuicX** will be documented in this file.
 
 The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/).
 
-> **Versioning**: QuicX does **not** follow Semantic Versioning, and the public
-> C++ API may change between releases.  Pin to an exact version if you depend
-> on QuicX directly.
+> **Versioning**: since **1.0**, QuicX follows Semantic Versioning: within a
+> major version (`1.x`) the public C++ API is source-compatible — patch and
+> minor releases do not break existing callers; breaking changes land in major
+> releases only. Full policy: `docs/en/reference/api_stability.md` (no ABI
+> promise — always rebuild against the version you link).
 
 ---
 
@@ -65,11 +67,12 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
   (90.15%), performance 57/60 (goodput 30/30 at an average 8.67 Mbps,
   crosstraffic 27/30). README, runbook, support matrix, and the bilingual
   interop status report were synchronized.
-- **Repositioned as a teaching / learning reference.** README, README_cn,
-  `SECURITY.md`, and the support / API-stability docs no longer frame QuicX
-  as a production-services product or claim SemVer / a frozen public API;
-  the public C++ API carries no cross-release compatibility promise (pin to
-  an exact version). The `1.0.0` notes below keep their historical wording.
+- **Docs: positioning and API-stability promise aligned.** README, README_cn,
+  `SECURITY.md`, and the support / API-stability docs consistently frame
+  QuicX as a production-grade QUIC / HTTP/3 stack whose public C++ API
+  **follows SemVer since 1.0** (source-compatible within `1.x`; see
+  `docs/en/reference/api_stability.md`). `SECURITY.md` drops the stale
+  "teaching reference only" status note.
 - **SECURITY.md**: removed the `security@quicx.invalid` placeholder mailbox
   and the stale "once the project is on GitHub" wording; the GitHub Security
   Advisory of `github.com/caozhiyi/quicX` is now the single documented
@@ -124,10 +127,10 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
 
 - **Positioned for production services.** The README, badges, and this
   changelog frame QuicX as a production-ready QUIC / HTTP/3 stack backed by
-  the unit, integration, and interop suites; the earlier goal of `1.0.0` as
-  an ABI-stability / SemVer milestone has been dropped, and the public C++
-  API carries no cross-release compatibility promise. The codebase is
-  deliberately readable and doubles as an end-to-end learning reference
+  the unit, integration, and interop suites; since 1.0 the public C++ API
+  follows Semantic Versioning (source-compatible within `1.x`; see
+  `docs/en/reference/api_stability.md`). The codebase is deliberately
+  readable and doubles as an end-to-end learning reference
   (`docs/zh/LEARNING_PATH.md`).
 - **README rewritten** for clarity (single-page narrative: positioning →
   architecture → capabilities → interop matrix → quick-start → further

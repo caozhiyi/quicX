@@ -4,9 +4,9 @@ Thank you for taking the time to help keep **QuicX** and its users safe.
 This document describes which versions are eligible for security fixes,
 how to report a vulnerability, and what to expect once you do.
 
-> **Project status.**  QuicX is positioned as a **teaching / learning
-> reference** for QUIC and HTTP/3.  It is an open-source project, not a
-> commercial product, and carries no contractual SLA; security reports are
+> **Project status.**  QuicX is a production-grade open-source QUIC / HTTP/3
+> stack; the public C++ API follows Semantic Versioning since 1.0.  It is not
+> a commercial product and carries no contractual SLA; security reports are
 > nevertheless taken seriously and patched on a best-effort basis under the
 > timeline below.
 
