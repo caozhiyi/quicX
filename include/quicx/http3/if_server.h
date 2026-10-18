@@ -25,6 +25,14 @@ struct Http3ServerConfig {
     /** Local connection limits*/
     uint64_t max_concurrent_streams_ = 200;  // max concurrent streams allowed
     bool enable_push_ = false;               // whether to enable push streams
+
+    /**
+     * Maximum request body size (bytes) buffered in complete mode. Requests
+     * whose declared or received body exceeds this are rejected with 413 and
+     * the stream is terminated. 0 disables the limit (not recommended for
+     * internet-facing servers). Default: 16 MiB.
+     */
+    uint64_t max_request_body_size_ = 16 * 1024 * 1024;
 };
 
 /**

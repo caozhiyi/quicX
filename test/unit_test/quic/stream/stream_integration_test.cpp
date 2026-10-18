@@ -901,7 +901,12 @@ TEST_F(StreamIntegrationTest, ResetStreamAfterPartialData) {
 
     // Verify error propagated
     EXPECT_EQ(error_code, 0x789);
-    EXPECT_EQ(stream->GetRecvStateMachine()->GetStatus(), StreamState::kResetRecvd);
+    // The reset has been delivered to the application, so the receive side
+    // reaches its terminal Reset Read state and the stream close callback
+    // fires (leak fix: the stream must not stay in kResetRecvd forever).
+    EXPECT_EQ(stream->GetRecvStateMachine()->GetStatus(), StreamState::kResetRead);
+    EXPECT_TRUE(stream_closed_called_);
+    EXPECT_EQ(closed_stream_id_, 5);
 }
 
 // Test 5.3: Concurrent close and reset

@@ -6,6 +6,7 @@
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
 
+#include "http3/http/error.h"
 #include "http3/http/request.h"
 #include "http3/qpack/blocked_registry.h"
 #include "http3/qpack/qpack_encoder.h"
@@ -434,6 +435,33 @@ TEST_F(RequestResponseStreamTest, GetHeadersWithFinInSameBatchSendsResponseOnce)
     EXPECT_EQ(handler_invocations, 1);
     ASSERT_NE(client_connection_->GetResponse(), nullptr);
     EXPECT_EQ(client_connection_->GetResponse()->GetStatusCode(), 200);
+}
+
+// Regression test for the QX-02 fix: a request whose declared content-length
+// exceeds the request body limit (default 16 MiB) must be rejected with 413
+// and the stream terminated, instead of the server buffering the whole body
+// in memory with no cap (PoC declared ~4.25GB, which also used to overflow
+// the uint32_t body_length_ member).
+TEST_F(RequestResponseStreamTest, RejectsOversizedDeclaredContentLength) {
+    std::shared_ptr<IRequest> request = std::make_shared<Request>();
+    request->SetMethod(HttpMethod::kPost);
+    request->SetPath("/no/such/route");  // unmatched route is the attack path
+    request->SetScheme("https");
+    request->SetAuthority("server4:443");
+    // Declare an oversized body; no actual body bytes are attached, so
+    // SendRequest keeps this header as-is (it only rewrites content-length
+    // when a direct body buffer is present).
+    request->AddHeader("content-length", "4563406848");  // ~4.25GB, > uint32
+
+    EXPECT_TRUE(client_connection_->SendRequest(request));
+
+    // The server must answer 413 Payload Too Large...
+    ASSERT_NE(client_connection_->GetResponse(), nullptr);
+    EXPECT_EQ(client_connection_->GetResponse()->GetStatusCode(), 413);
+    // ...and terminate the request stream with an HTTP/3 message error
+    // instead of switching into unbounded complete-buffering mode.
+    EXPECT_EQ(server_connection_->GetErrorCode(),
+        static_cast<uint32_t>(Http3ErrorCode::kMessageError));
 }
 
 }  // namespace

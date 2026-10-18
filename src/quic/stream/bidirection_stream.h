@@ -64,7 +64,7 @@ public:
     using SendStream::OnDataAcked;
 
 protected:
-    void CheckStreamClose();
+    void CheckStreamClose() override;
 };
 
 }  // namespace quic

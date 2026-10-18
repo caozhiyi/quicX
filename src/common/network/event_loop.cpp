@@ -81,7 +81,15 @@ int EventLoop::Wait() {
     timer_core_->Run(now);
 
     int32_t next_ms = timer_core_->MinTime(now);
-    int timeout_ms = next_ms >= 0 ? static_cast<int>(next_ms) : 1000;
+    // Round the driver timeout UP (+1ms). The ms-truncated remaining time,
+    // plus clock skew between the scheduler's clock and UTCTimeMsec(), can
+    // otherwise wake the driver a hair BEFORE the timer deadline; the
+    // post-wait Run() would then miss the timer and Wait() would return
+    // without firing it (Windows-only flake in PureTimerSelfDrives_50ms,
+    // elapsed=49ms/fired=0). Waking 1ms late is harmless — Run() only
+    // fires timers whose deadline has passed — but waking early violates
+    // the single-Wait pure-timer self-driving contract.
+    int timeout_ms = next_ms >= 0 ? static_cast<int>(next_ms) + 1 : 1000;
 
     // Check if same-thread wakeup requested (e.g., from AddTimer/PostTask)
     // If so, use timeout=0 to return immediately instead of blocking
