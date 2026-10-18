@@ -182,7 +182,10 @@ void ResponseStream::HandleHeaders() {
     std::string content_length;
     if (FindField(headers_, "content-length", content_length)) {
         try {
-            body_length_ = std::stoul(content_length);
+            // stoull, not stoul: unsigned long is 32-bit on Windows (LLP64),
+            // and stoul would throw out_of_range for declarations >4GB —
+            // exactly the oversized-body payloads this check exists for.
+            body_length_ = std::stoull(content_length);
             has_content_length = true;
         } catch (const std::exception& e) {
             LOG_ERROR("ResponseStream::HandleHeaders: invalid content-length value '%s': %s",
@@ -227,8 +230,8 @@ void ResponseStream::HandleHeaders() {
         return;
     }
 
-    LOG_DEBUG("HandleHeaders: complete handler called, body_length_: %u, has_content_length: %d", body_length_,
-        has_content_length);
+    LOG_DEBUG("HandleHeaders: complete handler called, body_length_: %llu, has_content_length: %d",
+        (unsigned long long)body_length_, has_content_length);
     // if complete handler is set and there is no body, call the handler and send response
     if (!has_content_length || body_length_ == 0) {
         // No body expected, handle immediately.
