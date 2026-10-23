@@ -13,6 +13,9 @@ concurrency:
   group: sanitizer-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   sanitize:
     name: sanitize (${{ matrix.sanitizer }})
