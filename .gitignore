@@ -33,6 +33,7 @@ seeds
 *.tar.bz2
 *.tar.xz
 *.zip
+docs/internal
 
 # ---- Test / runtime artifacts ----------------------------------------------
 www/*.bin
