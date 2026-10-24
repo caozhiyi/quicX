@@ -12,6 +12,9 @@ on:
         required: true
         default: '60'
 
+permissions:
+  contents: read
+
 jobs:
   fuzz:
     name: libFuzzer smoke (${{ github.event.inputs.duration || '60' }}s per target)
