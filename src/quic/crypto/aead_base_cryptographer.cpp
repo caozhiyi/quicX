@@ -37,8 +37,13 @@ ICryptographer::Result AeadBaseCryptographer::InstallSecretWithVersion(
     const uint8_t* secret, size_t secret_len, bool is_write, uint32_t version) {
     Secret& dest_secret = is_write ? write_secret_ : read_secret_;
 
-    // RFC 9001 §6: Save the raw traffic secret for Key Update derivation
+    // RFC 9001 §6: save the raw traffic secret for Key Update derivation.
+    // Cleanse before overwriting: assign() only rewrites the new secret's
+    // bytes, leaving a longer previous secret's tail in place.
     auto& raw_secret = is_write ? raw_write_secret_ : raw_read_secret_;
+    if (!raw_secret.empty()) {
+        OPENSSL_cleanse(raw_secret.data(), raw_secret.size());
+    }
     raw_secret.assign(secret, secret + secret_len);
 
     // Get version-specific labels
@@ -85,29 +90,42 @@ ICryptographer::Result AeadBaseCryptographer::InstallSecretWithVersion(
     // computes its mask with CRYPTO_chacha_20). We then skip the allocation.
     const EVP_CIPHER* hp_cipher = GetHeaderProtectionCipher();
 
-    auto init_hp_ctx = [hp_cipher, &dest_secret](EVPCIPHERCTXPtr& ctx) {
+    auto init_hp_ctx = [hp_cipher, &dest_secret](EVPCIPHERCTXPtr& ctx) -> bool {
         if (!hp_cipher) {
             ctx.reset();
-            return;
+            return true;  // "no cached HP context for this suite" is not a failure
         }
         ctx.reset(EVP_CIPHER_CTX_new());
         if (!ctx.get()) {
-            return;
+            return false;
         }
         // Every HP cipher we install is ECB, which takes no IV. Padding is
         // disabled because ECB is used as a one-shot 16 -> 16 block transform.
-        EVP_EncryptInit_ex(ctx.get(), hp_cipher, NULL, dest_secret.hp_.data(), nullptr);
+        // A failed init must fail loudly, not leave a null-state ctx.
+        if (EVP_EncryptInit_ex(ctx.get(), hp_cipher, NULL, dest_secret.hp_.data(), nullptr) != 1) {
+            LOG_ERROR("AeadBaseCryptographer: EVP_EncryptInit_ex failed for header protection context");
+            ctx.reset();
+            return false;
+        }
         EVP_CIPHER_CTX_set_padding(ctx.get(), 0);
+        return true;
     };
 
+    bool hp_ok = false;
     if (is_write) {
         write_aead_ctx_.reset(
             EVP_AEAD_CTX_new(aead_, dest_secret.key_.data(), dest_secret.key_.size(), aead_tag_length_));
-        init_hp_ctx(hp_write_ctx_);
+        hp_ok = init_hp_ctx(hp_write_ctx_);
     } else {
         read_aead_ctx_.reset(
             EVP_AEAD_CTX_new(aead_, dest_secret.key_.data(), dest_secret.key_.size(), aead_tag_length_));
-        init_hp_ctx(hp_read_ctx_);
+        hp_ok = init_hp_ctx(hp_read_ctx_);
+    }
+    if (!hp_ok) {
+        // A half-installed secret state (AEAD ctx present, HP unusable) must
+        // not be left behind — every packet would fail header protection.
+        CleanSecret(dest_secret);
+        return Result::kDeriveFailed;
     }
     return Result::kOk;
 }

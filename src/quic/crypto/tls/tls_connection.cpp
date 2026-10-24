@@ -130,8 +130,9 @@ int32_t TLSConnection::SetReadSecret(
     TLSConnection* conn = (TLSConnection*)SSL_get_app_data(ssl);
 
     TryGetTransportParam(ssl, level);
-    conn->handler_->SetReadSecret(ssl, AdapterEncryptionLevel(level), cipher, secret, secret_len);
-    return 1;
+    // P0-S9: propagate installation failure — returning 0 makes the TLS
+    // stack abort the handshake instead of continuing with a broken key.
+    return conn->handler_->SetReadSecret(ssl, AdapterEncryptionLevel(level), cipher, secret, secret_len) ? 1 : 0;
 }
 
 int32_t TLSConnection::SetWriteSecret(
@@ -139,8 +140,7 @@ int32_t TLSConnection::SetWriteSecret(
     TLSConnection* conn = (TLSConnection*)SSL_get_app_data(ssl);
 
     TryGetTransportParam(ssl, level);
-    conn->handler_->SetWriteSecret(ssl, AdapterEncryptionLevel(level), cipher, secret, secret_len);
-    return 1;
+    return conn->handler_->SetWriteSecret(ssl, AdapterEncryptionLevel(level), cipher, secret, secret_len) ? 1 : 0;
 }
 
 int32_t TLSConnection::AddHandshakeData(SSL* ssl, ssl_encryption_level_t level, const uint8_t* data, size_t len) {

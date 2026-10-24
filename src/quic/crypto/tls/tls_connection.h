@@ -18,10 +18,15 @@ public:
     TlsHandlerInterface() {}
     virtual ~TlsHandlerInterface() {}
 
-    virtual void SetReadSecret(
+    // P0-S9: secret installation is fallible (cipher alloc failure, HKDF
+    // derive failure, HP context failure). Returning void forced the SSL
+    // callback to report success unconditionally, so a broken key install
+    // surfaced later as undecryptable packets instead of failing the
+    // handshake at the source. false makes BoringSSL abort the handshake.
+    virtual bool SetReadSecret(
         SSL* ssl, EncryptionLevel level, const SSL_CIPHER* cipher, const uint8_t* secret, size_t secret_len) = 0;
 
-    virtual void SetWriteSecret(
+    virtual bool SetWriteSecret(
         SSL* ssl, EncryptionLevel level, const SSL_CIPHER* cipher, const uint8_t* secret, size_t secret_len) = 0;
 
     virtual void WriteMessage(EncryptionLevel level, const uint8_t* data, size_t len) = 0;

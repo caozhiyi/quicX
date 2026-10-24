@@ -45,60 +45,61 @@ public:
 
     bool HasWriteSecret(EncryptionLevel level) const { return !levels_[level].write_secret.empty(); }
 
-    void SetReadSecret(
-        SSL* ssl, EncryptionLevel level, const SSL_CIPHER* cipher, const uint8_t* secret, size_t secret_len) {
+    bool SetReadSecret(
+        SSL* /*ssl*/, EncryptionLevel level, const SSL_CIPHER* cipher, const uint8_t* secret, size_t secret_len) {
         if (HasReadSecret(level)) {
             ADD_FAILURE() << LevelToString(level) << " read secret configured twice";
-            return;
+            return false;
         }
 
         if (role_ == Role::R_CLITNE && level == kEarlyData) {
             ADD_FAILURE() << "Unexpected early data read secret";
-            return;
+            return false;
         }
 
         EncryptionLevel ack_level = level == kEarlyData ? kApplication : level;
         if (!HasWriteSecret(ack_level)) {
             ADD_FAILURE() << LevelToString(level) << " read secret configured before ACK write secret";
-            return;
+            return false;
         }
 
         if (cipher == nullptr) {
             ADD_FAILURE() << "Unexpected null cipher";
-            return;
+            return false;
         }
 
         if (level != kEarlyData && SSL_CIPHER_get_id(cipher) != levels_[level].cipher) {
             ADD_FAILURE() << "Cipher suite inconsistent";
-            return;
+            return false;
         }
 
         levels_[level].read_secret.resize(secret_len);
         memcpy(&(*levels_[level].read_secret.begin()), secret, secret_len);
         levels_[level].cipher = SSL_CIPHER_get_id(cipher);
+        return true;
     }
 
-    void SetWriteSecret(
-        SSL* ssl, EncryptionLevel level, const SSL_CIPHER* cipher, const uint8_t* secret, size_t secret_len) {
+    bool SetWriteSecret(
+        SSL* /*ssl*/, EncryptionLevel level, const SSL_CIPHER* cipher, const uint8_t* secret, size_t secret_len) {
         if (HasWriteSecret(level)) {
             ADD_FAILURE() << LevelToString(level) << " write secret configured twice";
-            return;
+            return false;
         }
 
         if (role_ == Role::R_SERVER && level == kEarlyData) {
             ADD_FAILURE() << "Unexpected early data write secret";
-            return;
+            return false;
         }
 
         if (cipher == nullptr) {
             ADD_FAILURE() << "Unexpected null cipher";
-            return;
+            return false;
         }
 
         levels_[level].write_secret.resize(secret_len);
         memcpy(&(*levels_[level].write_secret.begin()), secret, secret_len);
         levels_[level].cipher = SSL_CIPHER_get_id(cipher);
-        return;
+        return true;
     }
 
     void WriteMessage(EncryptionLevel level, const uint8_t* data, size_t len) {
@@ -154,7 +155,7 @@ public:
         alert_ = alert;
     }
 
-    void OnTransportParams(EncryptionLevel level, const uint8_t* tp, size_t tp_len) {
+    void OnTransportParams(EncryptionLevel /*level*/, const uint8_t* /*tp*/, size_t /*tp_len*/) {
         if (transport_param_done_) {
             return;
         }
@@ -229,7 +230,7 @@ private:
 class TestServerHandler: public TlsServerHandlerInterface {
 public:
     virtual void SSLAlpnSelect(
-        const unsigned char** out, unsigned char* outlen, const unsigned char* in, unsigned int inlen, void* arg) {
+        const unsigned char** out, unsigned char* outlen, const unsigned char* in, unsigned int inlen, void* /*arg*/) {
         SSL_select_next_proto(const_cast<uint8_t**>(out), outlen, in, inlen, kALPNProtos, sizeof(kALPNProtos));
     }
 };

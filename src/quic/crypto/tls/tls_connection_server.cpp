@@ -82,9 +82,19 @@ bool TLSServerConnection::AddTransportParam(uint8_t* tp, uint32_t len) {
         // Previously we passed the full transport parameters (tp, len) here, but those include
         // original_destination_connection_id_ which is unique per connection, causing BoringSSL
         // to reject 0-RTT on resumed connections (context mismatch).
-        // Fix: Use a fixed context string that stays consistent across all connections.
-        static const uint8_t kEarlyDataContext[] = "quicx-0rtt-v1";
-        SSL_set_quic_early_data_context(ssl_.get(), kEarlyDataContext, sizeof(kEarlyDataContext) - 1);
+        // P0-S9: a constant string fixed the context-mismatch bug but ALSO
+        // removed the anti-replay property entirely — a ticket minted under
+        // configuration A replays against configuration B. Callers now set a
+        // context derived from the cross-connection-stable parts of their
+        // configuration (TransportParam::EvaluateEarlyDataContext); the
+        // constant literal remains only as the fallback for callers that
+        // never configure one.
+        if (!early_data_ctx_.empty()) {
+            SSL_set_quic_early_data_context(ssl_.get(), early_data_ctx_.data(), early_data_ctx_.size());
+        } else {
+            static const uint8_t kEarlyDataContext[] = "quicx-0rtt-v1";
+            SSL_set_quic_early_data_context(ssl_.get(), kEarlyDataContext, sizeof(kEarlyDataContext) - 1);
+        }
     }
     return true;
 }
