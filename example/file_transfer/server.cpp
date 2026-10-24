@@ -185,6 +185,11 @@ public:
         config.quic_config_.config_.worker_thread_num_ = 4;
         config.quic_config_.config_.log_level_ = quicx::LogLevel::kError;
 
+        // This example demonstrates large file transfers; the run_test.py
+        // harness uploads a 50 MB file, which must clear the server-wide
+        // request-body cap (16 MiB by default → 413 Payload Too Large).
+        config.max_request_body_size_ = 256 * 1024 * 1024;
+
         // Enable Metrics HTTP endpoint for diagnostics
         config.metrics_.enable_ = true;
         config.metrics_.http_enable_ = true;

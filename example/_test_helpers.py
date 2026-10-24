@@ -154,4 +154,60 @@ def stop_server(
         return process.returncode
 
 
-__all__ = ["start_server", "stop_server"]
+__all__ = ["start_server", "stop_server", "wait_for_udp_port"]
+
+
+def wait_for_udp_port(
+    port: int,
+    *,
+    timeout: float = 10.0,
+    proc: subprocess.Popen | None = None,
+    fallback_delay: float = 1.0,
+) -> float:
+    """Wait until a UDP socket is bound to `port` (best effort).
+
+    Replaces the fixed ``sleep(1)`` callers used to do after spawning a QUIC
+    server: a slow server startup (cert loading, cold page cache) occasionally
+    raced that fixed delay, leaving the client to hit an unbound port. On
+    Linux this polls /proc/net/udp{,6} for the port, so the client can start
+    as soon as the server has actually bound. On platforms without /proc it
+    falls back to sleeping ``fallback_delay`` seconds — the previous
+    behaviour, no worse.
+
+    If ``proc`` is supplied and it exits while we are waiting, raise
+    ``RuntimeError`` immediately: the server crashed during startup and
+    waiting longer is pointless.
+
+    Returns the monotonic timestamp once the port is (assumed) ready.
+    Raises ``TimeoutError`` if the port is not bound within ``timeout``.
+    """
+    deadline = time.monotonic() + timeout
+    can_poll = (not _IS_WINDOWS) and os.path.exists("/proc/net/udp")
+    needle = f"{port:04X}"
+
+    def _check_proc() -> None:
+        if proc is not None and proc.poll() is not None:
+            raise RuntimeError(
+                f"server exited during startup (code {proc.returncode})"
+            )
+
+    if not can_poll:
+        time.sleep(fallback_delay)
+        _check_proc()
+        return time.monotonic()
+
+    while True:
+        _check_proc()
+        for path in ("/proc/net/udp", "/proc/net/udp6"):
+            try:
+                with open(path, "r", errors="replace") as f:
+                    for line in f:
+                        cols = line.split()
+                        # cols[1] is the local address, e.g. "0100007F:1B64".
+                        if len(cols) > 1 and cols[1].split(":")[-1] == needle:
+                            return time.monotonic()
+            except OSError:
+                continue
+        if time.monotonic() >= deadline:
+            raise TimeoutError(f"UDP port {port} not bound within {timeout}s")
+        time.sleep(0.05)

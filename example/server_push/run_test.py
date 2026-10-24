@@ -6,7 +6,7 @@ import sys
 import argparse
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from _test_helpers import start_server, stop_server  # noqa: E402
+from _test_helpers import start_server, stop_server, wait_for_udp_port  # noqa: E402
 
 def run_test(bin_dir):
     # Binary names based on CMakeLists.txt projects: server_push and client_push
@@ -25,8 +25,16 @@ def run_test(bin_dir):
     server_process = start_server([server_path])
     
     try:
-        # Give server time to start
-        time.sleep(1)
+        # Wait for the server to actually bind UDP 7008 instead of a fixed
+        # sleep(1): slow startups (cert loading / cold cache) used to race
+        # the fixed delay and leave the client hitting an unbound port.
+        t0 = time.monotonic()
+        try:
+            wait_for_udp_port(7008, timeout=10, proc=server_process)
+        except (RuntimeError, TimeoutError) as e:
+            print(f"FAILED: server not ready: {e}")
+            return False
+        print(f"Server ready in {time.monotonic() - t0:.2f}s")
 
         print(f"Starting client: {client_path}")
         # Run client and capture output. 
@@ -74,8 +82,14 @@ def run_test(bin_dir):
         print("SUCCESS: All expected output found.")
         return True
 
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as e:
         print("FAILED: Client timed out")
+        # Don't throw the partial output away — it usually shows exactly
+        # which stage the client got stuck in.
+        for label, payload in (("stdout", e.stdout), ("stderr", e.stderr)):
+            if payload:
+                text = payload.decode(errors="replace") if isinstance(payload, bytes) else payload
+                print(f"Client partial {label}:\n" + "-" * 20 + f"\n{text}\n" + "-" * 20)
         return False
     except Exception as e:
         print(f"FAILED: Exception occurred: {e}")

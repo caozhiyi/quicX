@@ -52,10 +52,15 @@ int main() {
             cv1.notify_one();
         });
 
-    // Wait for the first request to complete
+    // Wait for the first request to complete. Bounded: an unbounded wait
+    // here used to stall the whole example until the test runner's timeout
+    // killed it; a bounded failure at least says which stage hung.
     {
         std::unique_lock<std::mutex> lock(mutex1);
-        cv1.wait(lock, [&completed1] { return completed1; });
+        if (!cv1.wait_for(lock, std::chrono::seconds(5), [&completed1] { return completed1; })) {
+            std::cerr << "timeout waiting for the first request/push to complete" << std::endl;
+            return 1;
+        }
     }
 
     // Give some time for server push to complete
@@ -94,10 +99,13 @@ int main() {
             cv2.notify_one();
         });
 
-    // Wait for the second request to complete
+    // Wait for the second request to complete (bounded, same rationale).
     {
         std::unique_lock<std::mutex> lock(mutex2);
-        cv2.wait(lock, [&completed2] { return completed2; });
+        if (!cv2.wait_for(lock, std::chrono::seconds(5), [&completed2] { return completed2; })) {
+            std::cerr << "timeout waiting for the second request to complete" << std::endl;
+            return 1;
+        }
     }
 
     // IMPORTANT: Wait for server push to arrive
