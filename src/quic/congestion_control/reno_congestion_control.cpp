@@ -47,7 +47,7 @@ void RenoCongestionControl::OnPacketSent(const SentPacketEvent& ev) {
     Metrics::GaugeSet(common::MetricsStd::BytesInFlight, bytes_in_flight_);
 
     if (pacer_) {
-        pacer_->OnPacketSent(ev.sent_time / 1000, static_cast<size_t>(ev.bytes));
+        pacer_->OnPacketSent(ev.sent_time, static_cast<size_t>(ev.bytes));  // us: matches the pacer contract
     }
 }
 
@@ -144,7 +144,8 @@ uint64_t RenoCongestionControl::NextSendTime(uint64_t now) const {
     if (!pacer_) {
         return now;
     }
-    // pacer returns delta_ms until next send opportunity; convert to absolute time.
+    // Pacer contract is us: TimeUntilSend() returns a us delta; the caller
+    // passes a us now (SendManager bridges to the ms pacing timer).
     return now + pacer_->TimeUntilSend();
 }
 
