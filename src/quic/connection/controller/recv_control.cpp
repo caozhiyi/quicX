@@ -16,7 +16,7 @@ namespace quic {
 RecvControl::RecvControl(std::shared_ptr<common::ITimerScheduler> scheduler):
     set_timer_(false),
     scheduler_(scheduler),
-    max_ack_delay_(10) {
+    max_ack_delay_(25) {  // matches TransportParam's default wire value; was 10, which under-capped the encoded ACK Delay
     memset(pkt_num_largest_recvd_, 0, sizeof(pkt_num_largest_recvd_));
     memset(largest_recv_time_, 0, sizeof(largest_recv_time_));
     memset(ect0_count_, 0, sizeof(ect0_count_));
@@ -394,7 +394,12 @@ std::shared_ptr<IFrame> RecvControl::MayGenerateAckFrame(uint64_t now, PacketNum
         if (delay_ms > delay_cap_ms) {
             delay_ms = delay_cap_ms;
         }
-        uint64_t encoded = delay_ms >> ack_delay_exponent_;
+        // RFC 9000 §19.3: the ACK Delay field is in MICROSECONDS, scaled by
+        // the ack_delay_exponent WE advertised. delay_ms is milliseconds, so
+        // convert to microseconds before shifting — the old code shifted the
+        // raw millisecond value, under-reporting delay by ~1000x.
+        uint64_t delay_us = delay_ms * 1000;
+        uint64_t encoded = delay_us >> ack_delay_exponent_;
         frame->SetAckDelay(static_cast<uint32_t>(encoded));
     }
 
@@ -456,6 +461,11 @@ std::shared_ptr<IFrame> RecvControl::MayGenerateAckFrame(uint64_t now, PacketNum
     return frame;
 }
 
+// Receives OUR local TransportParam (post-Merge it still carries our own
+// max_ack_delay / ack_delay_exponent: these are what we advertised on the wire
+// and therefore what governs how we ENCODE the ACK Delay field of ACKs we
+// send, RFC 9000 §18.2/§19.3. The peer's values (used to decode incoming ACK
+// Delay) are consumed by SendControl instead.
 void RecvControl::UpdateConfig(const TransportParam& tp) {
     max_ack_delay_ = static_cast<uint32_t>(tp.GetMaxAckDelay());
     // Defence in depth against a shift overflow; see SendControl::UpdateConfig.

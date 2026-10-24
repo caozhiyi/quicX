@@ -15,7 +15,7 @@ void AntiAmplificationController::EnterUnvalidatedState(uint64_t initial_credit)
     sent_bytes_.store(0, std::memory_order_release);
     is_unvalidated_.store(true, std::memory_order_release);
 
-    LOG_DEBUG("AntiAmplificationController::EnterUnvalidatedState: initial_credit=%llu, max_send=%llu", initial_credit,
+    LOG_INFO("AntiAmplificationController::EnterUnvalidatedState: initial_credit=%llu, max_send=%llu", initial_credit,
         initial_credit * kAmplificationFactor);
 }
 
@@ -24,7 +24,7 @@ void AntiAmplificationController::ExitUnvalidatedState() {
         return;
     }
 
-    LOG_DEBUG("AntiAmplificationController::ExitUnvalidatedState: sent=%llu, received=%llu",
+    LOG_INFO("AntiAmplificationController::ExitUnvalidatedState: sent=%llu, received=%llu",
         sent_bytes_.load(std::memory_order_relaxed), received_bytes_.load(std::memory_order_relaxed));
 
     // Flip the flag first (release) so concurrent TryCharge() callers stop gating;
@@ -40,7 +40,7 @@ void AntiAmplificationController::OnBytesReceived(uint64_t bytes) {
     }
 
     uint64_t total = received_bytes_.fetch_add(bytes, std::memory_order_relaxed) + bytes;
-    LOG_DEBUG("AntiAmplificationController::OnBytesReceived: received %llu bytes, total=%llu, max_send=%llu", bytes,
+    LOG_INFO("AntiAmplificationController::OnBytesReceived: received %llu bytes, total=%llu, max_send=%llu", bytes,
         total, total * kAmplificationFactor);
 }
 

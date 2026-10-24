@@ -6,6 +6,7 @@
 #include "common/qlog/qlog.h"
 
 #include "quic/connection/connection_stream_manager.h"
+#include "quic/connection/controller/recv_flow_controller.h"
 #include "quic/connection/controller/send_flow_controller.h"
 #include "quic/connection/controller/send_manager.h"
 #include "quic/connection/if_connection_event_sink.h"
@@ -193,10 +194,23 @@ std::shared_ptr<IStream> StreamManager::MakeStream(
 
     // Create lambda wrappers to bridge stream callbacks to event interface
     // This avoids need to refactor all stream classes immediately
-    auto active_send_cb = [this](std::shared_ptr<IStream> stream) { event_sink_.OnStreamDataReady(stream); };
-    auto stream_close_cb = [this](uint64_t stream_id) { event_sink_.OnStreamClosed(stream_id); };
-    auto connection_close_cb = [this](uint64_t error, uint16_t frame_type, const std::string& reason) {
-        event_sink_.OnConnectionClose(error, frame_type, reason);
+    //
+    // Streams escape this connection as shared_ptr: the HTTP/3 layer holds
+    // them in IfConnection::streams_ and may outlive the QUIC connection
+    // (which it references only via weak_ptr). The lambdas therefore capture
+    // the connection's life token (bound via Bind(weak_from_this())) and
+    // check it before touching event_sink_ / any connection-owned state —
+    // late callbacks are silently dropped instead of use-after-free. Same
+    // pattern as RecvControl::Bind / SendControl::Bind timers.
+    std::weak_ptr<void> life_token = life_token_;
+    auto active_send_cb = [this, life_token](std::shared_ptr<IStream> stream) {
+        if (life_token.lock()) { event_sink_.OnStreamDataReady(stream); }
+    };
+    auto stream_close_cb = [this, life_token](uint64_t stream_id) {
+        if (life_token.lock()) { event_sink_.OnStreamClosed(stream_id); }
+    };
+    auto connection_close_cb = [this, life_token](uint64_t error, uint16_t frame_type, const std::string& reason) {
+        if (life_token.lock()) { event_sink_.OnConnectionClose(error, frame_type, reason); }
     };
 
     // Create stream object based on type
@@ -214,6 +228,17 @@ std::shared_ptr<IStream> StreamManager::MakeStream(
 
     LOG_DEBUG("StreamManager::MakeStream: created stream %llu, type %d, send_size %u, recv_size %u", stream_id,
         static_cast<int>(type), send_size, recv_size);
+
+    // P0-S2: receive-memory budget. Wire the stream's pinned-bytes deltas
+    // into the connection-level accounting (guarded by the life token like
+    // every other stream-injected callback — a stream may outlive the
+    // connection, and its destructor then returns its final delta here).
+    if (auto recv = std::dynamic_pointer_cast<RecvStream>(stream)) {
+        std::weak_ptr<void> life_token = life_token_;
+        recv->SetBufferedChangeCallback([this, life_token](int64_t delta) {
+            if (life_token.lock()) { OnStreamBufferedChanged(delta); }
+        });
+    }
 
     if (stream) {
         // Set qlog state change callback on stream state machines
@@ -251,12 +276,27 @@ void StreamManager::CloseStream(uint64_t stream_id) {
         return;
     }
 
+    // The stream object itself may live on (HTTP/3 layer holds shared_ptrs);
+    // its destructor settles the final receive-memory delta, so the budget
+    // is not freed here.
     streams_map_.erase(iter);
 
     LOG_DEBUG("StreamManager: closed stream %llu", stream_id);
 
     // Note: Stream state callback and send manager cleanup are handled by
     // BaseConnection's InnerStreamClose which calls this method.
+}
+
+void StreamManager::OnStreamBufferedChanged(int64_t delta) {
+    // int64 accumulate, uint64 store: a stream's final negative delta can
+    // transiently take the total below what earlier positive deltas of
+    // still-live streams added — clamp only at the floor.
+    if (delta >= 0) {
+        total_recv_buffered_bytes_ += static_cast<uint64_t>(delta);
+    } else {
+        const uint64_t dec = static_cast<uint64_t>(-(delta + 1)) + 1;
+        total_recv_buffered_bytes_ = (total_recv_buffered_bytes_ >= dec) ? (total_recv_buffered_bytes_ - dec) : 0;
+    }
 }
 
 // ==================== Stream Lookup ====================

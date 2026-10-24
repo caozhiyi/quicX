@@ -221,6 +221,16 @@ void PathManager::OnPathResponse(const uint8_t* data) {
 }
 
 void PathManager::OnPathChallenge(const uint8_t* data, std::shared_ptr<IFrame>& response_frame) {
+    // One response per DISTINCT challenge (RFC 9000 §8.2.2): an exact repeat
+    // gets nothing, so suppress it.
+    static constexpr size_t kPathChallengeDataLength = 8;
+    if (last_challenge_valid_ && memcmp(last_challenge_data_, data, kPathChallengeDataLength) == 0) {
+        LOG_DEBUG("PathManager: duplicate PATH_CHALLENGE, suppressing response");
+        return;
+    }
+    memcpy(last_challenge_data_, data, kPathChallengeDataLength);
+    last_challenge_valid_ = true;
+
     auto response = std::make_shared<PathResponseFrame>();
     response->SetData((uint8_t*)data);
     response_frame = response;
@@ -264,7 +274,7 @@ void PathManager::OnObservedPeerAddress(const ::quicx::common::Address& addr) {
 
     // If probe is in progress, add to queue; otherwise start immediately
     if (path_probe_inflight_) {
-        pending_candidate_addrs_.push_back(addr);
+        EnqueueCandidateAddr(addr);
         LOG_INFO("PathManager: added %s:%d to probe queue (queue size: %zu)", addr.GetIp().c_str(), addr.GetPort(),
             pending_candidate_addrs_.size());
     } else {
@@ -273,7 +283,7 @@ void PathManager::OnObservedPeerAddress(const ::quicx::common::Address& addr) {
 
         // If probe didn't start (e.g., Application keys not ready), queue the address for later
         if (!path_probe_inflight_) {
-            pending_candidate_addrs_.push_back(addr);
+            EnqueueCandidateAddr(addr);
             LOG_INFO("PathManager: path probe deferred, added %s:%d to queue (queue size: %zu)", addr.GetIp().c_str(),
                 addr.GetPort(), pending_candidate_addrs_.size());
         } else {

@@ -2,8 +2,8 @@
 #define QUIC_CONNECTION_CONTROLER_SEND_MANAGER
 
 #include <atomic>
+#include <deque>
 #include <functional>
-#include <list>
 #include <memory>
 #include <string>
 #include <vector>
@@ -315,7 +315,16 @@ private:
     // from a wired-up pointer.
     SendFlowController* send_flow_controller_{nullptr};  // Send-side flow controller
     StreamManager* stream_manager_{nullptr};             // Stream manager for flow scheduling
-    std::list<std::shared_ptr<IFrame>> wait_frame_list_;
+    // P0-S4: FIFO with a hard cap. This used to be an unbounded std::list
+    // fed with emplace_front (LIFO), so retransmission-recovered frames
+    // jumped the queue and a frame-storm source (e.g. the pre-fix
+    // NEW_CONNECTION_ID retire flood) could grow it without limit. deque +
+    // emplace_back preserves generation order; the cap is defence-in-depth —
+    // legit sources (flow control, CID replenish, probing) are all bounded,
+    // so hitting it means something is badly wrong and the oldest frames are
+    // sacrificed to keep memory flat.
+    static constexpr size_t kMaxQueuedFrames = 1024;
+    std::deque<std::shared_ptr<IFrame>> wait_frame_list_;
 
     // connection id
     std::shared_ptr<ConnectionIDManager> local_conn_id_manager_;

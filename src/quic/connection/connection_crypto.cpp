@@ -44,16 +44,27 @@ ConnectionCrypto::ConnectionCrypto():
 
 ConnectionCrypto::~ConnectionCrypto() {}
 
-void ConnectionCrypto::SetReadSecret(
+bool ConnectionCrypto::SetReadSecret(
     SSL* /*ssl*/, EncryptionLevel level, const SSL_CIPHER* cipher, const uint8_t* secret, size_t secret_len) {
     std::shared_ptr<ICryptographer> cryptographer = cryptographers_[level];
     if (cryptographer == nullptr) {
         cryptographer = MakeCryptographer(cipher);
+        if (!cryptographer) {
+            // P0-S9: an unsupported/unknown cipher suite previously
+            // nullptr-deref'd here; now the handshake fails cleanly.
+            LOG_ERROR("ConnectionCrypto::SetReadSecret: MakeCryptographer failed for level %d",
+                static_cast<int>(level));
+            return false;
+        }
         cryptographer->SetVersion(quic_version_);
         cryptographers_[level] = cryptographer;
     }
     cur_encryption_level_ = level;
-    cryptographer->InstallSecretWithVersion(secret, (uint32_t)secret_len, false, quic_version_);
+    if (cryptographer->InstallSecretWithVersion(secret, (uint32_t)secret_len, false, quic_version_) !=
+        ICryptographer::Result::kOk) {
+        LOG_ERROR("ConnectionCrypto::SetReadSecret: InstallSecret failed for level %d", static_cast<int>(level));
+        return false;
+    }
 
     // Log key_updated event for read key
     if (qlog_trace_) {
@@ -63,18 +74,28 @@ void ConnectionCrypto::SetReadSecret(
         key_data.is_write = false;
         QLOG_KEY_UPDATED(qlog_trace_, key_data);
     }
+    return true;
 }
 
-void ConnectionCrypto::SetWriteSecret(
+bool ConnectionCrypto::SetWriteSecret(
     SSL* /*ssl*/, EncryptionLevel level, const SSL_CIPHER* cipher, const uint8_t* secret, size_t secret_len) {
     std::shared_ptr<ICryptographer> cryptographer = cryptographers_[level];
     if (cryptographer == nullptr) {
         cryptographer = MakeCryptographer(cipher);
+        if (!cryptographer) {
+            LOG_ERROR("ConnectionCrypto::SetWriteSecret: MakeCryptographer failed for level %d",
+                static_cast<int>(level));
+            return false;
+        }
         cryptographer->SetVersion(quic_version_);
         cryptographers_[level] = cryptographer;
     }
     cur_encryption_level_ = level;
-    cryptographer->InstallSecretWithVersion(secret, (uint32_t)secret_len, true, quic_version_);
+    if (cryptographer->InstallSecretWithVersion(secret, (uint32_t)secret_len, true, quic_version_) !=
+        ICryptographer::Result::kOk) {
+        LOG_ERROR("ConnectionCrypto::SetWriteSecret: InstallSecret failed for level %d", static_cast<int>(level));
+        return false;
+    }
 
     // Log key_updated event for write key
     if (qlog_trace_) {
@@ -90,6 +111,7 @@ void ConnectionCrypto::SetWriteSecret(
         LOG_INFO("0-RTT write key installed, triggering early data ready callback");
         early_data_ready_cb_();
     }
+    return true;
 }
 
 void ConnectionCrypto::WriteMessage(EncryptionLevel level, const uint8_t* data, size_t len) {

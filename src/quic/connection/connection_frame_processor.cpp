@@ -216,9 +216,16 @@ bool FrameProcessor::OnStreamFrame(std::shared_ptr<IFrame> frame) {
         // this local copy keeps the object alive until we return
         uint32_t bytes_received = stream_ptr->OnFrame(frame);
 
-        // Track received data for flow control
+        // Track received data for flow control. OnDataReceived returns false
+        // when the peer exceeded our advertised MAX_DATA — RFC 9000 §4.5
+        // requires a FLOW_CONTROL_ERROR connection close. The old code
+        // discarded the return value, leaving the window unenforced (P0-S1).
         if (recv_flow_controller_) {
-            recv_flow_controller_->OnDataReceived(bytes_received);
+            if (!recv_flow_controller_->OnDataReceived(bytes_received)) {
+                event_sink_.OnConnectionClose(
+                    QuicErrorCode::kFlowControlError, frame->GetType(), "connection flow control limit exceeded.");
+                return false;
+            }
         }
 
         return true;
@@ -284,9 +291,14 @@ bool FrameProcessor::OnStreamFrame(std::shared_ptr<IFrame> frame) {
     // new stream process frame
     uint32_t new_stream_bytes = new_stream->OnFrame(frame);
 
-    // Track received data for flow control
+    // Track received data for flow control (same FLOW_CONTROL_ERROR handling
+    // as the existing-stream path above; see comment there).
     if (recv_flow_controller_) {
-        recv_flow_controller_->OnDataReceived(new_stream_bytes);
+        if (!recv_flow_controller_->OnDataReceived(new_stream_bytes)) {
+            event_sink_.OnConnectionClose(
+                QuicErrorCode::kFlowControlError, frame->GetType(), "connection flow control limit exceeded.");
+            return false;
+        }
     }
 
     return true;
@@ -413,10 +425,11 @@ bool FrameProcessor::OnNewConnectionIDFrame(std::shared_ptr<IFrame> frame) {
     }
 
     if (retire_prior_to > 0) {
-        // Only retire CIDs that haven't been retired yet.
-        // Limit the loop to avoid DoS from large retire_prior_to values.
-        uint64_t retire_count = std::min(retire_prior_to, kMaxRetireConnectionIdPerFrame);
-        for (uint64_t seq = 0; seq < retire_count; ++seq) {
+        // Generate RETIRE frames only for sequences still live in the remote
+        // pool — "in the pool" excludes both already-retired and never-issued.
+        std::vector<uint64_t> live_seqs;
+        cid_coordinator_.GetRemoteConnectionIDManager()->CollectSequencesBelow(retire_prior_to, live_seqs);
+        for (uint64_t seq : live_seqs) {
             auto retire = std::make_shared<RetireConnectionIDFrame>();
             retire->SetSequenceNumber(seq);
             // Frame-level loss recovery (RFC 9000 §13.3 / §5.1.2): re-emit on
@@ -425,20 +438,47 @@ bool FrameProcessor::OnNewConnectionIDFrame(std::shared_ptr<IFrame> frame) {
             cid_coordinator_.TrackRetireConnectionIDFrameDelivery(retire);
             event_sink_.OnFrameReady(retire);
         }
-        if (retire_prior_to > kMaxRetireConnectionIdPerFrame) {
-            LOG_WARN("NEW_CONNECTION_ID: retire_prior_to (%llu) capped at %llu to prevent DoS", retire_prior_to,
-                kMaxRetireConnectionIdPerFrame);
-        }
         // Apply batch retirement to the *remote* CID pool (these are CIDs the peer
         // issued for us to use, and the peer is now telling us to retire all CIDs
         // with sequence_number < retire_prior_to per RFC 9000 §19.15).
         cid_coordinator_.GetRemoteConnectionIDManager()->RetireIDsUpTo(retire_prior_to);
     }
 
-    // Add new CID to pool
+    // RFC 9000 §5.1.1: a sequence number that is already present must carry
+    // the same CID; a differing one is a PROTOCOL_VIOLATION.
     ConnectionID id;
     new_cid_frame->GetConnectionID(id);
+    ConnectionID existing;
+    if (cid_coordinator_.GetRemoteConnectionIDManager()->GetIDBySequence(sequence_number, existing)) {
+        if (!(existing == id)) {
+            LOG_ERROR("NEW_CONNECTION_ID: sequence %llu reissued with different CID", sequence_number);
+            event_sink_.OnConnectionClose(QuicErrorCode::kProtocolViolation, FrameType::kNewConnectionId,
+                "sequence number reused with different CID");
+            return false;
+        }
+        // Exact duplicate of a live CID: nothing to do (token re-registration
+        // below is idempotent).
+        return true;
+    }
+
+    // Add new CID to pool
     cid_coordinator_.GetRemoteConnectionIDManager()->AddID(id);
+
+    // RFC 9000 §5.1.1 / §19.15: the peer MUST NOT provide more CIDs than the
+    // active_connection_id_limit WE advertised. transport_param_ carries our
+    // own declaration (Merge keeps it local-side since the P0-S4 transport
+    // param split). The +1 headroom: GetAvailableIDCount counts pooled CIDs
+    // while the limit (RFC 9000 §5.1.1) counts "CIDs the peer could use",
+    // which includes the active one living outside the pool on the client.
+    const uint64_t cid_limit = transport_param_.GetActiveConnectionIdLimit();
+    if (cid_limit > 0 &&
+        cid_coordinator_.GetRemoteConnectionIDManager()->GetAvailableIDCount() > cid_limit + 1) {
+        LOG_ERROR("NEW_CONNECTION_ID: remote pool %zu exceeds advertised active_connection_id_limit %llu",
+            cid_coordinator_.GetRemoteConnectionIDManager()->GetAvailableIDCount(), (unsigned long long)cid_limit);
+        event_sink_.OnConnectionClose(QuicErrorCode::kConnectionIdLimitError, FrameType::kNewConnectionId,
+            "remote CID pool exceeds active_connection_id_limit");
+        return false;
+    }
 
     // RFC 9000 §10.3.1: remember the token so a future Stateless Reset carrying it
     // can be recognised.
@@ -462,6 +502,19 @@ bool FrameProcessor::OnRetireConnectionIDFrame(std::shared_ptr<IFrame> frame) {
         return false;
     }
     LOG_DEBUG("OnRetireConnectionIDFrame: peer retiring local CID seq=%llu", retire_cid_frame->GetSequenceNumber());
+    // RFC 9000 §5.1.2: "An endpoint that receives a RETIRE_CONNECTION_ID
+    // frame that refers to a sequence number greater than any it has sent
+    // MUST respond with a PROTOCOL_VIOLATION." Without this check a peer can
+    // force-retire sequence slots that were never issued, desynchronising the
+    // replenish loop (P0-S4).
+    const uint64_t retire_seq = retire_cid_frame->GetSequenceNumber();
+    if (retire_seq > cid_coordinator_.GetLocalConnectionIDManager()->GetLargestIssuedSequence()) {
+        LOG_ERROR("RETIRE_CONNECTION_ID: seq %llu exceeds largest issued %llu", retire_seq,
+            cid_coordinator_.GetLocalConnectionIDManager()->GetLargestIssuedSequence());
+        event_sink_.OnConnectionClose(QuicErrorCode::kProtocolViolation, FrameType::kRetireConnectionId,
+            "retire sequence exceeds largest issued");
+        return false;
+    }
     // Peer is retiring a CID we provided to them, remove from local pool
     cid_coordinator_.GetLocalConnectionIDManager()->RetireIDBySequence(retire_cid_frame->GetSequenceNumber());
 

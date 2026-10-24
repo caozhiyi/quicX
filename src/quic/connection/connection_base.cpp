@@ -23,6 +23,7 @@
 #include "quic/connection/error.h"
 #include "quic/connection/stateless_reset_token_generator.h"
 #include "quic/connection/util.h"
+#include "quic/crypto/tls/tls_connection_server.h"
 #include "quic/frame/connection_close_frame.h"
 #include "quic/frame/padding_frame.h"
 #include "quic/frame/ping_frame.h"
@@ -225,6 +226,13 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_
     stream_manager_ = std::make_unique<StreamManager>(
         *this, loop, transport_param_, send_manager_, stream_state_cb_, &send_flow_controller_);
 
+    // P0-S2 receive-memory budget wiring: closed peer streams stop counting
+    // toward MAX_STREAMS concurrency, and the live pinned-bytes total gates
+    // MAX_DATA growth when the application falls behind the peer.
+    stream_manager_->SetRecvFlowController(&recv_flow_controller_);
+    recv_flow_controller_.SetBufferedBytesGetter(
+        [this]() { return stream_manager_ ? stream_manager_->GetTotalRecvBufferedBytes() : 0; });
+
     // Inject stream manager into send manager for stream scheduling
     send_manager_.SetStreamManager(stream_manager_.get());
 
@@ -264,6 +272,18 @@ BaseConnection::~BaseConnection() {
     // Streams may still hold callbacks that reference stream_manager_, so we need to
     // ensure stream_manager_ is cleared before other members are destroyed
     stream_manager_.reset();
+}
+
+void BaseConnection::BindLifetimeGuardsOnce() {
+    bool expected = false;
+    if (lifetime_guards_bound_.compare_exchange_strong(expected, true)) {
+        recv_control_.Bind(weak_from_this());
+        send_manager_.Bind(weak_from_this());
+        // Stream-injected callbacks escape the connection inside stream
+        // shared_ptrs (held by the HTTP/3 layer); the token makes late
+        // callbacks drop instead of touching a destroyed StreamManager.
+        stream_manager_->Bind(weak_from_this());
+    }
 }
 
 void BaseConnection::SetSender(std::shared_ptr<ISender> sender) {
@@ -309,11 +329,18 @@ void BaseConnection::Reset(uint32_t error_code) {
 }
 
 std::shared_ptr<IQuicStream> BaseConnection::MakeStream(StreamDirection type) {
+    // Streams injected at creation capture the connection's life token; make
+    // sure it is bound even if no packet has been sent/received yet (e.g.
+    // 0-RTT data queued before the first burst). Idempotent and cheap after
+    // the first call.
+    BindLifetimeGuardsOnce();
     // Delegate to stream manager
     return stream_manager_->MakeStreamWithFlowControl(type);
 }
 
 bool BaseConnection::MakeStreamAsync(StreamDirection type, stream_creation_callback callback) {
+    // See MakeStream(): bind the life token before any stream creation.
+    BindLifetimeGuardsOnce();
     // Thread-safety: MakeStreamAsync is the public entry point for the
     // HTTP/3 (and any other application-level) layer to create new QUIC
     // streams from an *application* thread (e.g. http3::Client::DoRequest
@@ -447,6 +474,16 @@ void BaseConnection::AddTransportParam(const QuicTransportParams& tp_config) {
     // packets; available_versions is our preference-ordered supported list.
     version_negotiator_->BuildLocalVersionInformation(transport_param_);
 
+    // Server-side: bind the 0-RTT early-data context to this configuration,
+    // so tickets minted under a different configuration fail early-data
+    // acceptance. No-op on client connections.
+    if (tls_connection_) {
+        if (auto server_tls = std::dynamic_pointer_cast<TLSServerConnection>(tls_connection_)) {
+            auto ctx_bytes = transport_param_.EvaluateEarlyDataContext();
+            server_tls->SetEarlyDataContext(ctx_bytes.data(), ctx_bytes.size());
+        }
+    }
+
     // Encode local transport parameters and hand them to TLS.  See
     // EncodeAndPushTpToTls() for the 1024-byte sizing rationale.
     //
@@ -548,6 +585,12 @@ void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket
         // After processing (decrypting and decoding frames), record packet for ACK tracking
         if (packet_processed) {
             any_packet_processed = true;
+            // RFC 9000 §9.3: only now — with this packet's authenticity
+            // proven by successful decryption — may the datagram's path
+            // metadata influence path state. Consume before the ACK-side
+            // bookkeeping below so a NAT-rebind PATH_CHALLENGE still leaves
+            // before this datagram's ACK (interop ordering requirement).
+            ConsumePendingDatagramPath(packets[i]);
             // RFC 9000 §17.2.5: a Retry carries no packet number and is never
             // acknowledged. Recording it in the ACK tracker made the client emit
             // an ACK-only Initial right after Retry; strict servers reject that
@@ -1174,7 +1217,11 @@ void BaseConnection::OnTransportParams(TransportParam& remote_tp) {
     // - SendFlowController: uses remote max_data/max_streams (peer's limits on what we can send)
     // - RecvControl/SendManager: use remote ack_delay_exponent and max_ack_delay
     send_flow_controller_.UpdateConfig(remote_tp);
-    recv_control_.UpdateConfig(remote_tp);
+    // RecvControl ENCODES the ACK Delay field of ACKs we send, so it must be
+    // configured with OUR advertised parameters (our transport_param_ still
+    // carries our own fields after Merge(remote_tp)); the old call passed
+    // remote_tp, making us encode with the PEER's exponent/delay (P0-C5).
+    recv_control_.UpdateConfig(transport_param_);
     send_manager_.UpdateConfig(remote_tp);
 
     // Remember remote transport params for 0-RTT session caching (RFC 9000 Section 7.4.1)
@@ -1362,6 +1409,90 @@ EncryptionLevel BaseConnection::GetCurEncryptionLevel() {
 void BaseConnection::OnObservedPeerAddress(const common::Address& addr) {
     if (path_manager_) {
         path_manager_->OnObservedPeerAddress(addr);
+    }
+}
+
+void BaseConnection::ConsumePendingDatagramPath(const std::shared_ptr<IPacket>& packet) {
+    if (pending_dgram_sock_.fd <= 0) {
+        return;  // already consumed by an earlier packet of this datagram
+    }
+    const common::SocketHandle sock = pending_dgram_sock_;
+    // VALUE COPY, not a reference: the re-entrancy guard below clears the
+    // pending members before any callback runs, and a reference would read
+    // the cleared (empty) address afterwards.
+    const common::Address dgram_addr = pending_dgram_peer_addr_;
+    const bool local_changed = pending_dgram_local_changed_;
+    // Consume exactly once per datagram: clear before running any callback so
+    // a re-entrant send (immediate probe) cannot see stale metadata.
+    pending_dgram_sock_ = common::SocketHandle(-1, 0);
+    pending_dgram_peer_addr_ = common::Address();
+    pending_dgram_local_changed_ = false;
+
+    // We are only called with a packet that just decrypted successfully, so
+    // the peer provably holds this connection's keys (RFC 9000 §9.3). An
+    // off-path spoofer replaying a header with a forged source address can
+    // no longer reach this point — that is the whole point of the deferral.
+
+    const bool addr_changed = !(dgram_addr == peer_addr_);
+
+    if (addr_changed) {
+        // Surface the new source address to the path manager: starts PATH_
+        // CHALLENGE validation (§9.2). Validation, not migration: the active
+        // peer address only switches in OnPathResponse.
+        OnObservedPeerAddress(dgram_addr);
+
+        // Active-path switch (following the rx socket / local listener) is
+        // stricter: §9.2/§9.3 allow it only for the largest packet number
+        // received so far AND carrying non-probing frames. Handshake-space
+        // packets keep the historical follow behaviour — Initial keys derive
+        // from the public DCID, but the §8.1 amplification limit plus Retry
+        // bound what an attacker gains there, and the handshake cannot run
+        // over a path that has not been established.
+        const auto level = packet->GetCryptoLevel();
+        if (level == PacketCryptoLevel::kApplicationCryptoLevel) {
+            const auto ns = CryptoLevel2PacketNumberSpace(level);
+            const uint64_t pn = packet->GetPacketNumber();
+            // GetLargestReceivedPn still reflects the *previous* maximum
+            // because recv_control_.OnPacketRecv for this very packet runs
+            // after us; >= therefore means "this packet is the new largest".
+            const bool is_largest = pn >= recv_control_.GetLargestReceivedPn(ns);
+            bool has_non_probing = false;
+            for (const auto& frame : packet->GetFrames()) {
+                switch (frame->GetType()) {
+                    case FrameType::kPathChallenge:
+                    case FrameType::kPathResponse:
+                    case FrameType::kNewConnectionId:
+                    case FrameType::kPadding:
+                        continue;  // probing frames, RFC 9000 §9.1
+                    default:
+                        has_non_probing = true;
+                        break;
+                }
+                if (has_non_probing) {
+                    break;
+                }
+            }
+            if (is_largest && has_non_probing) {
+                SetSocket(sock);
+                if (local_changed) {
+                    OnLocalSocketAddressChanged();
+                }
+            }
+        } else {
+            SetSocket(sock);
+            if (local_changed) {
+                OnLocalSocketAddressChanged();
+            }
+        }
+        return;
+    }
+
+    // Same peer address: following the rx socket is idempotent and keeps the
+    // tx fd paired with the listener the datagram arrived on (matters for
+    // the preferred_address listener, where local_changed is set).
+    SetSocket(sock);
+    if (local_changed) {
+        OnLocalSocketAddressChanged();
     }
 }
 

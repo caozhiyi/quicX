@@ -20,10 +20,13 @@ public:
     virtual ~ConnectionCrypto();
 
     // Encryption correlation function
-    virtual void SetReadSecret(
+    // P0-S9: return false on failure (missing cryptographer / key install
+    // failure) so the TLS stack fails the handshake instead of proceeding
+    // with a broken key.
+    virtual bool SetReadSecret(
         SSL* ssl, EncryptionLevel level, const SSL_CIPHER* cipher, const uint8_t* secret, size_t secret_len);
 
-    virtual void SetWriteSecret(
+    virtual bool SetWriteSecret(
         SSL* ssl, EncryptionLevel level, const SSL_CIPHER* cipher, const uint8_t* secret, size_t secret_len);
 
     virtual void WriteMessage(EncryptionLevel level, const uint8_t* data, size_t len);

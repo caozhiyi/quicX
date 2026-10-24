@@ -167,6 +167,15 @@ bool VersionNegotiator::ValidateAndMaybeUpgradeByRemoteTP(const TransportParam& 
     }
 
     if (!is_server_) {
+        // A client that restarted its handshake after Retry has re-installed
+        // Initial keys for its chosen version and expects to stay there: the
+        // server is allowed to decline a compatible upgrade on Retry
+        // connections (it marks its own version decision complete without
+        // upgrading), and that is a legitimate outcome, not a MITM downgrade.
+        if (ctx_.compat_vn_completed) {
+            return true;
+        }
+
         // Client-side downgrade detection (RFC 9368 §4):
         // If the application explicitly specified a |preferred_version| that
         // differs from the version we actually negotiated (quic_version), and

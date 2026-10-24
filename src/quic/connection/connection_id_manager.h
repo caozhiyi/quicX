@@ -5,6 +5,7 @@
 #include <cstring>
 #include <functional>
 #include <map>
+#include <vector>
 
 #include "quic/connection/connection_id.h"
 
@@ -71,6 +72,31 @@ public:
     // fresh equivalent frame is re-emitted, which requires recovering the CID
     // bytes from the pool.
     bool GetIDBySequence(uint64_t sequence, ConnectionID& out) const;
+
+    // Sequence numbers still live in the pool with sequence_number < prior_to.
+    // RETIRE_CONNECTION_ID frames must be generated ONLY for these (P0-S4):
+    // emitting them for already-retired or never-issued sequences is both a
+    // protocol violation (RFC 9000 §5.1.2) and an amplification vector — a
+    // single datagram carrying ~40 NEW_CONNECTION_ID frames with
+    // retire_prior_to=256 used to enqueue ~10k RETIRE frames from seq 0 up.
+    void CollectSequencesBelow(uint64_t prior_to, std::vector<uint64_t>& out) const {
+        for (const auto& kv : sequence_cid_map_) {
+            if (kv.first >= prior_to) {
+                break;  // std::map iterates in key order
+            }
+            out.push_back(kv.first);
+        }
+    }
+
+    // Largest sequence number this manager has ever issued. Meaningful on the
+    // LOCAL manager (we choose those sequence numbers); used to reject a peer
+    // RETIRE_CONNECTION_ID for a sequence we never sent (RFC 9000 §5.1.2:
+    // PROTOCOL_VIOLATION). cur_sequence_number_ is int64_t and pre-incremented,
+    // so -1 (nothing issued yet) saturates to 0 — callers compare with >
+    // against peer-supplied sequence numbers, where 0 is also the floor.
+    uint64_t GetLargestIssuedSequence() const {
+        return cur_sequence_number_ < 0 ? 0 : static_cast<uint64_t>(cur_sequence_number_);
+    }
 
     // Get all CIDs managed by this manager (for cleanup on connection close)
     std::vector<uint64_t> GetAllIDHashes();

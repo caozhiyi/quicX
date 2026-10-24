@@ -622,6 +622,16 @@ bool ClientConnection::OnRetryPacket(const std::shared_ptr<IPacket>& packet) {
 
     LOG_INFO("Successfully processed Retry packet and restarted TLS handshake");
 
+    // The post-Retry Initial will speak (and be keyed for) the version the
+    // client originally chose, and a Retry-restarted client does not follow
+    // a later server-side compatible upgrade. Freeze the version decision
+    // here so the server-side downgrade check (which would otherwise see
+    // "server advertises our preferred version but the connection stayed
+    // on the chosen one") does not mistake the legitimate no-upgrade
+    // outcome for a MITM downgrade. Mirrors the server's
+    // SkipCompatibleUpgrade() for Retry connections.
+    SkipCompatibleUpgrade();
+
     // Mark that we've received a Retry (prevent duplicate Retry processing)
     retry_received_ = true;
 

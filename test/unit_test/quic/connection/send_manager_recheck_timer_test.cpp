@@ -44,14 +44,14 @@ constexpr uint32_t kRecheckIntervalMs = 100;  // mirrors send_manager.cpp
 // take 80–120 ms in practice, so anything below ~30 ms is too tight.
 constexpr uint32_t kSlackMs = 30;
 
-// Helper: read elapsed wall-clock since a marker. Tests use this to detect
-// when the host has overslept past the "should not have fired yet" boundary
-// and gracefully skip that particular assertion (the timer's deadline is in
-// real wall-clock time, so once the wall clock crosses the deadline the
-// assertion's precondition no longer holds — failing it would only be
-// reporting CI scheduler latency, not a real bug).
+//   Implementation note on time sources:
+//   SendManager::SetFlowControlBlocked() schedules through the scheduler and
+//   Timer::Rearm/EventLoop all default to the monotonic clock
+//   (MonotonicTimeMsec). The test measures elapsed time with the same clock so
+//   the "should not have fired yet" window is expressed in the timer's own
+//   time domain.
 inline uint64_t ElapsedSince(uint64_t start_ms) {
-    uint64_t now = common::UTCTimeMsec();
+    uint64_t now = common::MonotonicTimeMsec();
     return (now > start_ms) ? (now - start_ms) : 0;
 }
 
@@ -71,7 +71,7 @@ protected:
     uint64_t SleepAndTick(uint32_t ms) {
         std::this_thread::sleep_for(std::chrono::milliseconds(ms));
         timer_->RunDue();
-        return common::UTCTimeMsec();
+        return common::MonotonicTimeMsec();
     }
 
     std::shared_ptr<common::TestTimerScheduler> timer_;
@@ -84,7 +84,7 @@ protected:
 //    MUST fire by/near 100 ms.
 // ---------------------------------------------------------------------------
 TEST_F(SendManagerRecheckTimerTest, FiresExactlyAfter100Ms) {
-    uint64_t start = common::UTCTimeMsec();
+    uint64_t start = common::MonotonicTimeMsec();
     send_manager_->SetFlowControlBlocked();
 
     // ~50ms after schedule – well below the 100ms boundary, but only assert
@@ -129,7 +129,7 @@ TEST_F(SendManagerRecheckTimerTest, OneShotDoesNotKeepFiring) {
 //    one callback.
 // ---------------------------------------------------------------------------
 TEST_F(SendManagerRecheckTimerTest, ReentrantSetDoesNotDoubleSchedule) {
-    uint64_t start = common::UTCTimeMsec();
+    uint64_t start = common::MonotonicTimeMsec();
     send_manager_->SetFlowControlBlocked();
 
     // Half-way through the interval, call again — must be a no-op for the
@@ -170,7 +170,7 @@ TEST_F(SendManagerRecheckTimerTest, RescheduleAfterFireWorks) {
     EXPECT_EQ(retry_count_.load(), 1);
 
     // Re-arm. A second fire must occur ~100 ms later.
-    uint64_t rearm_start = common::UTCTimeMsec();
+    uint64_t rearm_start = common::MonotonicTimeMsec();
     send_manager_->SetFlowControlBlocked();
 
     // Just before 100 ms post-rearm, must not have fired again — but only
@@ -190,7 +190,7 @@ TEST_F(SendManagerRecheckTimerTest, RescheduleAfterFireWorks) {
 //    does not fire on a connection that is being torn down.
 // ---------------------------------------------------------------------------
 TEST_F(SendManagerRecheckTimerTest, ClearActiveStreamsDisarmsRecheckTimer) {
-    uint64_t start = common::UTCTimeMsec();
+    uint64_t start = common::MonotonicTimeMsec();
     send_manager_->SetFlowControlBlocked();
     SleepAndTick(50);
     if (ElapsedSince(start) < kRecheckIntervalMs) {
@@ -228,7 +228,7 @@ TEST_F(SendManagerRecheckTimerTest, RearmAfterFireUsesFreshInterval) {
     SleepAndTick(200);
     EXPECT_EQ(retry_count_.load(), 1) << "stale timer fired during quiet period";
 
-    uint64_t rearm_start = common::UTCTimeMsec();
+    uint64_t rearm_start = common::MonotonicTimeMsec();
     send_manager_->SetFlowControlBlocked();
 
     // Below 100 ms post-rearm — must not fire yet (only assert when the

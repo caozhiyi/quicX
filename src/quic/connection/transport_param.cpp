@@ -61,6 +61,41 @@ TransportParam::TransportParam():
 
 TransportParam::~TransportParam() {}
 
+std::vector<uint8_t> TransportParam::EvaluateEarlyDataContext() const {
+    // Layout: fixed-width little-endian fields, each preceded by nothing and
+    // never ambiguous (all fields are fixed width). The leading tag makes the
+    // scheme versioned: adding fields later changes the context, which is
+    // correct — tickets minted under the old shape must not replay against it.
+    std::vector<uint8_t> ctx;
+    ctx.reserve(80);
+    const char tag[] = "quicx-0rtt-ctx-v2";
+    ctx.insert(ctx.end(), tag, tag + sizeof(tag) - 1);
+
+    auto append_u64 = [&ctx](uint64_t v) {
+        for (int i = 0; i < 8; ++i) {
+            ctx.push_back(static_cast<uint8_t>(v >> (8 * i)));
+        }
+    };
+
+    // Flow-control limits bound how much 0-RTT data can be buffered/acted on.
+    append_u64(initial_max_data_);
+    append_u64(initial_max_stream_data_bidi_local_);
+    append_u64(initial_max_stream_data_bidi_remote_);
+    append_u64(initial_max_stream_data_uni_);
+    // Stream concurrency caps the number of 0-RTT-openable streams.
+    append_u64(initial_max_streams_bidi_);
+    append_u64(initial_max_streams_uni_);
+    // Migration-related assumptions a 0-RTT flow may rely on.
+    append_u64(active_connection_id_limit_);
+    append_u64(max_idle_timeout_);
+    append_u64(max_udp_payload_size_);
+    ctx.push_back(disable_active_migration_ ? 1 : 0);
+    // The chosen QUIC version changes framing; a v1 ticket must not replay
+    // against a v2 endpoint even with identical numeric parameters.
+    append_u64(static_cast<uint64_t>(chosen_version_));
+    return ctx;
+}
+
 void TransportParam::AddTransportParamListener(std::function<void(const TransportParam&)> listener) {
     transport_param_listeners_.push_back(listener);
 }
@@ -128,8 +163,15 @@ bool TransportParam::Merge(const TransportParam& tp) {
     initial_max_stream_data_uni_ = tp.initial_max_stream_data_uni_;
     initial_max_streams_bidi_ = tp.initial_max_streams_bidi_;
     initial_max_streams_uni_ = tp.initial_max_streams_uni_;
-    ack_delay_exponent_ = tp.ack_delay_exponent_;
-    max_ack_delay_ = tp.max_ack_delay_;
+    // ack_delay_exponent / max_ack_delay are per-direction declarations, just
+    // like disable_active_migration below: our fields are what we advertise on
+    // the wire and what we must use to ENCODE the ACK Delay field of ACKs we
+    // send (RecvControl). The peer's values — used to DECODE ACK Delay in ACKs
+    // we receive and to bound it in RTT/PTO (RFC 9002 §5.3, §6.2.1) — go into
+    // the separate peer_* fields. Overwriting ours here used to make the ACK
+    // encoder use the PEER's exponent/delay (P0-C5).
+    peer_ack_delay_exponent_ = tp.ack_delay_exponent_;
+    peer_max_ack_delay_ms_ = tp.max_ack_delay_;
     // disable_active_migration is a per-direction declaration: whatever the
     // peer declared belongs to peer state. Do NOT OR it into
     // disable_active_migration_ — that field is OUR wire declaration, and
@@ -140,7 +182,12 @@ bool TransportParam::Merge(const TransportParam& tp) {
     preferred_address_cid_ = tp.preferred_address_cid_;
     preferred_address_binary_ = tp.preferred_address_binary_;
     has_preferred_address_binary_ = tp.has_preferred_address_binary_;
-    active_connection_id_limit_ = tp.active_connection_id_limit_;
+    // Same per-direction split as ack_delay_exponent above: ours stays what we
+    // advertise (and what Encode puts on the wire); the peer's declaration is
+    // the bound for CIDs WE issue. Overwriting ours here (P0-S4 follow-up to
+    // P0-C5) would make the FrameProcessor's remote-pool limit check compare
+    // against the wrong direction's value.
+    peer_active_connection_id_limit_ = tp.active_connection_id_limit_;
     initial_source_connection_id_ = tp.initial_source_connection_id_;
     retry_source_connection_id_ = tp.retry_source_connection_id_;
 
@@ -696,6 +743,13 @@ uint8_t* TransportParam::DecodeString(uint8_t* start, uint8_t* end, std::string&
     // read length
     start = common::DecodeVarint(start, end, length);
     if (start == nullptr) {
+        return nullptr;
+    }
+
+    // DecodeBytesNoCopy takes a uint32_t length; compare in the 64-bit domain
+    // first so an over-large varint cannot truncate past the bounds check.
+    const uint64_t remaining = static_cast<uint64_t>(end - start);
+    if (length > remaining) {
         return nullptr;
     }
 

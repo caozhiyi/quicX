@@ -54,6 +54,15 @@ public:
     // @param tp Our transport parameters (advertised to peer)
     void UpdateConfig(const TransportParam& tp);
 
+    // P0-S2: connection-level receive-memory budget gate. When set, pinned
+    // receive bytes across all streams (StreamManager accounting) at or above
+    // the budget suppress MAX_DATA growth: the peer is then blocked by the
+    // unchanged window instead of by memory exhaustion. The budget is
+    // generous (2x the current window, min 8 MiB) so healthy readers never
+    // hit it — it exists to bound a peer that sends far faster than the
+    // application reads.
+    void SetBufferedBytesGetter(std::function<uint64_t()> getter) { buffered_bytes_getter_ = std::move(getter); }
+
     // Record received data (connection-level)
     // Called when we receive data from peer on any stream. Updates received
     // byte counter and validates against our limit.
@@ -101,8 +110,11 @@ private:
 
 private:
     // Connection-level data flow control
-    uint64_t received_bytes_;  // Total bytes received on connection
-    uint64_t max_data_;        // Maximum bytes peer can send (our limit)
+    uint64_t received_bytes_;   // Total bytes received on connection
+    uint64_t max_data_;         // Maximum bytes peer can send (our limit)
+    uint64_t initial_max_data_;  // Window at UpdateConfig() time; step size for linear (not exponential) window growth
+    // P0-S2: live receive-memory accounting source (see SetBufferedBytesGetter)
+    std::function<uint64_t()> buffered_bytes_getter_;
 
     // Stream creation limits (our limits for peer)
     uint64_t max_streams_bidi_;  // Maximum bidirectional streams peer can create

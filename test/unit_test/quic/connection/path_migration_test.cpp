@@ -306,6 +306,9 @@ TEST(PathMigrationTest, cid_pool_replenishment) {
         }
 
         client_conn->OnPackets(0, pkts, 0);
+        // observed only: the server may replenish in a later packet, so we
+        // deliberately do not assert on found_new_cid here.
+        (void)found_new_cid;
 
         // Server should automatically replenish CID pool after path switch
         // (May be sent in subsequent packets)
@@ -371,7 +374,9 @@ TEST(PathMigrationTest, preferred_address_mechanism) {
                         }
                     }
                     // Client should actively probe preferred_address
-                    // (If address is different)
+                    // (If address is different): observed only, the probe is
+                    // conditional so we deliberately do not assert here.
+                    (void)found_challenge;
                 }
             }
         }
@@ -565,7 +570,7 @@ TEST(PathMigrationTest, amp_gating_blocks_streams_before_validation) {
     auto s_base = client_conn->MakeStream(StreamDirection::kSend);
     auto s = std::dynamic_pointer_cast<IQuicSendStream>(s_base);
     ASSERT_NE(s, nullptr);
-    const char* payload = "must gate before validation";
+    const char* payload = "must gate before validation"; (void)payload; /* silence warning gate */
 
     auto buffer = client_sender->GetLastSentBuffer();
     ASSERT_NE(buffer, nullptr);
@@ -1274,7 +1279,7 @@ TEST(PathMigrationTest, migration_callback_invoked_on_success) {
     MigrationInfo received_info;
 
     // Set migration callback
-    client_conn->SetMigrationCallback([&](std::shared_ptr<IQuicConnection> conn, const MigrationInfo& info) {
+    client_conn->SetMigrationCallback([&](std::shared_ptr<IQuicConnection> /*conn*/, const MigrationInfo& info) {
         callback_invoked = true;
         received_info = info;
     });

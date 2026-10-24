@@ -18,6 +18,7 @@
 #include "quic/frame/handshake_done_frame.h"
 #include "quic/frame/ping_frame.h"
 #include "quic/frame/type.h"
+#include "quic/packet/handshake_packet.h"
 #include "quic/packet/packet_number.h"
 #include "quic/packet/rtt_1_packet.h"
 #include "quic/quicx/global_resource.h"
@@ -361,7 +362,14 @@ TEST(SendControlG2Test, S4_SpuriousAckForErasedLostPnIsNoOp) {
 TEST(SendControlG2Test, S6_RetransmitReusingPacketObjectDropsStaleUnackedEntry) {
     auto timer = std::make_shared<common::TestTimerScheduler>();
     SendControl sc(timer);
-    const PacketNumberSpace ns = PacketNumberSpace::kApplicationNumberSpace;
+    // Handshake space: RFC 9002 §5.3 loss declaration is ACK-driven, so an
+    // APPLICATION-space retransmit-timeout expiry now does nothing (recovery
+    // flows through PTO probes + DetectLostPackets; see
+    // MakeRetransmitTimeoutHandler). The crypto spaces intentionally keep the
+    // timer-driven re-queue (RFC 9000 §8.2.1 handshake recovery), and the
+    // stale-entry cleanup this test verifies is space-independent — build the
+    // scenario where the timer path still runs.
+    const PacketNumberSpace ns = PacketNumberSpace::kHandshakeNumberSpace;
 
     // SendControl::Bind() installs the owner guard that TimerCore checks before
     // running a callback. Without it every timer we arm is skipped as
@@ -370,11 +378,18 @@ TEST(SendControlG2Test, S6_RetransmitReusingPacketObjectDropsStaleUnackedEntry) 
     auto owner = std::make_shared<int>(0);
     sc.Bind(owner);
 
-    auto pkt = MakePacket(0, FrameTypeBit::kStreamBit);
+    // Handshake-space packet so OnPacketSend maps it to the Handshake number
+    // space (ns is derived from the packet's crypto level, and MakePacket
+    // builds Rtt1Packet = application level).
+    auto pkt = std::make_shared<HandshakePacket>();
+    pkt->SetPacketNumber(0);
+    pkt->GetHeader()->SetPacketNumberLength(PacketNumber::GetPacketNumberLength(0));
+    pkt->AddFrameTypeBit(FrameTypeBit::kStreamBit);
     sc.OnPacketSend(100, pkt, kMss);
     ASSERT_EQ(sc.GetUnackedPacketCountForTest(ns), 1u);
 
-    // Let PTO expire: the packet is declared lost and queued for retransmission.
+    // Let the retransmit timer expire: in the Handshake space the packet is
+    // declared lost and queued for retransmission.
     timer->Advance(5000);
     ASSERT_EQ(sc.GetLostPacket().size(), 1u);
     ASSERT_EQ(sc.GetLostPacket().front().packet, pkt)
@@ -815,14 +830,15 @@ TEST(RttClampTest, OversizedAckDelayIsClampedToPeerMaxAckDelay) {
     sc.OnPacketAck(t1 + 100, PacketNumberSpace::kApplicationNumberSpace, ack1);
     ASSERT_EQ(sc.GetRtt(), 100u);
 
-    // Sample 2: pn=2, true RTT ~1000ms, raw ACK delay 100 << 3 = 800ms.
+    // Sample 2: pn=2, true RTT ~1000ms, raw ACK delay 100000 << 3 = 800000us
+    // = 800ms (RFC 9000 §19.3: the field is microseconds once scaled).
     // Clamped: 1000 - 25 = 975 -> SRTT = 7/8*100 + 1/8*975 ~= 209ms.
     // Unclamped (bug): 1000 - 800 = 200 -> SRTT = 7/8*100 + 1/8*200 ~= 112ms.
     uint64_t t2 = common::MonotonicTimeMsec();
     sc.OnPacketSend(t2, MakePacket(2, FrameTypeBit::kStreamBit), 1200);
     auto ack2 = std::make_shared<AckFrame>();
     ack2->SetLargestAck(2);
-    ack2->SetAckDelay(100);  // 100 * 2^3 = 800ms once scaled
+    ack2->SetAckDelay(100000);  // 100000 * 2^3 = 800ms once scaled (us field)
     ack2->SetFirstAckRange(0);
     sc.OnPacketAck(t2 + 1000, PacketNumberSpace::kApplicationNumberSpace, ack2);
     EXPECT_GT(sc.GetRtt(), 160u) << "SRTT ~= 209ms expected; a value near 112ms means the oversized "
@@ -838,6 +854,9 @@ TEST(RttClampTest, OversizedAckDelayIsClampedToPeerMaxAckDelay) {
 // and both stay clearly below SRTT(C) (the delay IS applied, not discarded).
 // Five samples per instance amplify the 1/8-weighted differences well above
 // clock jitter.
+// NOTE: RFC 9000 §19.3 — the ACK Delay field encodes MICROseconds. With
+// exponent 0 the raw field value IS microseconds, so a 25ms delay is 25000
+// and a 50ms delay is 50000.
 TEST(RttClampTest, ClampBoundarySemantics) {
     auto timer = std::make_shared<common::TestTimerScheduler>();
     SendControl sc_c(timer), sc_a(timer), sc_b(timer);
@@ -881,8 +900,8 @@ TEST(RttClampTest, ClampBoundarySemantics) {
         };
         uint64_t now = t + 1000;
         sc_c.OnPacketAck(now, ns, mk_ack(0));
-        sc_a.OnPacketAck(now, ns, mk_ack(25));
-        sc_b.OnPacketAck(now, ns, mk_ack(50));
+        sc_a.OnPacketAck(now, ns, mk_ack(25000));  // 25ms in us (exponent 0)
+        sc_b.OnPacketAck(now, ns, mk_ack(50000));  // 50ms in us (exponent 0)
     }
 
     uint32_t srtt_c = sc_c.GetRtt();
