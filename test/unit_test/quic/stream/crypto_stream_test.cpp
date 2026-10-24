@@ -52,7 +52,7 @@ TEST(CryptoStreamTest, recv) {
     uint8_t recv_data[50] = {0};
     uint32_t recv_size = 0;
     stream->SetCryptoStreamReadCallBack(
-        [&recv_data, &recv_size](std::shared_ptr<IBufferRead> buffer, int32_t err, uint16_t encryption_level) {
+        [&recv_data, &recv_size](std::shared_ptr<IBufferRead> buffer, int32_t err, uint16_t /*encryption_level*/) {
             EXPECT_EQ(err, 0);
             recv_size += buffer->Read(recv_data + recv_size, 50);
         });

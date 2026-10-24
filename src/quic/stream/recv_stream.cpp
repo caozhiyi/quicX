@@ -1,5 +1,8 @@
 #include <quicx/common/metrics.h>
 
+#include <cstring>
+
+#include "common/buffer/standalone_buffer_chunk.h"
 #include "common/log/log.h"
 #include "common/metrics/metrics_std.h"
 
@@ -31,7 +34,14 @@ RecvStream::RecvStream(std::weak_ptr<common::IEventLoop> loop, uint64_t init_dat
     recv_machine_ = std::make_shared<StreamStateMachineRecv>();
 }
 
-RecvStream::~RecvStream() {}
+RecvStream::~RecvStream() {
+    // P0-S2: release whatever receive memory this stream still pins back to
+    // the connection-level budget before the counters die with it.
+    if (buffered_change_cb_ && last_reported_buffered_ > 0) {
+        buffered_change_cb_(-static_cast<int64_t>(last_reported_buffered_));
+        last_reported_buffered_ = 0;
+    }
+}
 
 void RecvStream::Reset(uint32_t error) {
     auto loop = event_loop_.lock();
@@ -50,6 +60,12 @@ void RecvStream::Reset(uint32_t error) {
     // When error == 0, it means normal completion (received FIN from peer)
     // In that case, do nothing - no need to send STOP_SENDING
     if (error != 0) {
+        // Idempotent: a second Reset with a (possibly different) error code
+        // must not enqueue a second STOP_SENDING.
+        if (local_stop_sending_) {
+            return;
+        }
+
         // Check if we can send STOP_SENDING frame in current state
         if (!recv_machine_->CheckCanSendFrame(FrameType::kStopSending)) {
             LOG_WARN("stream recv cannot send STOP_SENDING in current state. stream id:%d", stream_id_);
@@ -62,8 +78,10 @@ void RecvStream::Reset(uint32_t error) {
 
         frames_list_.emplace_back(stop_frame);
 
-        // Transition state machine to kResetRecvd when locally initiated reset
-        recv_machine_->OnFrame(FrameType::kResetStream);
+        // Only set the discard flag; the peer's real RESET_STREAM terminates
+        // the state machine (faking kResetRecvd here would make that frame
+        // "unexpected" and leak the stream).
+        local_stop_sending_ = true;
 
         ToSend();
         LOG_DEBUG("stream recv reset due to error. stream id:%d, error:%d", stream_id_, error);
@@ -126,6 +144,11 @@ void RecvStream::FlushBufferedData() {
         stream_id_, buffer_->GetDataLength(), is_last);
 
     recv_cb_(buffer_, is_last, reset_error_);
+
+    // P0-S2: the application may have drained the buffer in the callback —
+    // window growth is keyed on exactly that consumption.
+    MaybeSendWindowUpdate();
+    UpdateBufferedAccounting();
 
     if (recv_machine_->CanAppReadAllData()) {
         recv_machine_->AppReadAllData();
@@ -226,12 +249,38 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
                 fin_offset, final_offset_);
             return 0;
         }
+        // RFC 9000 §4.5: the FIN's final size must not be smaller than the
+        // largest offset already received (fc_counted_offset_ is that
+        // high-water mark, not yet including this frame).
+        if (fin_offset < fc_counted_offset_) {
+            LOG_ERROR("fin final size %llu below max received offset %llu. stream id:%llu", fin_offset,
+                fc_counted_offset_, stream_id_);
+            if (connection_close_cb_) {
+                connection_close_cb_(QuicErrorCode::kFinalSizeError, frame->GetType(), "final size regression.");
+            }
+            return 0;
+        }
         final_offset_ = fin_offset;
         has_final_offset_ = true;
     }
 
     LOG_DEBUG("stream recv stream frame. stream id:%llu, offset:%llu, length:%u, final offset:%llu", stream_id_,
         stream_frame->GetOffset(), stream_frame->GetLength(), final_offset_);
+
+    // After STOP_SENDING the application is not reading: account in-flight
+    // data against flow control but drop it. The peer's RESET_STREAM
+    // terminates the stream.
+    if (local_stop_sending_) {
+        LOG_DEBUG("stream recv discarding in-flight data after STOP_SENDING. stream id:%llu, offset:%llu, len:%u",
+            stream_id_, stream_frame->GetOffset(), stream_frame->GetLength());
+        uint64_t counted_end = stream_frame->GetOffset() + stream_frame->GetLength();
+        if (has_final_offset_ && final_offset_ > counted_end) {
+            counted_end = final_offset_;
+        }
+        uint64_t newly_counted = (counted_end > fc_counted_offset_) ? (counted_end - fc_counted_offset_) : 0;
+        fc_counted_offset_ += newly_counted;
+        return static_cast<uint32_t>(newly_counted);
+    }
 
     if (stream_frame->GetOffset() <= except_offset_) {
         // RFC 9000 §2.2: STREAM frames carrying overlapping ranges of stream
@@ -330,6 +379,11 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
             recv_cb_(buffer_, is_last, reset_error_);
         }
 
+        // P0-S2: consumption-driven window update after the callback (the
+        // HTTP/3 layer advances the read pointer inside recv_cb_).
+        MaybeSendWindowUpdate();
+        UpdateBufferedAccounting();
+
         if (recv_machine_->CanAppReadAllData()) {
             recv_machine_->AppReadAllData();
         }
@@ -348,10 +402,25 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
         }
 
         // RFC 9000 Section 2.2: The data at a given offset MUST NOT change if it is sent multiple times.
-        if (out_order_frame_.find(stream_frame->GetOffset()) != out_order_frame_.end() ||
-            stream_frame->GetOffset() < except_offset_) {
+        if (stream_frame->GetOffset() < except_offset_) {
             LOG_DEBUG("stream recv repeat packet. stream id:%d, offset:%d", stream_id_, stream_frame->GetOffset());
             return 0;
+        }
+        auto dup_iter = out_order_frame_.find(stream_frame->GetOffset());
+        if (dup_iter != out_order_frame_.end()) {
+            auto dup = std::dynamic_pointer_cast<StreamFrame>(dup_iter->second);
+            if (dup && dup->GetLength() >= stream_frame->GetLength()) {
+                LOG_DEBUG("stream recv repeat packet. stream id:%d, offset:%d", stream_id_, stream_frame->GetOffset());
+                return 0;
+            }
+            // Same offset, LONGER frame (sender re-segmented during loss
+            // recovery): replace the shorter entry; the shared prefix is
+            // identical (RFC 9000 §2.2). Adjust the byte accounting for the
+            // delta.
+            if (dup) {
+                out_order_bytes_ -= dup->GetLength();
+            }
+            out_order_frame_.erase(dup_iter);
         }
 
         // Memory-bounded out-of-order buffering.
@@ -397,44 +466,49 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
             }
             return 0;
         }
+        // P0-S3: small out-of-order frames are deep-copied into a tight chunk
+        // so their span does not keep the whole (much larger) packet chunk
+        // pinned; frames that fill most of their chunk stay zero-copy.
+        if (frame_len <= kOutOfOrderCopyThreshold) {
+            auto raw = stream_frame->GetData();
+            auto chunk = raw.GetChunk();
+            if (chunk && chunk->GetLength() > frame_len * kOutOfOrderCopyMinFactor) {
+                auto copy_chunk = std::make_shared<common::StandaloneBufferChunk>(frame_len);
+                if (copy_chunk->Valid()) {
+                    memcpy(copy_chunk->GetData(), raw.GetStart(), frame_len);
+                    stream_frame->SetData(common::SharedBufferSpan(
+                        std::static_pointer_cast<common::IBufferChunk>(copy_chunk),
+                        copy_chunk->GetData(), frame_len));
+                    LOG_DEBUG("out-of-order frame deep-copied. stream id:%d, len:%u, chunk:%u",
+                        stream_id_, frame_len, chunk->GetLength());
+                }
+            }
+        }
         out_order_frame_[stream_frame->GetOffset()] = stream_frame;
         out_order_bytes_ += frame_len;
-    }
-
-    // Proactive flow control window update strategy:
-    // - Send MAX_STREAM_DATA early (when 25% consumed) to prevent sender stalling
-    // - Use large increments to reduce frequency of updates
-    // - This allows sender to continue at full speed without waiting for window updates
-    const uint64_t kWindowThreshold = local_data_limit_ / 4;   // Trigger at 25% remaining (proactive)
-    const uint64_t kWindowIncrement = kStreamWindowIncrement;  // Use configured increment for high throughput
-
-    uint64_t remaining_window = local_data_limit_ - except_offset_;
-    if (remaining_window < kWindowThreshold) {
-        if (recv_machine_->CheckCanSendFrame(FrameType::kMaxStreamData)) {
-            // Calculate increment to restore window to a healthy size
-            // Aim for at least 2MB available window after update
-            uint64_t target_window = kStreamWindowIncrement;
-            uint64_t needed =
-                (target_window > remaining_window) ? (target_window - remaining_window) : kWindowIncrement;
-            // Round up to nearest kWindowIncrement
-            needed = ((needed + kWindowIncrement - 1) / kWindowIncrement) * kWindowIncrement;
-
-            local_data_limit_ += needed;
-            auto max_frame = std::make_shared<MaxStreamDataFrame>();
-            max_frame->SetStreamID(stream_id_);
-            max_frame->SetMaximumData(local_data_limit_);
-            frames_list_.emplace_back(max_frame);
-
-            ToSend();
-            LOG_DEBUG("Proactive flow control update: stream_id=%llu, new_limit=%llu, consumed=%llu, added=%llu",
-                stream_id_, local_data_limit_, except_offset_, needed);
-        }
     }
 
     // Metrics: Stream data received
     Metrics::CounterInc(common::MetricsStd::QuicStreamsBytesRx, stream_frame->GetLength());
 
-    return stream_frame->GetLength();
+    // No window update on arrival: MAX_STREAM_DATA is emitted from
+    // MaybeSendWindowUpdate() driven by application consumption.
+    UpdateBufferedAccounting();
+
+    // Connection-level flow-control accounting (RFC 9000 §4.5 / A.2): each
+    // stream byte counts toward the connection window EXACTLY once, keyed on
+    // the stream's maximum received offset (final size once known). Both the
+    // in-order branch (prefix-trimmed) and the out-of-order branch leave
+    // GetOffset()+GetLength() at this frame's reached offset.
+    {
+        uint64_t counted_end = stream_frame->GetOffset() + stream_frame->GetLength();
+        if (has_final_offset_ && final_offset_ > counted_end) {
+            counted_end = final_offset_;  // a FIN's final size occupies window too
+        }
+        uint64_t newly_counted = (counted_end > fc_counted_offset_) ? (counted_end - fc_counted_offset_) : 0;
+        fc_counted_offset_ += newly_counted;
+        return static_cast<uint32_t>(newly_counted);
+    }
 }
 
 void RecvStream::OnStreamDataBlockFrame(std::shared_ptr<IFrame> frame) {
@@ -446,24 +520,66 @@ void RecvStream::OnStreamDataBlockFrame(std::shared_ptr<IFrame> frame) {
 
     auto block_frame = std::dynamic_pointer_cast<StreamDataBlockedFrame>(frame);
 
-    // When peer is blocked, increase window significantly to allow high throughput
-    // Use configured increments (see quic/config.h)
+    // P0-S2: STREAM_DATA_BLOCKED no longer raises the window. The peer
+    // saying "I am blocked" is a report, not a credential — the old code
+    // handed out kBlockedWindowIncrement (up to the 64 MiB cap) to anyone
+    // who asked, letting a peer inflate the window far past what the
+    // application consumes and pin that much memory per stream. Instead,
+    // run the consumption-driven update: if the application HAS consumed
+    // past the old window, the legitimate growth (and only it) is granted
+    // here; a blocked peer with an unread buffer stays blocked, which is
+    // exactly what flow control is for.
+    MaybeSendWindowUpdate();
 
+    LOG_DEBUG("stream recv data blocked. stream id:%d, blocked_at:%llu, limit:%llu", stream_id_,
+        block_frame->GetMaximumData(), local_data_limit_);
+}
+
+void RecvStream::MaybeSendWindowUpdate() {
     if (local_data_limit_ >= kMaxStreamWindowSize) {
-        LOG_WARN("stream recv window already at max. stream id:%d, limit:%llu", stream_id_, local_data_limit_);
+        return;  // capped; further growth is disabled by design
+    }
+    if (!recv_machine_->CheckCanSendFrame(FrameType::kMaxStreamData)) {
         return;
     }
-    local_data_limit_ = std::min(local_data_limit_ + kBlockedWindowIncrement, kMaxStreamWindowSize);
+    // Consumption-driven window (P0-S2): what the application has actually
+    // taken past this stream's buffers. Bytes that arrived but sit in the
+    // ordered buffer or the out-of-order reassembly still occupy their share
+    // of the window, so a peer outpacing the reader simply gets blocked.
+    const uint64_t buffered = GetBufferedBytes();
+    const uint64_t app_consumed = (except_offset_ > buffered) ? (except_offset_ - buffered) : 0;
+
+    // Top up when less than half an increment remains above consumption.
+    if (local_data_limit_ >= app_consumed + kStreamWindowIncrement / 2) {
+        return;
+    }
+    const uint64_t new_limit = std::min(app_consumed + 2 * kStreamWindowIncrement, kMaxStreamWindowSize);
+    if (new_limit <= local_data_limit_) {
+        return;
+    }
+    local_data_limit_ = new_limit;
 
     auto max_frame = std::make_shared<MaxStreamDataFrame>();
     max_frame->SetStreamID(stream_id_);
     max_frame->SetMaximumData(local_data_limit_);
     frames_list_.emplace_back(max_frame);
 
-    LOG_DEBUG("stream recv data blocked, increased window. stream id:%d, blocked_at:%llu, new_limit:%llu", stream_id_,
-        block_frame->GetMaximumData(), local_data_limit_);
-
     ToSend();
+    LOG_DEBUG("Consumption-driven window update: stream_id=%llu, new_limit=%llu, app_consumed=%llu", stream_id_,
+        local_data_limit_, app_consumed);
+}
+
+void RecvStream::UpdateBufferedAccounting() {
+    if (!buffered_change_cb_) {
+        return;
+    }
+    const uint64_t current = GetBufferedBytes();
+    if (current == last_reported_buffered_) {
+        return;
+    }
+    const int64_t delta = static_cast<int64_t>(current) - static_cast<int64_t>(last_reported_buffered_);
+    last_reported_buffered_ = current;
+    buffered_change_cb_(delta);
 }
 
 void RecvStream::OnResetStreamFrame(std::shared_ptr<IFrame> frame) {
@@ -496,6 +612,7 @@ void RecvStream::OnResetStreamFrame(std::shared_ptr<IFrame> frame) {
             // is_last=true so upper layers treat the stream as terminated.
             recv_cb_(buffer_, true, reset_frame->GetAppErrorCode());
         }
+        UpdateBufferedAccounting();
 
         // The reset has been surfaced to the application: consume it so the
         // receive side reaches its Reset Read terminal state (RFC 9000 §3.2).

@@ -26,10 +26,10 @@ bool StreamFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
         return false;
     }
 
-    // Set length flag when encoding (QUIC typically includes length for proper frame parsing)
-    if (length_ > 0) {
-        frame_type_ |= kLenFlag;
-    }
+    // Always set the length flag: without it the data field extends to the
+    // end of the packet, and any bytes appended after this frame (padding)
+    // would be read as stream data by the receiver.
+    frame_type_ |= kLenFlag;
 
     common::BufferEncodeWrapper wrapper(buffer);
     CHECK_ENCODE_ERROR(wrapper.EncodeVarint(frame_type_), "failed to encode frame type");
@@ -78,11 +78,8 @@ bool StreamFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type
 }
 
 uint32_t StreamFrame::EncodeSize() {
-    // Pre-calculate frame_type with flags that Encode() will set
-    uint16_t effective_type = frame_type_;
-    if (length_ > 0) {
-        effective_type |= kLenFlag;
-    }
+    // Mirror Encode's unconditional kLenFlag (see Encode).
+    uint16_t effective_type = frame_type_ | kLenFlag;
 
     // frame type encoded as varint
     uint32_t size = common::GetEncodeVarintLength(effective_type);

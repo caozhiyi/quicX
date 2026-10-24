@@ -42,6 +42,17 @@ public:
     // try generate data to send
     virtual IStream::TrySendResult TrySendData(IFrameVisitor* visitor);
 
+    // P0-S2: total bytes this stream currently pins in receive memory
+    // (ordered buffer + out-of-order reassembly). Consumed by the
+    // connection-level receive budget via StreamManager.
+    uint64_t GetBufferedBytes() const {
+        return out_order_bytes_ + (buffer_ ? buffer_->GetDataLength() : 0);
+    }
+    // P0-S2: report receive-memory deltas to the owner (StreamManager feeds
+    // the connection-level budget). Invoked from the accounting snapshot
+    // points: frame arrival, application consumption, stream teardown.
+    void SetBufferedChangeCallback(std::function<void(int64_t delta)> cb) { buffered_change_cb_ = std::move(cb); }
+
     // Getter for testing
     std::shared_ptr<StreamStateMachineRecv> GetRecvStateMachine() const { return recv_machine_; }
 
@@ -53,6 +64,16 @@ protected:
     virtual uint32_t OnStreamFrame(std::shared_ptr<IFrame> frame);
     virtual void OnStreamDataBlockFrame(std::shared_ptr<IFrame> frame);
     virtual void OnResetStreamFrame(std::shared_ptr<IFrame> frame);
+
+    // P0-S2: consumption-driven MAX_STREAM_DATA. The window only grows when
+    // the APPLICATION has drained past it — bytes sitting in the buffer keep
+    // their share of the window occupied. Called after every recv callback
+    // return and on STREAM_DATA_BLOCKED (which no longer raises the window
+    // by itself).
+    void MaybeSendWindowUpdate();
+    // Snapshot-style accounting of pinned receive bytes; reports the delta
+    // against the last reported value to buffered_change_cb_.
+    void UpdateBufferedAccounting();
 
     // Invoked after receive-side state transitions that may have reached a
     // terminal state (Data Read / Reset Read, RFC 9000 §3.2). A standalone
@@ -67,6 +88,12 @@ protected:
     // finalized at offset 0), which the old `final_offset_ != 0` sentinel could not
     // distinguish from "no final offset yet".
     bool has_final_offset_ = false;
+    // Connection-level flow-control accounting anchor (RFC 9000 §4.5/A.2):
+    // the highest stream offset (or final size, once known) whose bytes have
+    // already been counted toward the connection window. OnStreamFrame returns
+    // only the delta above this mark, so reordered/re-segmented retransmissions
+    // of already-counted bytes are never double-counted. Always >= except_offset_.
+    uint64_t fc_counted_offset_ = 0;
     // peer send data limit
     uint64_t local_data_limit_;
     // next except data offset
@@ -90,6 +117,29 @@ protected:
     // SetStreamReadCallBack() calls (the HTTP/3 stream-type handover installs a
     // callback several times) do not pile up duplicate tasks.
     bool flush_pending_data_posted_ = false;
+    // P0-S3: out-of-order frames smaller than this are deep-copied into a
+    // standalone chunk before buffering. Without the copy a 1-byte frame
+    // arriving out of order pins its whole ~1.5KB packet chunk (and larger
+    // spans pin larger blocks); a peer spraying tiny frames behind a gap
+    // multiplied real memory use by the chunk-to-frame size ratio. Frames
+    // occupying a meaningful share of their chunk keep the zero-copy span —
+    // the copy would cost about as much as it saves.
+    static constexpr uint32_t kOutOfOrderCopyThreshold = 2048;
+    static constexpr uint32_t kOutOfOrderCopyMinFactor = 4;  // copy only when chunk > 4x frame
+    // Last GetBufferedBytes() value reported through buffered_change_cb_.
+    // The snapshot diff absorbs both directions (arrival grows it, app
+    // consumption / drain-loop absorption shrinks it) without needing a
+    // callback at every buffer operation.
+    uint64_t last_reported_buffered_ = 0;
+    std::function<void(int64_t delta)> buffered_change_cb_;
+    // P0-S10: local STOP_SENDING was sent (application stopped reading with
+    // an error). Later in-flight STREAM data is flow-control-accounted then
+    // discarded; the receive state machine is NOT advanced — the real
+    // RESET_STREAM from the peer is what terminates the stream, so it must
+    // stay processable (the old code faked a kResetRecvd transition here,
+    // which made the peer's genuine RESET_STREAM unprocessable and leaked
+    // the stream).
+    bool local_stop_sending_ = false;
 };
 
 }  // namespace quic

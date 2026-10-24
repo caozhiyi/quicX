@@ -51,6 +51,58 @@ TEST(NewConnectionIdFrameTest, codec) {
         std::string((char*)frame2.GetStatelessResetToken(), kStatelessResetTokenLength));
 }
 
+// RFC 9000 §13.3: a lost frame is retransmitted once per loss generation.
+// IFrame::NotifyDelivery latches kLost per frame instance, so repeated
+// notifications for the same packet (DetectLostPackets followed by PTO
+// re-queue cycles) produce exactly ONE re-emission, not one per notification
+// — the repeatable path is what turned one lost NCID frame into 14,081
+// re-emissions in 55 seconds (interop qlog 2026-10-21, quicx_aioquic).
+// A fresh re-emitted instance is a NEW frame object and must get its own
+// notification budget.
+TEST(NewConnectionIdFrameTest, kLostNotifiedAtMostOncePerInstance) {
+    int lost_count = 0;
+    int acked_count = 0;
+
+    NewConnectionIDFrame original;
+    original.SetDeliveryHandler([&lost_count, &acked_count](FrameDeliveryState state) {
+        if (state == FrameDeliveryState::kLost) {
+            ++lost_count;
+        } else if (state == FrameDeliveryState::kAcked) {
+            ++acked_count;
+        }
+    });
+
+    // First loss notification: delivered.
+    original.NotifyDelivery(FrameDeliveryState::kLost);
+    EXPECT_EQ(lost_count, 1);
+
+    // Repeat notifications for the same instance (PTO re-queue fires the same
+    // packet's frames every cycle): suppressed.
+    original.NotifyDelivery(FrameDeliveryState::kLost);
+    original.NotifyDelivery(FrameDeliveryState::kLost);
+    EXPECT_EQ(lost_count, 1);
+
+    // kAcked is not latched — every ack notification still reaches the handler.
+    original.NotifyDelivery(FrameDeliveryState::kAcked);
+    original.NotifyDelivery(FrameDeliveryState::kAcked);
+    EXPECT_EQ(acked_count, 2);
+
+    // The next generation (a re-emitted copy) is a fresh instance: its kLost
+    // budget is independent, so the §13.3 chain still retransmits on ITS loss.
+    NewConnectionIDFrame next_gen;
+    next_gen.SetDeliveryHandler([&lost_count, &acked_count](FrameDeliveryState state) {
+        if (state == FrameDeliveryState::kLost) {
+            ++lost_count;
+        } else if (state == FrameDeliveryState::kAcked) {
+            ++acked_count;
+        }
+    });
+    next_gen.NotifyDelivery(FrameDeliveryState::kLost);
+    EXPECT_EQ(lost_count, 2);
+    next_gen.NotifyDelivery(FrameDeliveryState::kLost);
+    EXPECT_EQ(lost_count, 2);  // and latched for this instance too
+}
+
 }  // namespace
 }  // namespace quic
 }  // namespace quicx

@@ -28,7 +28,7 @@ protected:
 
         active_send_cb_ = [](std::shared_ptr<IStream>) {};
         stream_close_cb_ = [](uint64_t) {};
-        connection_close_cb_ = [this](uint64_t error, uint16_t frame_type, const std::string&) {
+        connection_close_cb_ = [this](uint64_t error, uint16_t /*frame_type*/, const std::string&) {
             connection_closed_ = true;
             error_code_ = error;
         };
@@ -227,7 +227,7 @@ TEST_F(RecvStreamTest, RecvOverlappingReassembly) {
     static const std::string kFlow = "0123456789ABCDEFGHIJKLMN";  // 24 bytes
     std::string delivered;
     bool last_flag = false;
-    stream->SetStreamReadCallBack([&](std::shared_ptr<IBufferRead> buffer, bool is_last, uint32_t err) {
+    stream->SetStreamReadCallBack([&](std::shared_ptr<IBufferRead> buffer, bool is_last, uint32_t /*err*/) {
         if (is_last) last_flag = true;
         if (buffer) {
             std::string tmp(buffer->GetDataLength(), '\0');
@@ -249,16 +249,21 @@ TEST_F(RecvStreamTest, RecvOverlappingReassembly) {
     };
 
     // Frame 1: [10,20) arrives out of order -> queued.
-    ASSERT_TRUE(stream->OnFrame(make_frame(10, 10, false)));
+    // Connection-level FC counting (RFC 9000 A.2, max-offset semantics):
+    // 20 new bytes counted.
+    EXPECT_EQ(stream->OnFrame(make_frame(10, 10, false)), 20u);
 
     // Frame 2: [0,15) in-order head; also overlaps the queued [10,20) frame.
     // Advances except_offset_ to 15, then the queued frame must be
-    // prefix-trimmed (5 bytes dropped) and absorbed to 20.
-    ASSERT_TRUE(stream->OnFrame(make_frame(0, 15, false)));
+    // prefix-trimmed (5 bytes dropped) and absorbed to 20. All bytes were
+    // already FC-counted by frame 1, so the delta is 0 — 0 no longer means
+    // "frame rejected", it means "no newly counted bytes".
+    EXPECT_EQ(stream->OnFrame(make_frame(0, 15, false)), 0u);
 
     // Frame 3: [18,24) with FIN — partially overlaps except_offset_(20):
     // trim 2 bytes, deliver [20,24), final_offset == 24 -> is_last.
-    ASSERT_TRUE(stream->OnFrame(make_frame(18, 6, true)));
+    // counted_end = 24 (final size), fc anchor at 20 -> 4 new bytes.
+    EXPECT_EQ(stream->OnFrame(make_frame(18, 6, true)), 4u);
 
     EXPECT_EQ(delivered, kFlow);
     EXPECT_TRUE(last_flag);
@@ -276,7 +281,7 @@ TEST_F(RecvStreamTest, RecvOverlappingAbsorbQueue) {
     for (size_t i = 0; i < kFlow.size(); i++) kFlow[i] = 'A' + (i % 26);
     std::string delivered;
     bool last_flag = false;
-    stream->SetStreamReadCallBack([&](std::shared_ptr<IBufferRead> buffer, bool is_last, uint32_t err) {
+    stream->SetStreamReadCallBack([&](std::shared_ptr<IBufferRead> buffer, bool is_last, uint32_t /*err*/) {
         if (is_last) last_flag = true;
         if (buffer) {
             std::string tmp(buffer->GetDataLength(), '\0');
@@ -298,17 +303,20 @@ TEST_F(RecvStreamTest, RecvOverlappingAbsorbQueue) {
     };
 
     // In-order [0,2126) then [2126,3432)
-    ASSERT_TRUE(stream->OnFrame(make_frame(0, 2126, false)));
-    ASSERT_TRUE(stream->OnFrame(make_frame(2126, 1306, false)));
+    (void)stream->OnFrame(make_frame(0, 2126, false));
+    (void)stream->OnFrame(make_frame(2126, 1306, false));
     // Six frames buffered out-of-order: [4738 ... 12574)
-    ASSERT_TRUE(stream->OnFrame(make_frame(4738, 1306, false)));
-    ASSERT_TRUE(stream->OnFrame(make_frame(6044, 1306, false)));
-    ASSERT_TRUE(stream->OnFrame(make_frame(7350, 1306, false)));
-    ASSERT_TRUE(stream->OnFrame(make_frame(8656, 1306, false)));
-    ASSERT_TRUE(stream->OnFrame(make_frame(9962, 1306, false)));
-    ASSERT_TRUE(stream->OnFrame(make_frame(11268, 1306, false)));
+    (void)stream->OnFrame(make_frame(4738, 1306, false));
+    (void)stream->OnFrame(make_frame(6044, 1306, false));
+    (void)stream->OnFrame(make_frame(7350, 1306, false));
+    (void)stream->OnFrame(make_frame(8656, 1306, false));
+    (void)stream->OnFrame(make_frame(9962, 1306, false));
+    (void)stream->OnFrame(make_frame(11268, 1306, false));
     // Hole-filling contiguous frame [3432,4738) — must drain the whole queue.
-    ASSERT_TRUE(stream->OnFrame(make_frame(3432, 1306, false)));
+    // (Its bytes were already FC-counted when the gap was jumped: OnFrame
+    // returns the max-offset delta, so 0 here; acceptance is proven below by
+    // the delivered-content assertion.)
+    (void)stream->OnFrame(make_frame(3432, 1306, false));
 
     EXPECT_EQ(delivered, kFlow.substr(0, 12574)) << "delivered len=" << delivered.size();
     EXPECT_FALSE(last_flag);
@@ -325,7 +333,7 @@ TEST_F(RecvStreamTest, RecvFinOnlyAfterAllData) {
     static const std::string kFlow = "0123456789ABCDEFGHIJKLMN";  // 24 bytes
     std::string delivered;
     bool last_flag = false;
-    stream->SetStreamReadCallBack([&](std::shared_ptr<IBufferRead> buffer, bool is_last, uint32_t err) {
+    stream->SetStreamReadCallBack([&](std::shared_ptr<IBufferRead> buffer, bool is_last, uint32_t /*err*/) {
         if (is_last) last_flag = true;
         if (buffer) {
             std::string tmp(buffer->GetDataLength(), '\0');
@@ -715,7 +723,22 @@ TEST_F(RecvStreamTest, ResetWithError) {
     // Reset with error
     stream->Reset(0x400);
 
-    EXPECT_EQ(stream->GetRecvStateMachine()->GetStatus(), StreamState::kResetRecvd);
+    // P0-S10: the local STOP_SENDING must NOT advance the receive state
+    // machine (the old fake kResetRecvd transition made the peer's genuine
+    // RESET_STREAM unprocessable and leaked the stream).
+    EXPECT_EQ(stream->GetRecvStateMachine()->GetStatus(), StreamState::kRecv);
+
+    // The peer's real RESET_STREAM must still be accepted and terminate the
+    // receive side. With no read callback registered the reset is consumed
+    // immediately, so the machine lands in the terminal kResetRead (under the
+    // old fake-transition bug this frame was rejected and the machine stuck
+    // in kRecv forever).
+    auto reset_frame = std::make_shared<ResetStreamFrame>();
+    reset_frame->SetStreamID(5);
+    reset_frame->SetAppErrorCode(0x400);
+    reset_frame->SetFinalSize(0);
+    stream->OnFrame(reset_frame);
+    EXPECT_EQ(stream->GetRecvStateMachine()->GetStatus(), StreamState::kResetRead);
 }
 
 // Test 5.2: Reset error=0, not send
@@ -807,13 +830,13 @@ TEST_F(RecvStreamTest, RecvStreamDataBlocked) {
     frame2->SetData(data_buffer2->GetSharedReadableSpan());
 
     recv_callback_called_ = false;
-    // If limit is not updated, this will return 0 (flow control error or drop)
+    // Flow-control acceptance is proven by the non-zero return. The value is
+    // the connection-level FC delta (RFC 9000 A.2 max-offset semantics):
+    // anchor was at 1000 (frame1), this frame reaches 10100 — the skipped
+    // gap counts too, so 9100. A flow-control rejection would return 0.
     uint32_t ret = stream->OnFrame(frame2);
 
-    EXPECT_EQ(ret, 100);
-    // Note: callback might not be called if it's out of order (gap 1000-10000),
-    // but OnFrame should accept it and return length.
-    // If rejected due to flow control, it returns 0.
+    EXPECT_EQ(ret, 9100u);
 }
 
 }  // namespace

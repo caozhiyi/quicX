@@ -6,6 +6,7 @@
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
 
+#include "quic/frame/reset_stream_frame.h"
 #include "quic/frame/stream_frame.h"
 #include "quic/frame/type.h"
 #include "quic/stream/bidirection_stream.h"
@@ -37,7 +38,7 @@ protected:
             last_sent_size_ = size;
             last_error_code_ = error;
         };
-        recv_cb_ = [this](std::shared_ptr<IBufferRead> buffer, bool is_last, uint32_t err) {
+        recv_cb_ = [this](std::shared_ptr<IBufferRead> /*buffer*/, bool is_last, uint32_t err) {
             recv_callback_called_ = true;
             is_last_packet_ = is_last;
             last_error_code_ = err;
@@ -388,15 +389,26 @@ TEST_F(BidirectionStreamTest, ResetBothDirections) {
     // Reset with error
     stream->Reset(0x400);
 
-    // Both directions should be in intermediate reset state
+    // Send direction: locally initiated reset -> kResetSent.
     EXPECT_EQ(stream->GetSendStateMachine()->GetStatus(), StreamState::kResetSent);
-    EXPECT_EQ(stream->GetRecvStateMachine()->GetStatus(), StreamState::kResetRecvd);
+    // Recv direction (P0-S10): the local STOP_SENDING must NOT fake a
+    // kResetRecvd transition — the receive state machine stays in kRecv so
+    // the peer's genuine RESET_STREAM can still be processed (the old fake
+    // transition made that RESET "unexpected" and leaked the stream).
+    EXPECT_EQ(stream->GetRecvStateMachine()->GetStatus(), StreamState::kRecv);
     EXPECT_FALSE(stream_closed_);  // Not terminal yet
 
-    // In real scenarios, Reset is followed by ACK and app read
-    // For unit testing, we verify intermediate states
-    EXPECT_EQ(stream->GetSendStateMachine()->GetStatus(), StreamState::kResetSent);
-    EXPECT_EQ(stream->GetRecvStateMachine()->GetStatus(), StreamState::kResetRecvd);
+    // The peer's real RESET_STREAM must now be processable and terminate the
+    // receive side. The buffered data (4 bytes) was never read by an
+    // application, so the reset consumes it and the machine reaches terminal
+    // kResetRead — under the old fake-transition bug this frame was rejected
+    // in kResetRecvd and the stream leaked.
+    auto reset_frame = std::make_shared<ResetStreamFrame>();
+    reset_frame->SetStreamID(7);
+    reset_frame->SetAppErrorCode(0x400);
+    reset_frame->SetFinalSize(4);
+    stream->OnFrame(reset_frame);
+    EXPECT_EQ(stream->GetRecvStateMachine()->GetStatus(), StreamState::kResetRead);
 
     // Note: stream_closed_ will be false until:
     // - Send side: RESET_STREAM is ACKed (ResetSent -> ResetRecvd)
