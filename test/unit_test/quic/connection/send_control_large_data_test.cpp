@@ -20,7 +20,7 @@ namespace quicx {
 namespace quic {
 namespace {
 
-std::shared_ptr<Rtt1Packet> MakePacket(uint64_t packet_number, uint32_t len) {
+std::shared_ptr<Rtt1Packet> MakePacket(uint64_t packet_number, uint32_t /*len*/) {
     auto packet = std::make_shared<Rtt1Packet>();
     packet->SetPacketNumber(packet_number);
     packet->GetHeader()->SetPacketNumberLength(PacketNumber::GetPacketNumberLength(packet_number));
@@ -40,7 +40,6 @@ TEST(SendControlLargeDataTest, DoubleSubtractionBug) {
     send_control.CanSend(now, can_send_bytes);
     EXPECT_GT(can_send_bytes, 0u);
 
-    uint64_t initial_cwnd = can_send_bytes;  // Approximation
     uint64_t sent_bytes = 0;
     uint64_t pkt_num = 1;
 

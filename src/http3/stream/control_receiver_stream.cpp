@@ -12,7 +12,7 @@ ControlReceiverStream::ControlReceiverStream(const std::shared_ptr<IQuicRecvStre
     const std::shared_ptr<QpackEncoder>& /*qpack_encoder*/,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
     const std::function<void(uint64_t id)>& goaway_handler,
-    const std::function<void(const std::unordered_map<uint16_t, uint64_t>& settings)>& settings_handler):
+    const std::function<void(const std::unordered_map<uint64_t, uint64_t>& settings)>& settings_handler):
     IRecvStream(StreamType::kControl, stream, error_handler),
     goaway_handler_(goaway_handler),
     settings_handler_(settings_handler) {

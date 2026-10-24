@@ -51,9 +51,9 @@ DecodeResult PushPromiseFrame::Decode(std::shared_ptr<common::IBuffer> buffer, b
         return DecodeResult::kError;
     }
 
-    if (length_ > kMaxFrameLength) {
+    if (length_ > kMaxHeadersFrameLength) {
         LOG_ERROR("PushPromiseFrame::Decode: length %llu exceeds limit %llu", (unsigned long long)length_,
-            (unsigned long long)kMaxFrameLength);
+            (unsigned long long)kMaxHeadersFrameLength);
         return DecodeResult::kError;
     }
 

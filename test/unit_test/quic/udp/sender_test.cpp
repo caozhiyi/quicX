@@ -23,7 +23,7 @@ static constexpr int kTimeoutMs = 5000;
 
 class RecvHandler: public IPacketReceiver {
 public:
-    void OnPacket(std::shared_ptr<NetPacket>& pkt) override { recv_times_.fetch_add(1, std::memory_order_relaxed); }
+    void OnPacket(std::shared_ptr<NetPacket>& /*pkt*/) override { recv_times_.fetch_add(1, std::memory_order_relaxed); }
     std::atomic<int> recv_times_{0};
 };
 

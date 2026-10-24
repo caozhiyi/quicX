@@ -86,6 +86,14 @@ public:
     // GetDisableActiveMigration(), which reflects OUR local declaration that
     // we encode on the wire.
     bool GetPeerDisableActiveMigration() const { return peer_disable_active_migration_; }
+    // The PEER's max_ack_delay / ack_delay_exponent (set by Merge()). RFC 9000
+    // §18.2: these are per-direction declarations — OUR fields above are what
+    // we advertise and use to ENCODE the ACK Delay field of ACKs we send;
+    // the peer's values are what we must use to DECODE the ACK Delay field of
+    // ACKs we receive (and to bound it in RTT estimation / PTO, RFC 9002 §5.3
+    // and §6.2.1). Merge() therefore no longer overwrites our local fields.
+    uint64_t GetPeerMaxAckDelayMs() const { return peer_max_ack_delay_ms_; }
+    uint64_t GetPeerAckDelayExponent() const { return peer_ack_delay_exponent_; }
     // Raw wire bytes of the received preferred_address transport parameter
     // (client side; parse them with ParsePreferredAddressBinary from util.h).
     const std::string& GetPreferredAddress() const { return preferred_address_; }
@@ -96,7 +104,12 @@ public:
     // Explicitly configured keep-alive cadence in ms; 0 = derive from the
     // negotiated idle timeout (max(idle/2, 1 s)).
     uint32_t GetKeepAliveInterval() const { return keep_alive_interval_ms_; }
+    // Per-direction declarations (same as ack_delay_exponent / max_ack_delay,
+    // see Merge()): this getter returns OUR advertised limit — how many CIDs
+    // the PEER may issue to us. The peer's declaration (bounding how many we
+    // may issue) is GetPeerActiveConnectionIdLimit().
     uint64_t GetActiveConnectionIdLimit() const { return active_connection_id_limit_; }
+    uint64_t GetPeerActiveConnectionIdLimit() const { return peer_active_connection_id_limit_; }
 
     // Client-only: the connection ID carried inside the RFC 9000 §18.2 binary
     // preferred_address structure. Per §9.6 the client MUST use this CID as the
@@ -128,6 +141,13 @@ public:
     // setter lets BaseConnection back-fill it from the first Initial when the caller did not,
     // so the parameter is never silently omitted.
     void SetOriginalDestinationConnectionId(const std::string& id) { original_destination_connection_id_ = id; }
+
+    // Stable byte string binding the 0-RTT early-data context to the parts
+    // of OUR configuration that shape early-data handling, so a resumption
+    // ticket minted under a different configuration is rejected. Only
+    // cross-connection-stable values may go in here (see the note in
+    // TLSServerConnection::AddTransportParam).
+    std::vector<uint8_t> EvaluateEarlyDataContext() const;
 
     // RFC 9368 Compatible Version Negotiation: version_information transport parameter (id 0x11)
     // chosen_version:     the version that the sender is using for this connection
@@ -185,7 +205,10 @@ private:
     // separate from disable_active_migration_ (our own wire declaration) so
     // receiving a peer value can never pollute what we encode.
     bool peer_disable_active_migration_ = false;
+    uint64_t peer_max_ack_delay_ms_ = 0;
+    uint64_t peer_ack_delay_exponent_ = 0;
     uint64_t active_connection_id_limit_;
+    uint64_t peer_active_connection_id_limit_ = 0;
     std::string initial_source_connection_id_;  // no client
     std::string retry_source_connection_id_;    // no client
 

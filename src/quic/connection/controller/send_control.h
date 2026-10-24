@@ -8,6 +8,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "common/qlog/event/transport_events.h"
 #include "common/timer/if_timer_scheduler.h"
 
 #include "quic/config.h"
@@ -148,6 +149,13 @@ public:
     void OnPacketSend(uint64_t now, const std::shared_ptr<IPacket>& packet, uint32_t pkt_len);
     void OnPacketSend(uint64_t now, const std::shared_ptr<IPacket>& packet, uint32_t pkt_len,
         const std::vector<StreamDataInfo>& stream_data);
+
+    // packet_sent events are staged per datagram and committed only after the
+    // emitter confirms the datagram went out; dropped datagrams (e.g. §8.1
+    // budget) leave no trace events.
+    void FlushPendingPacketSentsToQlog();
+    void DropPendingPacketSents();
+
     void OnPacketAck(uint64_t now, PacketNumberSpace ns, const std::shared_ptr<IFrame>& ack_frame);
     void CanSend(uint64_t now, uint64_t& can_send_bytes);
     bool NeedReSend() { return !lost_packets_.empty(); }
@@ -193,6 +201,8 @@ public:
     // we leave it alone rather than delete a live entry that merely shares the
     // packet number.
     void RemoveStaleUnackedEntry(PacketNumberSpace ns, uint64_t stale_pn, const std::shared_ptr<IPacket>& packet);
+    // Next send time in the microsecond domain — both the |now| argument and
+    // the return value. Sourced from the CC algorithm (pacing-aware for BBR).
     uint64_t GetNextSendTime(uint64_t now) { return congestion_control_->NextSendTime(now); }
 
     void UpdateConfig(const TransportParam& tp);
@@ -544,6 +554,8 @@ private:
     uint32_t current_send_packet_count_ = 0;
     uint32_t current_send_raw_length_ = 0;
     std::vector<uint64_t> current_send_packet_numbers_;
+    // Staged packet_sent events for the datagram currently being emitted.
+    std::vector<common::PacketSentData> pending_qlog_packet_sents_;
 
     // Helper for logging recovery metrics with sampling
     void LogRecoveryMetricsIfChanged(uint64_t now);

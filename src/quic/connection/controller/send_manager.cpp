@@ -73,10 +73,15 @@ SendOperation SendManager::GetSendOperation() {
             // !streams_allowed_, TrySendNewBurst's probing bypass) ensure only
             // the tiny exempt frames actually go out under cwnd exhaustion.
             if (!IsCongestionControlExempt() && !HasPendingProbingFrame()) {
-                uint64_t next_time = send_control_.GetNextSendTime(now);
-                if (next_time > now) {
-                    uint64_t delay = next_time - now;
-                    ArmPacingTimer(static_cast<uint32_t>(delay));
+                // Pacing decisions run in the microsecond domain (the pacer
+                // keeps sub-ms gaps at high rates); the pacing timer still
+                // arms in whole ms (timer granularity), rounded up so a
+                // sub-ms gap never fires early.
+                uint64_t now_us = Metrics::NowUs();
+                uint64_t next_time = send_control_.GetNextSendTime(now_us);
+                if (next_time > now_us) {
+                    uint64_t delay_ms = (next_time - now_us + 999) / 1000;
+                    ArmPacingTimer(static_cast<uint32_t>(delay_ms));
                 } else {
                     is_cwnd_limited_ = true;
                     LOG_WARN("congestion control send data limited.");
@@ -100,7 +105,13 @@ SendOperation SendManager::GetSendOperation() {
 }
 
 void SendManager::EnqueueFrame(std::shared_ptr<IFrame> frame) {
-    wait_frame_list_.emplace_front(frame);
+    // FIFO (P0-S4): frames leave in generation order. See wait_frame_list_.
+    if (wait_frame_list_.size() >= kMaxQueuedFrames) {
+        LOG_ERROR("SendManager: frame queue at cap %zu, dropping oldest frame (type:%u)", kMaxQueuedFrames,
+            static_cast<uint32_t>(frame->GetType()));
+        wait_frame_list_.pop_front();
+    }
+    wait_frame_list_.emplace_back(frame);
 }
 
 void SendManager::AttachRequeueOnLoss(const std::shared_ptr<IFrame>& frame) {
@@ -245,7 +256,7 @@ void SendManager::MarkAddressValidated() {
     amp_controller_.ExitUnvalidatedState();
     amp_blocked_ = false;
     streams_allowed_ = true;
-    LOG_DEBUG("peer address validated; anti-amplification limit lifted.");
+    LOG_INFO("peer address validated; anti-amplification limit lifted.");
 }
 
 bool SendManager::IsAllowedOnUnvalidated(uint16_t type) const {

@@ -422,11 +422,18 @@ TEST(CryptoStreamDeliveryTest, PartialOverlapRequeuesOnlyDifference) {
     ASSERT_EQ(f3->GetLength(), 50u);
     ASSERT_EQ(f.stream->GetOutgoingSegmentCountForTest(kHandshake), 1u);  // [50,100)
 
-    // A second kLost for the SAME frame f1 ([0,100)) now PARTIALLY overlaps
-    // the queued [50,100) remainder. Only the uncovered [0,50) may be
-    // re-queued: the old full-containment check ([50,100) does not contain
-    // [0,100)) re-queued the whole range, duplicating [50,100).
-    f1->NotifyDelivery(FrameDeliveryState::kLost);
+    // The next generation of the [0,100) range is f3 ([0,50), emitted above).
+    // f3 being declared lost must re-queue its range against the queued
+    // [50,100) remainder using the difference logic: only uncovered bytes go
+    // back on the queue, never a duplicated range.
+    //
+    // (History: this test used to fire kLost on f1 a SECOND time to build the
+    // overlap. That path no longer exists — IFrame::NotifyDelivery latches
+    // kLost per frame instance (one retransmission per loss generation, RFC
+    // 9000 §13.3), because the repeatable notification was what let PTO
+    // re-queue cycles turn one lost NCID frame into 14,081 re-emissions
+    // (interop qlog 2026-10-21).)
+    f3->NotifyDelivery(FrameDeliveryState::kLost);
 
     // Drain: [50,100) first, then exactly [0,50). A 100-byte final emission
     // means the difference logic regressed to full-range re-queue.

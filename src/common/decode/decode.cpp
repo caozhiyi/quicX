@@ -137,6 +137,15 @@ uint8_t* DecodeVarint(uint8_t* start, uint8_t* end, uint32_t& value) {
 
     uint64_t ret = 0;
     uint8_t* ret_pos = DecodeVarint(start, end, ret);
+    if (ret_pos == nullptr) {
+        return nullptr;
+    }
+    // A well-formed varint whose value does not fit in 32 bits is a protocol
+    // error for every 32-bit field (e.g. STREAM/CRYPTO Data Length): fail the
+    // decode instead of silently truncating a remote-controlled value.
+    if (ret > UINT32_MAX) {
+        return nullptr;
+    }
     value = uint32_t(ret);
     return ret_pos;
 }

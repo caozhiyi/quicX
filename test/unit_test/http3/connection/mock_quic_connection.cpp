@@ -8,7 +8,7 @@ void MockQuicConnection::Close() {
     // TODO: implement this
 }
 
-void MockQuicConnection::Reset(uint32_t error_code) {
+void MockQuicConnection::Reset(uint32_t /*error_code*/) {
     // TODO: implement this
 }
 
@@ -82,7 +82,7 @@ void MockQuicConnection::SetStreamStateCallBack(stream_state_callback cb) {
     }
 }
 
-bool MockQuicConnection::ExportResumptionSession(std::string& out_session_der) {
+bool MockQuicConnection::ExportResumptionSession(std::string& /*out_session_der*/) {
     // TODO: implement this
     return false;
 }

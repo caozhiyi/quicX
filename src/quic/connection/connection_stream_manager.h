@@ -54,6 +54,15 @@ public:
 
     ~StreamManager();
 
+    // Tie the stream-injected callbacks' lifetime guard to the owning
+    // connection, exactly once it is owned by a shared_ptr (same pattern as
+    // RecvControl::Bind / SendControl::Bind). Streams escape the connection as
+    // shared_ptr (the HTTP/3 layer may hold them beyond the QUIC connection's
+    // lifetime), so the lambdas injected at MakeStream time capture this token
+    // and are silently dropped once the connection is destroyed, instead of
+    // dereferencing a destroyed StreamManager / BaseConnection.
+    void Bind(std::weak_ptr<void> self) { life_token_ = self; }
+
     // ==================== Stream Creation ====================
 
     /**
@@ -193,6 +202,16 @@ public:
      */
     void SetQlogTrace(std::shared_ptr<::quicx::common::QlogTrace> trace) { qlog_trace_ = trace; }
 
+    // P0-S2: receive-memory budget accounting. Every RecvStream reports its
+    // pinned receive bytes (ordered buffer + out-of-order reassembly) through
+    // deltas; the running total backs the connection-level budget gate in
+    // RecvFlowController::ShouldSendMaxData — once pinned memory exceeds the
+    // budget the connection window stops growing, so a peer that outpaces the
+    // application gets blocked by flow control instead of by OOM.
+    void SetRecvFlowController(class RecvFlowController* rfc) { recv_flow_controller_ = rfc; }
+    void OnStreamBufferedChanged(int64_t delta);
+    uint64_t GetTotalRecvBufferedBytes() const { return total_recv_buffered_bytes_; }
+
 private:
     // Stream map
     std::unordered_map<uint64_t, std::shared_ptr<IStream>> streams_map_;
@@ -210,6 +229,9 @@ private:
     // Dependencies (injected)
     IConnectionEventSink& event_sink_;  // Event interface (replaces callbacks)
     std::weak_ptr<::quicx::common::IEventLoop> event_loop_;
+    // Connection ownership token (see Bind); checked by the stream-injected
+    // lambdas before any event_sink_ call.
+    std::weak_ptr<void> life_token_;
     SendFlowController* send_flow_controller_;  // Send-side flow controller
     TransportParam& transport_param_;
     SendManager& send_manager_;
@@ -219,6 +241,10 @@ private:
 
     // Qlog trace for stream state change tracking
     std::shared_ptr<::quicx::common::QlogTrace> qlog_trace_;
+
+    // P0-S2 wiring & budget state
+    class RecvFlowController* recv_flow_controller_ = nullptr;  // optional, late-bound
+    uint64_t total_recv_buffered_bytes_ = 0;
 };
 
 }  // namespace quic

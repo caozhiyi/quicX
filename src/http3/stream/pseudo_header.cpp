@@ -90,7 +90,24 @@ void PseudoHeader::DecodeResponse(std::shared_ptr<IResponse> response) {
 
     for (const auto& field : fields) {
         if (field.first == PSEUDO_HEADER_STATUS) {
-            response->SetStatusCode(static_cast<uint32_t>(std::stoul(field.second)));
+            // Peer-controlled value: std::stoul throws std::invalid_argument /
+            // std::out_of_range on non-numeric or oversized input and the
+            // exception would unwind through the event loop and abort the
+            // process (remote crash, P0-S7). Parse manually instead.
+            uint32_t status = 0;
+            bool ok = !field.second.empty() && field.second.size() <= 3;
+            for (char c : field.second) {
+                if (c < '0' || c > '9') {
+                    ok = false;
+                    break;
+                }
+                status = status * 10 + static_cast<uint32_t>(c - '0');
+            }
+            if (ok && status >= 100 && status <= 599) {
+                response->SetStatusCode(status);
+            } else {
+                LOG_WARN("ignoring malformed :status pseudo-header value: '%s'", field.second.c_str());
+            }
             break;
         }
     }
@@ -120,8 +137,12 @@ HttpMethod PseudoHeader::StringToMethod(const std::string& method) {
         return iter->second;
     }
 
-    LOG_FATAL("Invalid method: %s", method.c_str());
-    return HttpMethod::kGet;
+    // Peer-controlled token: never FATAL on it and never fall back to kGet
+    // (that would mis-route extension methods like "FOO" into GET handlers).
+    // kUnknown is outside kAny's bitmask, so route matching rejects the
+    // request instead (RFC 9114 §4.1.2 extension methods).
+    LOG_WARN("unknown http method token in :method pseudo-header: '%s'", method.c_str());
+    return HttpMethod::kUnknown;
 }
 
 const std::unordered_map<std::string, HttpMethod> PseudoHeader::kStringToMethodMap = {
@@ -134,7 +155,11 @@ const std::unordered_map<std::string, HttpMethod> PseudoHeader::kStringToMethodM
     {"OPTIONS", HttpMethod::kOptions},
     {"TRACE", HttpMethod::kTrace},
     {"PATCH", HttpMethod::kPatch},
-    {"ANY", HttpMethod::kAny},
+    // NOTE: no "ANY" here — kAny is an internal routing wildcard bitmask, not
+    // an HTTP method token. Accepting ":method: ANY" from a peer used to map
+    // an attacker-chosen token straight onto the wildcard route matcher
+    // (P0-S7). Outbound encoding below still maps kAny to "ANY" for local
+    // API compatibility; peers see it as an (unroutable) extension method.
 };
 
 const std::unordered_map<HttpMethod, std::string> PseudoHeader::kMethodToStringMap = {

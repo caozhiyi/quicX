@@ -30,7 +30,8 @@ namespace quic {
 
 ServerWorker::ServerWorker(const QuicServerConfig& config, std::shared_ptr<TLSCtx> ctx, std::shared_ptr<ISender> sender,
     const QuicTransportParams& params, connection_state_callback connection_handler,
-    std::shared_ptr<common::IEventLoop> event_loop, std::shared_ptr<RetryTokenManager> shared_retry_token_manager):
+    std::shared_ptr<common::IEventLoop> event_loop, std::shared_ptr<RetryTokenManager> shared_retry_token_manager,
+    std::shared_ptr<IPRateLimiter> shared_ip_limiter):
     Worker(config.config_, ctx, sender, params, connection_handler, event_loop),
     server_alpn_(config.alpn_),
     max_connections_per_worker_(config.max_connections_per_worker_),
@@ -53,8 +54,17 @@ ServerWorker::ServerWorker(const QuicServerConfig& config, std::shared_ptr<TLSCt
         // Initialize rate monitoring components for SELECTIVE mode
         if (retry_policy_ == RetryPolicy::SELECTIVE) {
             rate_monitor_ = std::make_shared<ConnectionRateMonitor>(event_loop);
-            ip_limiter_ = std::make_shared<IPRateLimiter>(selective_config_.ip_cache_size_,
-                selective_config_.ip_rate_threshold_, selective_config_.ip_window_seconds_);
+            // The per-IP limiter is server-wide, not per-worker: the master
+            // spreads one peer's connections across workers by DCID hash, so
+            // per-worker counters would dilute a single IP's connection rate
+            // by the worker count (and, symmetrically, would flag different
+            // workers' counts independently). IPRateLimiter is internally
+            // mutex-protected, so one shared instance is safe to use from all
+            // worker threads. rate_monitor_ above stays per-worker by design:
+            // it owns a timer on this worker's event loop.
+            ip_limiter_ = shared_ip_limiter ? shared_ip_limiter
+                                            : std::make_shared<IPRateLimiter>(selective_config_.ip_cache_size_,
+                                                  selective_config_.ip_rate_threshold_, selective_config_.ip_window_seconds_);
             LOG_INFO("Retry mechanism enabled (SELECTIVE mode). rate_threshold=%u, ip_threshold=%u, token_lifetime=%u",
                 selective_config_.rate_threshold_, selective_config_.ip_rate_threshold_, retry_token_lifetime_);
         } else {
@@ -81,7 +91,6 @@ void ServerWorker::Shutdown() {
     // safe to invoke EventLoop::RemoveTimer / AddTimer from this thread
     // because AssertInLoopThread() would abort.
     //
-    ip_conn_count_.clear();
     conn_source_ip_.clear();
     // We just drop the bookkeeping containers; each handshake timer's
     // captured shared_ptr<ServerConnection> is released via ~unordered_map,
@@ -183,27 +192,15 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
         const common::SocketHandle rx_sock = packet_info.net_packet_->GetSocket();
         const bool local_socket_changed = connection->OnRxSocket(rx_sock.fd);
 
-        connection->SetSocket(rx_sock);
-        // Record received bytes on the candidate path BEFORE reporting the
-        // address change. StartPathValidationProbe fires a padded (1200 B)
-        // PATH_CHALLENGE through the immediate-probe path, which passes the
-        // same RFC 9000 §8.1 3x anti-amplification gate as any other
-        // datagram; with this datagram's bytes still unaccounted the budget
-        // reads as zero and the probe falls back to the queued path — letting
-        // the immediate ACK for this very packet become the new path's first
-        // outbound datagram, which the rebind/connectionmigration checks
-        // treat as a missing PATH_CHALLENGE. Accounting first keeps the
-        // probe ahead of that ACK.
-        if (packet_info.net_packet_->GetData()) {
-            connection->OnCandidatePathDatagramReceived(
-                packet_info.net_packet_->GetAddress(), packet_info.net_packet_->GetData()->GetDataLength());
-        }
-        // report observed address for path change detection
-        auto& observed_addr = packet_info.net_packet_->GetAddress();
-        connection->OnObservedPeerAddress(observed_addr);
-        if (local_socket_changed) {
-            connection->OnLocalSocketAddressChanged();
-        }
+        // RFC 9000 §9.3: do NOT touch path state here. The DCID is visible
+        // on the wire, so an off-path attacker who forges a source address
+        // onto a captured DCID would previously flip the emitter socket
+        // (SetSocket) and draw PATH_CHALLENGE probes toward the victim
+        // (OnObservedPeerAddress) before any packet authenticated. Instead
+        // the metadata is stashed and consumed inside OnPackets, after the
+        // datagram's first packet decrypts successfully — and ahead of the
+        // ACK-side bookkeeping, so the probe still precedes the ACK.
+        connection->SetPendingDatagramPath(rx_sock, packet_info.net_packet_->GetAddress(), local_socket_changed);
         connection->SetPendingEcn(packet_info.net_packet_->GetEcn());
         connection->OnPackets(packet_info.net_packet_->GetTime(), packet_info.packets_, packet_info.datagram_size_);
         return true;
@@ -324,14 +321,29 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
     }
 
     // create new connection
+    // Connections outlive the worker (HTTP/3 holds shared_ptrs), so callbacks
+    // must go through the life token and not touch a destroyed worker.
+    std::weak_ptr<int> worker_token = life_token_;
+    auto guarded = [worker_token, this](auto&& fn) mutable {
+        return [worker_token, this, fn](auto&&... args) {
+            if (worker_token.lock()) {
+                fn(std::forward<decltype(args)>(args)...);
+            }
+        };
+    };
+
     ConnectionCallbacks callbacks;
-    callbacks.active_connection_cb = [this](auto a) { HandleActiveSendConnection(a); };
-    callbacks.handshake_done_cb = [this](auto a) { HandleHandshakeDone(a); };
-    callbacks.add_conn_id_cb = [this](auto a, auto b) { HandleAddConnectionId(a, b); };
-    callbacks.retire_conn_id_cb = [this](auto a) { HandleRetireConnectionId(a); };
-    callbacks.connection_close_cb = [this](auto a, auto b, auto c) { HandleConnectionClose(a, b, c); };
+    callbacks.active_connection_cb = guarded([this](auto a) { HandleActiveSendConnection(a); });
+    callbacks.handshake_done_cb = guarded([this](auto a) { HandleHandshakeDone(a); });
+    callbacks.add_conn_id_cb = guarded([this](auto a, auto b) { HandleAddConnectionId(a, b); });
+    callbacks.retire_conn_id_cb = guarded([this](auto a) { HandleRetireConnectionId(a); });
+    callbacks.connection_close_cb = guarded([this](auto a, auto b, auto c) { HandleConnectionClose(a, b, c); });
 
     auto new_conn = std::make_shared<ServerConnection>(ctx_, event_loop_.lock(), server_alpn_, callbacks, ecn_enabled_);
+
+    // Bind lifetime guards as soon as the connection is owned by a shared_ptr,
+    // before any stream is created on it.
+    new_conn->BindLifetimeGuardsOnce();
 
     // Inject Sender for direct packet transmission
     new_conn->SetSender(sender_);
@@ -405,6 +417,13 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
     // one case where the budget is lifted up front.
     if (retry_was_used) {
         new_conn->MarkAddressValidated();
+        // A Retry-restarted client rebuilds its Initial write keys for the
+        // wire version it speaks and does not re-key on a server-side
+        // compatible upgrade, so upgrading here leaves the two sides on
+        // different Initial keys — every client retransmission fails
+        // decryption and the handshake deadlocks until the connection times
+        // out. Pin the connection to the client's chosen_version instead.
+        new_conn->SkipCompatibleUpgrade();
     }
 
     // add remote connection id
@@ -645,19 +664,13 @@ bool ServerWorker::CanAcceptNewConnection(const common::Address& client_addr) co
         return false;
     }
 
-    if (max_connections_per_ip_ != 0) {
-        auto it = ip_conn_count_.find(client_addr.GetIp());
-        if (it != ip_conn_count_.end() && it->second >= max_connections_per_ip_) {
-            LOG_WARN("per-ip connection limit reached. ip:%s, count:%u, limit:%u", client_addr.GetIp().c_str(),
-                it->second, max_connections_per_ip_);
-            return false;
-        }
-    }
-    return true;
+    // Per-IP accounting must be process-wide: a per-worker counter would
+    // multiply the operator's limit by the worker count.
+    return PerIpConnectionCounter::Instance().CanAdmit(client_addr.GetIp(), max_connections_per_ip_);
 }
 
 void ServerWorker::OnConnectionAdmitted(const common::Address& client_addr) {
-    ++ip_conn_count_[client_addr.GetIp()];
+    PerIpConnectionCounter::Instance().Increment(client_addr.GetIp());
 }
 
 void ServerWorker::OnConnectionReleased(const std::shared_ptr<IConnection>& conn) {
@@ -666,14 +679,7 @@ void ServerWorker::OnConnectionReleased(const std::shared_ptr<IConnection>& conn
         return;
     }
 
-    auto counter = ip_conn_count_.find(owner->second);
-    if (counter != ip_conn_count_.end()) {
-        if (--counter->second == 0) {
-            // Drop empty buckets, otherwise the map grows without bound as
-            // distinct source IPs come and go.
-            ip_conn_count_.erase(counter);
-        }
-    }
+    PerIpConnectionCounter::Instance().Decrement(owner->second);
     conn_source_ip_.erase(owner);
 }
 

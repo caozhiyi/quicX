@@ -80,7 +80,7 @@ TEST_F(StreamCloseScenarios, RecvStreamNormalCompletionNoStopSending) {
         }
         std::shared_ptr<common::IBuffer> GetBuffer() override { return nullptr; }
         uint8_t GetEncryptionLevel() override { return 0; }
-        void SetStreamDataSizeLimit(uint32_t size) override {}
+        void SetStreamDataSizeLimit(uint32_t /*size*/) override {}
         uint32_t GetLeftStreamDataSize() override { return 1000; }
         uint64_t GetStreamDataSize() override { return 0; }
     } visitor;
@@ -119,7 +119,7 @@ TEST_F(StreamCloseScenarios, RecvStreamErrorSendsStopSending) {
         }
         std::shared_ptr<common::IBuffer> GetBuffer() override { return nullptr; }
         uint8_t GetEncryptionLevel() override { return 0; }
-        void SetStreamDataSizeLimit(uint32_t size) override {}
+        void SetStreamDataSizeLimit(uint32_t /*size*/) override {}
         uint32_t GetLeftStreamDataSize() override { return 1000; }
         uint64_t GetStreamDataSize() override { return 0; }
     } visitor;
@@ -199,7 +199,7 @@ TEST_F(StreamCloseScenarios, BidirectionStreamResetWithError) {
         }
         std::shared_ptr<common::IBuffer> GetBuffer() override { return nullptr; }
         uint8_t GetEncryptionLevel() override { return 0; }
-        void SetStreamDataSizeLimit(uint32_t size) override {}
+        void SetStreamDataSizeLimit(uint32_t /*size*/) override {}
         uint32_t GetLeftStreamDataSize() override { return 1000; }
         uint64_t GetStreamDataSize() override { return 0; }
     } visitor;
@@ -238,7 +238,7 @@ TEST_F(StreamCloseScenarios, BidirectionStreamResetWithZeroWarns) {
         }
         std::shared_ptr<common::IBuffer> GetBuffer() override { return nullptr; }
         uint8_t GetEncryptionLevel() override { return 0; }
-        void SetStreamDataSizeLimit(uint32_t size) override {}
+        void SetStreamDataSizeLimit(uint32_t /*size*/) override {}
         uint32_t GetLeftStreamDataSize() override { return 1000; }
         uint64_t GetStreamDataSize() override { return 0; }
     } visitor;
@@ -276,7 +276,7 @@ TEST_F(StreamCloseScenarios, SendStreamRespondsToStopSending) {
         bool HandleFrame(std::shared_ptr<IFrame> frame) override { return frame->Encode(buf_); }
         std::shared_ptr<common::IBuffer> GetBuffer() override { return buf_; }
         uint8_t GetEncryptionLevel() override { return 0; }
-        void SetStreamDataSizeLimit(uint32_t size) override {}
+        void SetStreamDataSizeLimit(uint32_t /*size*/) override {}
         uint32_t GetLeftStreamDataSize() override { return 1000; }
         uint64_t GetStreamDataSize() override { return 0; }
     } visitor1(buffer);
@@ -320,7 +320,7 @@ TEST_F(StreamCloseScenarios, SendStreamRespondsToStopSending) {
         }
         std::shared_ptr<common::IBuffer> GetBuffer() override { return buf_; }
         uint8_t GetEncryptionLevel() override { return 0; }
-        void SetStreamDataSizeLimit(uint32_t size) override {}
+        void SetStreamDataSizeLimit(uint32_t /*size*/) override {}
         uint32_t GetLeftStreamDataSize() override { return 1000; }
         uint64_t GetStreamDataSize() override { return 0; }
     } visitor2(buffer2);

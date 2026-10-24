@@ -24,6 +24,22 @@ namespace upgrade {
 // the first byte for several seconds (e.g. proxies, mobile networks).
 static constexpr uint64_t kUpgradeNegotiationTimeoutMs = 30000;  // 30 s
 
+// Maximum time a connection may linger AFTER the upgrade outcome is decided
+// (response fully sent). Pre-existing behaviour left UPGRADED and FAILED
+// connections registered on the loop forever: nothing processed their data
+// and nothing ever closed them — one permanently leaked fd (plus epoll map
+// entry) per abandoned upgrade (P0-S8). The completion handler re-arms the
+// connection's timer with this value as a bounded linger, after which the fd
+// is closed.
+static constexpr uint64_t kUpgradePostCompleteLingerMs = 30000;  // 30 s
+
+// Cap on bytes buffered while trying to classify the connection
+// (DETECTING/NEGOTIATING). The detector needs at most ~1 KiB of prefix; the
+// old code appended peer data to initial_data without bound — a hostile peer
+// could park gigabytes of memory per connection. Exceeding the cap fails the
+// upgrade (which closes the connection).
+static constexpr size_t kUpgradeInitialDataLimit = 8 * 1024;
+
 }  // namespace upgrade
 }  // namespace quicx
 

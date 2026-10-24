@@ -69,9 +69,9 @@ bool DecryptPacketTest(std::shared_ptr<ICryptographer> encrypter, std::shared_pt
 
 bool DecryptHeaderTest(std::shared_ptr<ICryptographer> encrypter, std::shared_ptr<ICryptographer> decrypter) {
     static const uint32_t s_plaintext_length = 128;
-    // make test plaintext
+    // make test plaintext (consumed by the memcpy below; only wrapped in a
+    // span locally where needed)
     uint8_t src_plaintext[s_plaintext_length] = {0};
-    auto plaintext_span = common::BufferSpan((uint8_t*)src_plaintext, (uint8_t*)src_plaintext + sizeof(src_plaintext));
 
     ShortHeader header;
     header.SetDestinationConnectionId((uint8_t*)kDestConnnectionId, sizeof(kDestConnnectionId));

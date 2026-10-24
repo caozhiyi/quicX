@@ -33,7 +33,7 @@ protected:
         auto error_cb = [this](uint64_t /*stream_id*/, uint32_t error_code) { last_error_ = error_code; };
         auto goaway_cb = [this](uint64_t id) { last_goaway_id_ = id; };
         auto settings_cb = [this](
-                               const std::unordered_map<uint16_t, uint64_t>& settings) { last_settings_ = settings; };
+                               const std::unordered_map<uint64_t, uint64_t>& settings) { last_settings_ = settings; };
         auto max_push_cb = [this](uint64_t id) { last_max_push_id_ = id; };
         auto cancel_cb = [this](uint64_t id) { last_cancel_id_ = id; };
 
@@ -54,7 +54,7 @@ protected:
         client_stream_->Send(buffer);
     }
 
-    void SendSettings(const std::unordered_map<uint16_t, uint64_t>& settings = {}) {
+    void SendSettings(const std::unordered_map<uint64_t, uint64_t>& settings = {}) {
         SettingsFrame frame;
         for (const auto& kv : settings) {
             frame.SetSetting(kv.first, kv.second);
@@ -82,7 +82,7 @@ protected:
 
     uint32_t last_error_{0};
     uint64_t last_goaway_id_{std::numeric_limits<uint64_t>::max()};
-    std::unordered_map<uint16_t, uint64_t> last_settings_;
+    std::unordered_map<uint64_t, uint64_t> last_settings_;
     uint64_t last_max_push_id_{0};
     uint64_t last_cancel_id_{0};
 };

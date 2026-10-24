@@ -143,6 +143,7 @@ bool DatagramEmitter::Emit(std::shared_ptr<common::IBuffer> buffer, bool bypass_
     if (amp_budget_check_ && buffer && buffer->GetDataLength() > 0) {
         if (!amp_budget_check_(buffer->GetDataLength())) {
             LOG_WARN("DatagramEmitter::Emit: blocked %u bytes by anti-amplification limit", buffer->GetDataLength());
+            send_control_.DropPendingPacketSents();
             (void)send_control_.EndSendDatagram();
             return false;
         }
@@ -155,12 +156,14 @@ bool DatagramEmitter::Emit(std::shared_ptr<common::IBuffer> buffer, bool bypass_
     if (!buffer || buffer->GetDataLength() == 0) {
         LOG_WARN("DatagramEmitter::Emit: empty buffer");
         Metrics::CounterInc(common::MetricsStd::DiagSendBufferFail);
+        send_control_.DropPendingPacketSents();
         return false;
     }
 
     if (!sender_) {
         LOG_ERROR("DatagramEmitter::Emit: no sender available");
         Metrics::CounterInc(common::MetricsStd::DiagSendBufferFail);
+        send_control_.DropPendingPacketSents();
         return false;
     }
 
@@ -193,17 +196,20 @@ bool DatagramEmitter::Emit(std::shared_ptr<common::IBuffer> buffer, bool bypass_
         const uint32_t len = buffer->GetDataLength();
         send_sink_->push_back(std::move(packet));
         LOG_DEBUG("DatagramEmitter::Emit: queued %u bytes for batch, sock=%d", len, send_sock.fd);
+        send_control_.FlushPendingPacketSentsToQlog();
         return true;
     }
 
     if (!sender_->Send(packet)) {
         LOG_ERROR("DatagramEmitter::Emit: sender_->Send() failed, sock=%d", send_sock.fd);
         Metrics::CounterInc(common::MetricsStd::DiagSendBufferFail);
+        send_control_.DropPendingPacketSents();
         return false;
     }
 
     LOG_DEBUG("DatagramEmitter::Emit: sent %u bytes, sock=%d, bypass_batch=%d", buffer->GetDataLength(), send_sock.fd,
         static_cast<int>(bypass_batch));
+    send_control_.FlushPendingPacketSentsToQlog();
     return true;
 }
 

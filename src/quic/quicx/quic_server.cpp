@@ -148,10 +148,22 @@ bool QuicServer::Init(const QuicServerConfig& config) {
         shared_retry_token_manager = std::make_shared<RetryTokenManager>();
     }
 
+    // One shared IPRateLimiter for ALL workers, mirroring the token manager
+    // above: per-IP connection counting is only meaningful server-wide. A
+    // single attacker (or a localhost load test) is spread across workers by
+    // DCID hash, so per-worker counters would under-count by the worker count
+    // and never cross the suspicion threshold.
+    std::shared_ptr<IPRateLimiter> shared_ip_limiter;
+    if (config.retry_policy_ == RetryPolicy::SELECTIVE) {
+        shared_ip_limiter = std::make_shared<IPRateLimiter>(config.selective_retry_config_.ip_cache_size_,
+            config.selective_retry_config_.ip_rate_threshold_, config.selective_retry_config_.ip_window_seconds_);
+    }
+
     worker_map_.reserve(config.config_.worker_thread_num_);
     if (config.config_.thread_mode_ == ThreadMode::kSingleThread) {
         auto worker = std::make_shared<ServerWorker>(
-            config, tls_ctx, sender, params_, connection_state_cb_, master_event_loop_, shared_retry_token_manager);
+            config, tls_ctx, sender, params_, connection_state_cb_, master_event_loop_, shared_retry_token_manager,
+            shared_ip_limiter);
         master_event_loop_->RunInLoop(
             [worker, this]() { master_event_loop_->AddFixedProcess(worker, [worker]() { worker->Process(); }); });
 
@@ -168,7 +180,8 @@ bool QuicServer::Init(const QuicServerConfig& config) {
             }
 
             auto worker_ptr = std::make_shared<ServerWorker>(
-                config, tls_ctx, sender, params_, connection_state_cb_, worker_loop, shared_retry_token_manager);
+                config, tls_ctx, sender, params_, connection_state_cb_, worker_loop, shared_retry_token_manager,
+                shared_ip_limiter);
             worker_ptr->SetConnectionIDNotify(master_);
 
             auto worker = std::make_shared<WorkerWithThread>(worker_loop, worker_ptr);

@@ -14,7 +14,7 @@ uint64_t MockQuicStream::GetStreamID() {
     return stream_id_;
 }
 
-void MockQuicStream::Reset(uint32_t error) {
+void MockQuicStream::Reset(uint32_t /*error*/) {
     // No-op for mock
 }
 

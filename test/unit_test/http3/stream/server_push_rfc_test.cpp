@@ -38,11 +38,11 @@ protected:
         push_response_received_ = nullptr;
 
         sender_stream_ = std::make_shared<PushSenderStream>(
-            qpack_encoder_, mock_send_stream_, [this](uint64_t stream_id, uint32_t error) { error_code_ = error; });
+            qpack_encoder_, mock_send_stream_, [this](uint64_t /*stream_id*/, uint32_t error) { error_code_ = error; });
 
         // Start with UnidentifiedStream to read stream type
         unidentified_stream_ = std::make_shared<UnidentifiedStream>(
-            mock_recv_stream_, [this](uint64_t stream_id, uint32_t error) { error_code_ = error; },
+            mock_recv_stream_, [this](uint64_t /*stream_id*/, uint32_t error) { error_code_ = error; },
             [this](uint64_t stream_type, std::shared_ptr<IQuicRecvStream> stream,
                 std::shared_ptr<IBufferRead> remaining_data) {
                 this->OnStreamTypeIdentified(stream_type, stream, remaining_data);
@@ -56,7 +56,7 @@ protected:
 
         // Create the actual push receiver stream
         receiver_stream_ = std::make_shared<PushReceiverStream>(
-            qpack_encoder_, stream, [this](uint64_t stream_id, uint32_t error) { error_code_ = error; },
+            qpack_encoder_, stream, [this](uint64_t /*stream_id*/, uint32_t error) { error_code_ = error; },
             [this](std::shared_ptr<IResponse> response, uint32_t error) {
                 push_response_received_ = response;
                 error_code_ = error;

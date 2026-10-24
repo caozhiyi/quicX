@@ -281,13 +281,9 @@ void ConnectionIDCoordinator::TrackNewConnectionIDFrameDelivery(const std::share
     std::shared_ptr<ConnectionIDManager> mgr = local_conn_id_manager_;
     SendManager* send_mgr = &send_manager_;
 
-    // Self-perpetuating re-emission closure: re-armed copies keep the chain
-    // alive while any handler is in flight. NOTE: the closure references
-    // ITSELF only weakly — a strong self-capture would form a reference cycle
-    // that leaks the closure (and everything it captures, including |mgr|)
-    // forever. Strong references live exclusively in the delivery handlers of
-    // in-flight frames; the chain is bounded (one link per loss) and released
-    // once every referencing frame is acked or dropped by SendControl.
+    // RFC 9000 §13.3: one re-emission per loss generation — the chain below
+    // queues a fresh instance on this frame's kLost; IFrame::NotifyDelivery
+    // fires kLost at most once per instance.
     auto resend = std::make_shared<std::function<void(uint64_t)>>();
     std::weak_ptr<std::function<void(uint64_t)>> weak_resend = resend;
     *resend = [mgr, send_mgr, weak_resend](uint64_t seq) {

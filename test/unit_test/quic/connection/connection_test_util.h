@@ -55,11 +55,9 @@ inline bool GenerateSendDataCompat(std::shared_ptr<IConnection> conn, std::share
 
     // Create temporary mock sender if not provided
     std::shared_ptr<MockSender> sender = mock_sender;
-    bool temp_sender = false;
     if (!sender) {
         sender = std::make_shared<MockSender>();
         conn->SetSender(sender);
-        temp_sender = true;
     }
 
     // Clear previous data

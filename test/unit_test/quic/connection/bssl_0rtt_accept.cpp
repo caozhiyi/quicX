@@ -17,7 +17,7 @@ namespace {
 
 static bssl::UniquePtr<SSL_SESSION> g_last_session;
 
-static int SaveLastSession(SSL *ssl, SSL_SESSION *session) {
+static int SaveLastSession(SSL */*ssl*/, SSL_SESSION *session) {
   // Save the most recent session.
   g_last_session.reset(session);
   return 1;
@@ -373,8 +373,8 @@ class QUICMethodTest : public testing::Test {
               0);
     SSL_CTX_set_alpn_select_cb(
         server_ctx_.get(),
-        [](SSL *ssl, const uint8_t **out, uint8_t *out_len, const uint8_t *in,
-           unsigned in_len, void *arg) -> int {
+        [](SSL */*ssl*/, const uint8_t **out, uint8_t *out_len, const uint8_t *in,
+           unsigned in_len, void */*arg*/) -> int {
           return SSL_select_next_proto(
                      const_cast<uint8_t **>(out), out_len, in, in_len,
                      kALPNProtos, sizeof(kALPNProtos)) == OPENSSL_NPN_NEGOTIATED
@@ -553,7 +553,7 @@ class QUICMethodTest : public testing::Test {
     return TransportFromSSL(ssl)->WriteHandshakeData(level, bssl::Span(data, len));
   }
 
-  static int FlushFlightCallback(SSL *ssl) { return 1; }
+  static int FlushFlightCallback(SSL */*ssl*/) { return 1; }
 
   static int SendAlertCallback(SSL *ssl, ssl_encryption_level_t level,
                                uint8_t alert) {

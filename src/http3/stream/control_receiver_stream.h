@@ -25,7 +25,7 @@ public:
         const std::shared_ptr<QpackEncoder>& qpack_encoder,
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
         const std::function<void(uint64_t id)>& goaway_handler,
-        const std::function<void(const std::unordered_map<uint16_t, uint64_t>& settings)>& settings_handler);
+        const std::function<void(const std::unordered_map<uint64_t, uint64_t>& settings)>& settings_handler);
     virtual ~ControlReceiverStream();
 
     virtual void OnData(std::shared_ptr<IBufferRead> data, bool is_last, uint32_t error) override;
@@ -38,7 +38,7 @@ protected:
 protected:
     std::shared_ptr<QpackEncoder> qpack_encoder_;
     std::function<void(uint64_t id)> goaway_handler_;
-    std::function<void(const std::unordered_map<uint16_t, uint64_t>& settings)> settings_handler_;
+    std::function<void(const std::unordered_map<uint64_t, uint64_t>& settings)> settings_handler_;
     std::function<void(std::shared_ptr<IBufferRead>)> qpack_instr_handler_;
 
     // RFC 9114: The first frame on the control stream MUST be a SETTINGS frame

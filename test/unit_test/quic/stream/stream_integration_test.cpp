@@ -131,7 +131,7 @@ protected:
             stream_closed_called_ = true;
             closed_stream_id_ = stream_id;
         };
-        connection_close_cb_ = [this](uint64_t error, uint16_t frame_type, const std::string& reason) {
+        connection_close_cb_ = [this](uint64_t error, uint16_t /*frame_type*/, const std::string& /*reason*/) {
             connection_closed_called_ = true;
             connection_error_code_ = error;
         };
@@ -204,7 +204,7 @@ TEST_F(StreamIntegrationTest, CompleteRecvStreamLifecycle) {
     auto stream =
         std::make_shared<RecvStream>(event_loop, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
 
-    stream->SetStreamReadCallBack([&](std::shared_ptr<IBufferRead> buf, bool last, uint32_t err) {
+    stream->SetStreamReadCallBack([&](std::shared_ptr<IBufferRead> buf, bool last, uint32_t /*err*/) {
         callback_count++;
         is_final = last;
         if (buf) {
@@ -272,7 +272,7 @@ TEST_F(StreamIntegrationTest, BidirectionalRequestResponseFlow) {
     auto stream = std::make_shared<BidirectionStream>(
         event_loop, 10000, 10000, 7, active_send_cb_, stream_close_cb_, connection_close_cb_);
 
-    stream->SetStreamReadCallBack([&](std::shared_ptr<IBufferRead> buf, bool last, uint32_t err) {
+    stream->SetStreamReadCallBack([&](std::shared_ptr<IBufferRead> buf, bool /*last*/, uint32_t /*err*/) {
         if (buf) {
             buf->VisitData([&](uint8_t* data, uint32_t len) {
                 for (uint32_t i = 0; i < len; i++) {
@@ -336,7 +336,7 @@ TEST_F(StreamIntegrationTest, StreamResetRecovery) {
     auto stream =
         std::make_shared<SendStream>(event_loop, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
 
-    stream->SetStreamWriteCallBack([&](uint32_t size, uint32_t error) { error_received = error; });
+    stream->SetStreamWriteCallBack([&](uint32_t /*size*/, uint32_t error) { error_received = error; });
 
     mock_conn_->streams_[4] = stream;
 
@@ -388,7 +388,7 @@ TEST_F(StreamIntegrationTest, OutOfOrderDataReassembly) {
     auto stream =
         std::make_shared<RecvStream>(event_loop, 500, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
 
-    stream->SetStreamReadCallBack([&](std::shared_ptr<IBufferRead> buf, bool last, uint32_t err) {
+    stream->SetStreamReadCallBack([&](std::shared_ptr<IBufferRead> buf, bool /*last*/, uint32_t /*err*/) {
         callback_count++;
         if (buf) {
             buf->VisitData([&](uint8_t* data, uint32_t len) {
@@ -876,7 +876,7 @@ TEST_F(StreamIntegrationTest, ResetStreamAfterPartialData) {
     auto stream =
         std::make_shared<RecvStream>(event_loop, 500, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
 
-    stream->SetStreamReadCallBack([&](std::shared_ptr<IBufferRead> buf, bool last, uint32_t err) { error_code = err; });
+    stream->SetStreamReadCallBack([&](std::shared_ptr<IBufferRead> /*buf*/, bool /*last*/, uint32_t err) { error_code = err; });
 
     // Receive partial data
     auto frame = std::make_shared<StreamFrame>();

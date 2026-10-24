@@ -28,6 +28,11 @@ public:
      *
      * @param now Current time in microseconds
      * @return true if allowed to send, false otherwise
+     *
+     * @note Production pacing decisions go through NextSendTime /
+     * TimeUntilSend (SendManager arms a timer from those); this query has no
+     * callers outside tests today and is kept for diagnostics / direct
+     * token-bucket inspection. Remove it in a future PR if that stays true.
      */
     virtual bool CanSend(uint64_t now) const = 0;
 
@@ -55,4 +60,4 @@ public:
 }  // namespace quic
 }  // namespace quicx
 
-#endif  // QUIC_CONGESTION_CONTROL_IF_PACER
+#endif  // QUIC_CONGESTION_CONTROL_IF_PACER

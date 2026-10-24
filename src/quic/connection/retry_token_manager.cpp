@@ -272,7 +272,9 @@ bool RetryTokenManager::GenerateRandomSecret() {
         // Callers check HasUsableSecret() / secret_ready_ and disable Retry.
         return false;
     }
-    current_secret_ = std::move(fresh);
+    // swap (not move-assign): avoids the string-SSO memcpy that trips GCC 11's
+    // -Wstringop-overread in the docker build, and is O(1) either way.
+    std::swap(current_secret_, fresh);
     return true;
 }
 

@@ -47,7 +47,7 @@ public:
         error_code_ = error;
     }
 
-    void ErrorHandle(uint64_t stream_id, uint32_t error_code) { error_code_ = error_code; }
+    void ErrorHandle(uint64_t /*stream_id*/, uint32_t error_code) { error_code_ = error_code; }
 
     const std::shared_ptr<IResponse>& GetResponse() { return response_; }
     uint32_t GetErrorCode() { return error_code_; }
@@ -74,7 +74,7 @@ public:
         return sender_stream_->SendPushResponse(push_id, response);
     }
 
-    void ErrorHandle(uint64_t stream_id, uint32_t error_code) { error_code_ = error_code; }
+    void ErrorHandle(uint64_t /*stream_id*/, uint32_t error_code) { error_code_ = error_code; }
 
     uint32_t GetErrorCode() { return error_code_; }
 

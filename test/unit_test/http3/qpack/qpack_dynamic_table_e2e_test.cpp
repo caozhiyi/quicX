@@ -94,7 +94,6 @@ public:
     std::shared_ptr<QpackEncoder> Encoder() const { return qpack_encoder_; }
     std::shared_ptr<QpackEncoder> Decoder() const { return qpack_decoder_; }
     std::shared_ptr<QpackBlockedRegistry> BlockedRegistry() const { return blocked_registry_; }
-    const std::unordered_map<uint16_t, uint64_t>& Settings() const { return settings_; }
 };
 
 class InspectableServerConnection: public ServerConnection {
@@ -103,7 +102,6 @@ public:
     std::shared_ptr<QpackEncoder> Encoder() const { return qpack_encoder_; }
     std::shared_ptr<QpackEncoder> Decoder() const { return qpack_decoder_; }
     std::shared_ptr<QpackBlockedRegistry> BlockedRegistry() const { return blocked_registry_; }
-    const std::unordered_map<uint16_t, uint64_t>& Settings() const { return settings_; }
 };
 
 // ---------------------------------------------------------------------------

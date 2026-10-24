@@ -19,7 +19,7 @@ ControlSenderStream::~ControlSenderStream() {
     stream_.reset();
 }
 
-bool ControlSenderStream::SendSettings(const std::unordered_map<uint16_t, uint64_t>& settings) {
+bool ControlSenderStream::SendSettings(const std::unordered_map<uint64_t, uint64_t>& settings) {
     if (!EnsureStreamPreamble()) {
         return false;
     }

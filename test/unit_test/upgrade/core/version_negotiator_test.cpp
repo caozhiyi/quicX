@@ -23,8 +23,8 @@ public:
     virtual int GetFd() const override { return fd_; }
     virtual int Send(const std::vector<uint8_t>& data) override { return data.size(); }
     virtual int Send(const std::string& data) override { return data.size(); }
-    virtual int Recv(std::vector<uint8_t>& data, size_t max_size = 4096) override { return 0; }
-    virtual int Recv(std::string& data, size_t max_size = 4096) override { return 0; }
+    virtual int Recv(std::vector<uint8_t>& /*data*/, size_t /*max_size*/ = 4096) override { return 0; }
+    virtual int Recv(std::string& /*data*/, size_t /*max_size*/ = 4096) override { return 0; }
     virtual void Close() override {}
     virtual bool IsValid() const override { return true; }
     virtual std::string GetRemoteAddress() const override { return "127.0.0.1"; }

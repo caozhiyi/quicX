@@ -62,9 +62,12 @@ DecodeResult HeadersFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool 
 
     // Reject an implausible length before waiting on it, otherwise the check below
     // returns kNeedMoreData forever while the stream buffer keeps growing.
-    if (length_ > kMaxFrameLength) {
+    // P0-S6: HEADERS uses the tightened header-frame cap (kMaxHeadersFrameLength)
+    // rather than the generic 16MiB kMaxFrameLength — compressed field sections
+    // beyond 256KB are never legitimate.
+    if (length_ > kMaxHeadersFrameLength) {
         LOG_ERROR("HeadersFrame::Decode: length %llu exceeds limit %llu", (unsigned long long)length_,
-            (unsigned long long)kMaxFrameLength);
+            (unsigned long long)kMaxHeadersFrameLength);
         return DecodeResult::kError;
     }
 

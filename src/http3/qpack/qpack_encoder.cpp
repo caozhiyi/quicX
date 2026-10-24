@@ -250,6 +250,7 @@ void QpackEncoder::WriteHeaderRepresentation(
 
 bool QpackEncoder::Decode(
     const std::shared_ptr<common::IBuffer> buffer, std::vector<std::pair<std::string, std::string>>& headers) {
+    last_decode_status_ = DecodeStatus::kMalformed;  // terminal default until proven otherwise
     if (!buffer || buffer->GetDataLength() < 2) {
         LOG_ERROR("QpackEncoder::Decode: buffer is null or data length is less than 2");
         return false;
@@ -280,8 +281,14 @@ bool QpackEncoder::Decode(
             "QpackEncoder::Decode: required insert count is greater than current inserted "
             "count.required_insert_count:%llu, current_inserted_count:%llu",
             required_insert_count, dynamic_table_.GetInsertCount());
+        last_decode_status_ = DecodeStatus::kBlocked;
         return false;
     }
+
+    // RFC 9114 §4.2.2: enforce the field-section size DURING the decode, per
+    // emitted field, so a small reference cannot expand before the check runs.
+    uint64_t section_size_so_far = 0;
+    size_t next_unchecked_field = headers.size();
 
     // Dispatch loop: each wire pattern (RFC 9204 §4.5) decodes into its own
     // method; this loop only consumes the pattern byte and routes.
@@ -314,8 +321,27 @@ bool QpackEncoder::Decode(
         if (!ok) {
             return false;
         }
+
+        // P0-S6: account for every field this pattern just emitted.
+        if (field_section_size_limit_ > 0) {
+            while (next_unchecked_field < headers.size()) {
+                const auto& f = headers[next_unchecked_field++];
+                // RFC 9114 §4.2.2: per-field overhead keeps many tiny fields
+                // from evading the limit.
+                section_size_so_far += f.first.size() + f.second.size() + 32;
+            }
+            if (section_size_so_far > field_section_size_limit_) {
+                LOG_ERROR(
+                    "QpackEncoder::Decode: decompressed field section %llu exceeds limit %llu — "
+                    "probable decompression bomb (stream aborted before further expansion)",
+                    (unsigned long long)section_size_so_far, (unsigned long long)field_section_size_limit_);
+                last_decode_status_ = DecodeStatus::kSectionTooLarge;
+                return false;
+            }
+        }
     }
 
+    last_decode_status_ = DecodeStatus::kOk;
     return true;
 }
 

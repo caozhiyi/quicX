@@ -93,10 +93,21 @@ void BaseSmartHandler::OnRead(uint32_t fd) {
     } else if (context.state == ConnectionState::DETECTING) {
         // Still detecting protocol, append data and retry
         context.initial_data.insert(context.initial_data.end(), data.begin(), data.end());
+        // Bounded detection buffer (P0-S8): the detector needs at most ~1 KiB
+        // of prefix; unbounded append let a hostile peer park arbitrary
+        // memory per connection.
+        if (context.initial_data.size() > kUpgradeInitialDataLimit) {
+            OnUpgradeFailed(context, "initial data exceeds detection limit");
+            return;
+        }
         HandleProtocolDetection(fd, context.initial_data);
     } else if (context.state == ConnectionState::NEGOTIATING) {
         // Protocol negotiation in progress, store additional data
         context.initial_data.insert(context.initial_data.end(), data.begin(), data.end());
+        if (context.initial_data.size() > kUpgradeInitialDataLimit) {
+            OnUpgradeFailed(context, "initial data exceeds detection limit");
+            return;
+        }
     } else if (context.state == ConnectionState::UPGRADED) {
         // Protocol upgraded, data should be handled by the upgraded protocol
         LOG_DEBUG("%s protocol upgraded, received %d bytes", GetType().c_str(), bytes_read);
@@ -244,10 +255,13 @@ void BaseSmartHandler::OnProtocolDetected(ConnectionContext& context) {
 void BaseSmartHandler::OnUpgradeComplete(ConnectionContext& context) {
     context.state = ConnectionState::UPGRADED;
 
-    // Remove negotiation timeout timer
+    // Nothing processes this fd from here on (the upgraded protocol does not
+    // take over this socket in this design), so leaving it registered forever
+    // leaked one fd per completed upgrade (P0-S8). Re-arm the connection
+    // timer as a bounded linger instead of cancelling it.
     if (context.negotiation_timer.IsActive()) {
-        context.negotiation_timer.Cancel();
-        LOG_DEBUG("Negotiation timeout timer removed for socket %d", context.socket->GetFd());
+        context.negotiation_timer.Rearm(static_cast<uint32_t>(kUpgradePostCompleteLingerMs));
+        LOG_DEBUG("Post-complete linger timer armed for socket %d", context.socket->GetFd());
     }
 
     LOG_INFO("%s upgrade completed successfully", GetType().c_str());
@@ -256,10 +270,11 @@ void BaseSmartHandler::OnUpgradeComplete(ConnectionContext& context) {
 void BaseSmartHandler::OnUpgradeFailed(ConnectionContext& context, const std::string& error) {
     context.state = ConnectionState::FAILED;
 
-    // Remove negotiation timeout timer
+    // Same as OnUpgradeComplete: bound the time a failed connection lingers
+    // (its error response may still be flushing) instead of leaking the fd.
     if (context.negotiation_timer.IsActive()) {
-        context.negotiation_timer.Cancel();
-        LOG_DEBUG("Negotiation timeout timer removed for socket %d", context.socket->GetFd());
+        context.negotiation_timer.Rearm(static_cast<uint32_t>(kUpgradePostCompleteLingerMs));
+        LOG_DEBUG("Post-failure linger timer armed for socket %d", context.socket->GetFd());
     }
 
     LOG_ERROR("%s upgrade failed: %s", GetType().c_str(), error.c_str());
@@ -366,15 +381,16 @@ void BaseSmartHandler::HandleNegotiationTimeout(uint32_t fd) {
     if (context.state == ConnectionState::INITIAL || context.state == ConnectionState::DETECTING ||
         context.state == ConnectionState::NEGOTIATING) {
         LOG_WARN("Negotiation timeout for %s connection, socket: %d", GetType().c_str(), context.socket->GetFd());
-
         // Close the connection due to timeout. OnClose() cancels the timer,
         // deregisters the fd from the loop and closes the socket.
         OnClose(fd);
-
-    } else {
-        // Negotiation completed or failed, timer is no longer needed
-        LOG_DEBUG(
-            "Negotiation timeout timer fired but negotiation already completed for socket %d", context.socket->GetFd());
+    } else if (context.state == ConnectionState::UPGRADED || context.state == ConnectionState::FAILED) {
+        // Post-completion linger expired (see OnUpgradeComplete /
+        // OnUpgradeFailed): the fd was deliberately kept for a bounded time
+        // after the outcome; now close it so it cannot leak forever (P0-S8).
+        LOG_INFO("Post-complete linger expired for %s connection, closing socket: %d", GetType().c_str(),
+            context.socket->GetFd());
+        OnClose(fd);
     }
 }
 

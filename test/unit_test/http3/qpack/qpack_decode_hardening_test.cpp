@@ -390,6 +390,78 @@ TEST(QpackRoundtripFidelityTest, MixedCaseNameIsNotLowercased) {
 
 }  // namespace roundtrip_fidelity
 
+// ===== P0-S6: in-decoder field-section bound (decompression bomb) =====
+//
+// A 1-byte Indexed Field Line referencing a static-table entry costs the
+// decoder almost nothing on the wire but expands to (name + value + 32) of
+// accounting. Before the in-decoder bound, a header block made entirely of
+// such references expanded freely — the §4.2.2 size check ran only AFTER the
+// whole section had been decoded into the headers vector.
+namespace section_limit {
+
+TEST(QpackSectionLimitTest, DecodeAbortsMidSectionWhenLimitExceeded) {
+    QpackEncoder dec;
+    // Tight limit so a handful of static references blows it: each field
+    // accounts for name + value + 32; ":authority" with an empty value
+    // (static index 0) is exactly 10 + 0 + 32 = 42 bytes.
+    dec.SetFieldSectionSizeLimit(128);
+
+    auto buf = MakeBuffer(256);
+    const uint8_t prefix[] = {0x00, 0x00};  // RIC=0, Delta Base=0
+    ASSERT_EQ(buf->Write(prefix, sizeof(prefix)), sizeof(prefix));
+    // Six 1-byte Indexed Static references to :authority = 252 accounting
+    // bytes > 128: the decode must abort at the FIRST field that crosses
+    // the limit, not after the section completes.
+    const uint8_t indexed_static_authority = 0xC0;  // 11 + 6-bit index 0
+    for (int i = 0; i < 6; ++i) {
+        ASSERT_EQ(buf->Write(&indexed_static_authority, 1), 1u);
+    }
+
+    std::vector<std::pair<std::string, std::string>> headers;
+    EXPECT_FALSE(dec.Decode(buf, headers));
+    EXPECT_EQ(dec.GetLastDecodeStatus(), QpackEncoder::DecodeStatus::kSectionTooLarge);
+    // Bounded expansion: the abort happens partway, so only the fields that
+    // fit under the limit were materialized (3 × 42 = 126 ≤ 128 < 168).
+    EXPECT_LT(headers.size(), 6u);
+}
+
+TEST(QpackSectionLimitTest, DecodeSucceedsUnderLimit) {
+    QpackEncoder dec;
+    dec.SetFieldSectionSizeLimit(128);
+
+    auto buf = MakeBuffer(64);
+    const uint8_t prefix[] = {0x00, 0x00};
+    ASSERT_EQ(buf->Write(prefix, sizeof(prefix)), sizeof(prefix));
+    const uint8_t indexed_static_authority = 0xC0;
+    for (int i = 0; i < 2; ++i) {  // 2 × 42 = 84 ≤ 128
+        ASSERT_EQ(buf->Write(&indexed_static_authority, 1), 1u);
+    }
+
+    std::vector<std::pair<std::string, std::string>> headers;
+    EXPECT_TRUE(dec.Decode(buf, headers));
+    EXPECT_EQ(dec.GetLastDecodeStatus(), QpackEncoder::DecodeStatus::kOk);
+    EXPECT_EQ(headers.size(), 2u);
+}
+
+TEST(QpackSectionLimitTest, BlockedStatusIsStillDistinguishable) {
+    // A block whose RIC exceeds the inserted count must stay kBlocked (the
+    // only retryable failure) so the stream layer keeps parking it instead
+    // of failing the stream.
+    QpackEncoder dec;
+    dec.SetFieldSectionSizeLimit(1024);
+
+    auto buf = MakeBuffer(64);
+    // RIC = 5 (one continuation byte), Delta Base = 0.
+    const uint8_t prefix[] = {0x05, 0x00};
+    ASSERT_EQ(buf->Write(prefix, sizeof(prefix)), sizeof(prefix));
+
+    std::vector<std::pair<std::string, std::string>> headers;
+    EXPECT_FALSE(dec.Decode(buf, headers));
+    EXPECT_EQ(dec.GetLastDecodeStatus(), QpackEncoder::DecodeStatus::kBlocked);
+}
+
+}  // namespace section_limit
+
 }  // namespace
 }  // namespace http3
 }  // namespace quicx

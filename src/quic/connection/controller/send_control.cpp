@@ -88,12 +88,15 @@ void SendControl::OnPacketSend(uint64_t now, const std::shared_ptr<IPacket>& pac
 void SendControl::TrackPacketInCongestionControl(
     uint64_t now, const std::shared_ptr<IPacket>& packet, uint32_t pkt_len) {
     // Count this packet in congestion control (bytes_in_flight)
-    // BUGFIX: CC algorithms (BBR/Cubic) use microsecond-based internal timing.
-    // |now| comes from the monotonic clock in milliseconds; multiply by 1000 so
-    // that CC bandwidth/BDP/epoch calculations use the correct time scale. (The
-    // multiplier is about the unit, not the clock — but the clock must be
-    // monotonic, otherwise a backwards step desynchronises every CC epoch.)
-    congestion_control_->OnPacketSent(SentPacketEvent{packet->GetPacketNumber(), pkt_len, now * 1000, false});
+    // CC algorithms (BBR/Cubic) and the pacer run on microsecond timing.
+    // Snapshot the real microsecond clock here — the same clock SendManager's
+    // pacing scheduler compares against — instead of scaling the caller's
+    // millisecond snapshot by 1000: that rounding bakes in up to 1 ms of skew
+    // between the event time and the scheduler's clock, enough to distort
+    // sub-millisecond pacing gaps. |now| (ms) remains authoritative for the
+    // PTO bookkeeping below, and largest_sent_time_ keeps its own independent
+    // ms snapshot (TrackPacketForRetransmission), so neither domain changes.
+    congestion_control_->OnPacketSent(SentPacketEvent{packet->GetPacketNumber(), pkt_len, Metrics::NowUs(), false});
 
     // ACK-eliciting bytes are on the wire: the PTO cycle's purpose (RFC 9002
     // §6.2.4 — elicit an ACK) is served, cancel any deferred probe.
@@ -129,8 +132,6 @@ void SendControl::EmitQlogPacketSent(const std::shared_ptr<IPacket>& packet, uin
         qlog_data.frame_objects.push_back(frame);
     }
 
-    QLOG_PACKET_SENT(qlog_trace_, qlog_data);
-
     // Accumulate into the in-progress datagram so EndSendDatagram can
     // later emit a single transport:datagrams_sent event with the full
     // packet_numbers list and raw_length.
@@ -138,7 +139,25 @@ void SendControl::EmitQlogPacketSent(const std::shared_ptr<IPacket>& packet, uin
         current_send_packet_count_++;
         current_send_raw_length_ += pkt_len;
         current_send_packet_numbers_.push_back(packet->GetPacketNumber());
+        // Stage: the emitter commits (Flush) or discards (Drop) once the
+        // datagram's fate is known.
+        pending_qlog_packet_sents_.push_back(std::move(qlog_data));
+        return;
     }
+
+    // No datagram bracket (defensive): write immediately.
+    QLOG_PACKET_SENT(qlog_trace_, qlog_data);
+}
+
+void SendControl::FlushPendingPacketSentsToQlog() {
+    for (auto& data : pending_qlog_packet_sents_) {
+        QLOG_PACKET_SENT(qlog_trace_, data);
+    }
+    pending_qlog_packet_sents_.clear();
+}
+
+void SendControl::DropPendingPacketSents() {
+    pending_qlog_packet_sents_.clear();
 }
 
 std::function<void()> SendControl::MakeRetransmitTimeoutHandler(
@@ -156,6 +175,14 @@ std::function<void()> SendControl::MakeRetransmitTimeoutHandler(
         auto it = unacked_packets_[ns].find(packet->GetPacketNumber());
         if (it == unacked_packets_[ns].end() || it->second.is_lost) {
             return;  // Already handled by DetectLostPackets or a previous timer
+        }
+
+        // RFC 9002 §5.3: loss detection is ACK-driven; a timeout without a new
+        // ACK is not a loss event. Application-space recovery flows through
+        // PTO probes + DetectLostPackets. Crypto spaces keep the timer-driven
+        // re-queue (RFC 9000 §8.2.1 handshake recovery).
+        if (ns == PacketNumberSpace::kApplicationNumberSpace) {
+            return;
         }
 
         // RFC 9001 4.9.1/4.9.2: handshake confirmed — this space can never be
@@ -343,9 +370,8 @@ void SendControl::EmitQlogPacketsAcked(const std::shared_ptr<AckFrame>& ack_fram
         current_pkt = range.start;  // anchor for next iteration
     }
 
-    // ACK delay (scale to microseconds)
-    uint64_t scaled_ack_delay_ms = ack_frame->GetAckDelay() << ack_delay_exponent_;
-    data.ack_delay_us = scaled_ack_delay_ms * 1000;  // Convert ms to us
+    // ACK delay (RFC 9000 §19.3: field value << peer's exponent is MICROseconds)
+    data.ack_delay_us = ack_frame->GetAckDelay() << ack_delay_exponent_;
 
     auto event_data = std::make_unique<common::PacketsAckedData>(data);
     QLOG_EVENT(qlog_trace_, common::QlogEvents::kPacketsAcked, std::move(event_data));
@@ -364,8 +390,10 @@ void SendControl::UpdateRttOnAck(
     Metrics::GaugeSet(common::MetricsStd::RttVarianceUs, rtt_calculator_.GetRttVar() * 1000);
     Metrics::GaugeSet(common::MetricsStd::RttMinUs, rtt_calculator_.GetMinRtt() * 1000);
 
-    // Metrics: ACK delay
-    Metrics::GaugeSet(common::MetricsStd::AckDelayUs, scaled_ack_delay);
+    // Metrics: ACK delay — scaled_ack_delay is in ms (see the caller), the
+    // gauge is named ...Us, so convert. The old code stored the ms value
+    // under a us name.
+    Metrics::GaugeSet(common::MetricsStd::AckDelayUs, scaled_ack_delay * 1000);
 
     // Metrics: ACK ranges per frame
     Metrics::GaugeSet(common::MetricsStd::AckRangesPerFrame, ack_range_count);
@@ -477,8 +505,14 @@ void SendControl::AckLargestAckedPacket(
     largest_acked_pn_[ns] = pkt_num;
     largest_acked_send_time_[ns] = iter->second.send_time_;
 
-    // Scale peer-reported ACK delay by exponent to milliseconds
-    uint64_t scaled_ack_delay = ack_frame->GetAckDelay() << ack_delay_exponent_;
+    // Scale peer-reported ACK delay by the PEER's advertised exponent.
+    // RFC 9000 §19.3: the ACK Delay field encodes MICROSECONDS, so the
+    // decoded value is in microseconds. The old code treated it as
+    // milliseconds: since the field is (us >> exponent), interpreting it as
+    // ms made nearly every sample ≥ the peer's max_ack_delay (ms) and the
+    // clamp below pinned it there — inflating every RTT estimate by up to
+    // max_ack_delay and delaying loss detection/PTO accordingly.
+    uint64_t ack_delay_us = ack_frame->GetAckDelay() << ack_delay_exponent_;
     // RFC 9002 §5.3: the RTT adjustment MUST use min(ack_delay, the peer's
     // advertised max_ack_delay); otherwise a peer reporting an oversized ACK
     // Delay deflates SRTT/RTTVAR and drags the PTO early. (The handshake-
@@ -489,9 +523,12 @@ void SendControl::AckLargestAckedPacket(
     // so the pre-transport-params handshake phase already clamps to 25ms — a
     // conservative default, not an unclamped window. UpdateConfig(
     // TransportParam) overwrites it with the peer's advertised value.
-    if (max_ack_delay_ > 0 && scaled_ack_delay > max_ack_delay_) {
-        scaled_ack_delay = max_ack_delay_;
+    // max_ack_delay_ is in MILLISECONDS — convert the cap to us before
+    // comparing.
+    if (max_ack_delay_ > 0 && ack_delay_us > max_ack_delay_ * 1000) {
+        ack_delay_us = max_ack_delay_ * 1000;
     }
+    uint64_t scaled_ack_delay = ack_delay_us / 1000;  // RttCalculator works in ms
     // Metrics: ACK ranges per frame (first range + additional ranges)
     size_t ack_range_count = 1 + ack_frame->GetAckRange().size();
     UpdateRttOnAck(pkt_num, iter->second.send_time_, now, scaled_ack_delay, ack_range_count);
@@ -1103,6 +1140,13 @@ void SendControl::OnPTOTimer() {
                 continue;
             }
 
+            // Application-space PTO probes are PING-only: the probe below
+            // already elicits an ACK every cycle, and re-queuing data here
+            // chained every un-acked packet into a per-cycle re-emission.
+            if (ns == PacketNumberSpace::kApplicationNumberSpace) {
+                continue;
+            }
+
             // Zombie-entry fix. Entries declared lost by the per-packet
             // retransmit timer (or by an earlier PTO) stay in unacked_packets_
             // until an ACK or DetectLostPackets() removes them (see the
@@ -1156,22 +1200,22 @@ void SendControl::OnPTOTimer() {
                 auto oldest = unacked.begin();
                 LOG_WARN("SendControl::OnPTOTimer: ns=%d all %zu entries already lost, re-queueing pn=%llu", ns,
                     unacked.size(), (unsigned long long)oldest->first);
-                // Frame-level delivery: a duplicate kLost on an entry whose
-                // frames were already notified is absorbed by the handlers'
-                // reset-style idempotence.
-                FireFrameDelivery(oldest->second, FrameDeliveryState::kLost);
+                // PTO probe, not a loss event: no FireFrameDelivery here —
+                // those frames were already notified at the real loss.
                 lost_packets_.push_back(LostPacketEntry{oldest->second.packet, oldest->second.stream_data});
                 packet_lost_cb_(oldest->second.packet);
                 found_retransmit = true;
                 break;
             }
 
-            // Mark as lost and trigger retransmission
-            it->second.is_lost = true;
-            // Frame-level delivery: PTO-declared loss, notify tracked frames.
-            FireFrameDelivery(it->second, FrameDeliveryState::kLost);
+            // PTO probe (RFC 9002 §6.2.2): not a loss event — no is_lost, no
+            // frame kLost, no congestion reaction. Loss declaration belongs to
+            // the ACK-driven DetectLostPackets; this only re-queues the oldest
+            // un-acked packet as the probe payload (a probe MAY carry
+            // retransmitted data).
             lost_packets_.push_back(LostPacketEntry{it->second.packet, it->second.stream_data});
-            congestion_control_->OnPacketLost(LossEvent{it->first, it->second.pkt_len_, common::MonotonicTimeMsec() * 1000});
+            // Avoid double re-queue within one cycle: the per-packet timer's
+            // own expiry does the real loss declaration.
             it->second.timer_.Cancel();
 
             // Log marked_for_retransmit event (PTO-triggered)

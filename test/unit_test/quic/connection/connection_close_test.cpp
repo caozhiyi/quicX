@@ -463,7 +463,7 @@ TEST_F(ConnectionCloseTest, GracefulCloseInterruptedByPeerClose) {
 
     // Client starts graceful close (may stay in Connected or go to Closing)
     client->Close();
-    auto client_state_after_close = client_base->GetConnectionStateForTest();
+    auto client_state_after_close = client_base->GetConnectionStateForTest(); (void)client_state_after_close; /* silence warning gate */
 
     // Server sends CONNECTION_CLOSE
     server->Close();

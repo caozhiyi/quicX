@@ -174,15 +174,20 @@ void ConnectionCloser::InvokeConnectionCloseCallback(
 uint32_t ConnectionCloser::GetCloseWaitTime() {
     // RFC 9000: Use PTO (Probe Timeout) for connection close timing
     // PTO = smoothed_rtt + max(4*rttvar, kGranularity) + max_ack_delay
-    uint32_t max_ack_delay = static_cast<uint32_t>(transport_param_.GetMaxAckDelay());
+    // RFC 9002 §6.2.1: the max_ack_delay term is the PEER's advertised value
+    // (the peer is the ACK generator whose deliberate delay we must absorb).
+    uint32_t max_ack_delay = static_cast<uint32_t>(transport_param_.GetPeerMaxAckDelayMs());
     uint32_t pto = send_manager_.GetPTO(max_ack_delay);
 
-    // Ensure minimum timeout of 500ms for close timing
-    if (pto < 500000) {  // PTO is in microseconds
-        pto = 500000;
+    // GetPTO() returns MILLISECONDS. The old code compared against 500000
+    // ("PTO is in microseconds") which is always true for a millisecond value,
+    // then divided by 1000 — so the close wait was pinned to a constant 500ms
+    // and the actual PTO was never honoured.
+    if (pto < 500) {  // minimum 500ms close wait, in ms
+        pto = 500;
     }
 
-    return pto / 1000;  // Convert to milliseconds for timer
+    return pto;
 }
 
 void ConnectionCloser::OnGracefulCloseTimeout() {

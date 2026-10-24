@@ -28,11 +28,11 @@ public:
         error_code_ = error_code;
         last_error_unique_id_ = unique_id;
     }
-    bool PushPromiseHandler(quicx::HttpFields& headers) {
+    bool PushPromiseHandler(quicx::HttpFields& /*headers*/) {
         // TODO: implement this
         return true;
     }
-    void PushHandler(std::shared_ptr<IResponse> response, uint32_t error) {
+    void PushHandler(std::shared_ptr<IResponse> /*response*/, uint32_t /*error*/) {
         // TODO: implement this
     }
     // send request
@@ -62,11 +62,11 @@ public:
             MockHttpProcessor(MockServer* server):
                 server_(server) {}
             RouteConfig MatchRoute(
-                HttpMethod method, const std::string& path, std::shared_ptr<IRequest> request = nullptr) override {
+                HttpMethod method, const std::string& path, std::shared_ptr<IRequest> /*request*/ = nullptr) override {
                 return server_->MatchHandler(method, path);
             }
-            void BeforeHandlerProcess(std::shared_ptr<IRequest> req, std::shared_ptr<IResponse> resp) override {}
-            void AfterHandlerProcess(std::shared_ptr<IRequest> req, std::shared_ptr<IResponse> resp) override {}
+            void BeforeHandlerProcess(std::shared_ptr<IRequest> /*req*/, std::shared_ptr<IResponse> /*resp*/) override {}
+            void AfterHandlerProcess(std::shared_ptr<IRequest> /*req*/, std::shared_ptr<IResponse> /*resp*/) override {}
 
         private:
             MockServer* server_;
@@ -84,7 +84,7 @@ public:
     uint32_t GetErrorCode() const { return error_code_; }
     const std::string& GetLastErrorUniqueId() const { return last_error_unique_id_; }
 
-    RouteConfig MatchHandler(HttpMethod method, const std::string& path) {
+    RouteConfig MatchHandler(HttpMethod /*method*/, const std::string& /*path*/) {
         // Create wrapper that accesses http_handler_ at call time (not bind time)
         auto wrapper = [this](std::shared_ptr<IRequest> req, std::shared_ptr<IResponse> resp) {
             if (this->http_handler_) {
@@ -164,7 +164,7 @@ TEST_F(HttpConnectionTest, DoRequest) {
     };
     mock_server_->SetHttpHandler(http_handler);
 
-    auto http_response_handler = [](std::shared_ptr<IResponse> response, uint32_t error) {
+    auto http_response_handler = [](std::shared_ptr<IResponse> response, uint32_t /*error*/) {
         // check headers
         std::string content_type;
         EXPECT_TRUE(response->GetHeader("Content-Type", content_type));

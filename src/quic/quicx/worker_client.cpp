@@ -27,6 +27,11 @@ void ClientWorker::Connect(const std::string& ip, uint16_t port, const std::stri
 
     auto conn = std::make_shared<ClientConnection>(ctx_, event_loop_.lock(), callbacks, ecn_enabled_);
 
+    // Bind lifetime guards as soon as the connection is owned by a shared_ptr:
+    // 0-RTT data can be queued (MakeStream + Send) before the first packet is
+    // processed/sent, and stream callbacks must not be dropped as "late".
+    conn->BindLifetimeGuardsOnce();
+
     // Inject Sender for direct packet transmission
     conn->SetSender(sender_);
 
@@ -107,16 +112,11 @@ bool ClientWorker::InnerHandlePacket(PacketParseResult& packet_info) {
     if (connection) {
         common::LogTagGuard guard("conn:", cid_code);
         // |connection| is a local shared_ptr copy (see worker_server.cpp).
-        // update socket so GetLocalAddr() works for connection migration
-        connection->SetSocket(packet_info.net_packet_->GetSocket());
-        // report observed address for path change detection
-        auto& observed_addr = packet_info.net_packet_->GetAddress();
-        connection->OnObservedPeerAddress(observed_addr);
-        // record received bytes on candidate path to unlock anti-amplification budget
-        if (packet_info.net_packet_->GetData()) {
-            connection->OnCandidatePathDatagramReceived(
-                observed_addr, packet_info.net_packet_->GetData()->GetDataLength());
-        }
+        // RFC 9000 §9.3: path state is not touched pre-authentication — the
+        // rx socket / source address are consumed inside OnPackets after the
+        // first packet decrypts (ConsumePendingDatagramPath).
+        connection->SetPendingDatagramPath(
+            packet_info.net_packet_->GetSocket(), packet_info.net_packet_->GetAddress(), false);
         connection->SetPendingEcn(packet_info.net_packet_->GetEcn());
         connection->OnPackets(packet_info.net_packet_->GetTime(), packet_info.packets_, packet_info.datagram_size_);
         return true;
@@ -194,6 +194,9 @@ void ClientWorker::HandleVersionNegotiation(std::shared_ptr<IConnection> conn, c
     vn_callbacks.connection_close_cb = [this](auto a, auto b, auto c) { HandleConnectionClose(a, b, c); };
 
     auto new_conn = std::make_shared<ClientConnection>(ctx_, event_loop_.lock(), vn_callbacks, ecn_enabled_);
+
+    // Bind lifetime guards before any 0-RTT data may be queued (see Connect).
+    new_conn->BindLifetimeGuardsOnce();
 
     // CRITICAL: Set the negotiated version BEFORE dialing
     new_conn->SetVersion(negotiated_version);

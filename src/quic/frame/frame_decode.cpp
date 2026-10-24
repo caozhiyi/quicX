@@ -124,7 +124,13 @@ bool DecodeFrames(std::shared_ptr<common::IBuffer> buffer, std::vector<std::shar
         // Advance buffer read pointer by bytes consumed for Type
         buffer->MoveReadPt(next_pos - start_pos);
 
-        uint16_t frame_type = (uint16_t)frame_type_64;
+        // The creator map is keyed by uint16_t; reject types that cannot
+        // survive the narrowing.
+        if (frame_type_64 > 0xFFFF) {
+            LOG_ERROR("frame type out of range. type:%llu", static_cast<unsigned long long>(frame_type_64));
+            return false;
+        }
+        uint16_t frame_type = static_cast<uint16_t>(frame_type_64);
 
         auto creator = kFrameCreatorMap.find(frame_type);
         if (creator != kFrameCreatorMap.end()) {
@@ -132,6 +138,9 @@ bool DecodeFrames(std::shared_ptr<common::IBuffer> buffer, std::vector<std::shar
             frame = creator->second(frame_type);
 
         } else {
+            // RFC 9000 §12.4: frames of unknown type are a FRAME_ENCODING_ERROR
+            // at the QUIC transport layer (the lenient skip rule belongs to
+            // HTTP/3, not here).
             LOG_ERROR("invalid frame type. type:%d", frame_type);
             return false;
         }

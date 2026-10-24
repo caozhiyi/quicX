@@ -275,7 +275,7 @@ TEST_F(FixBufferFrameVisitorTest, BufferOverflow) {
     frame->SetData(data_buffer->GetSharedReadableSpan());
 
     // Should either fail or limit the data
-    bool ret = visitor.HandleFrame(frame);
+    bool ret = visitor.HandleFrame(frame); (void)ret; /* silence warning gate */
     // Behavior depends on implementation (may fail or succeed with limited data)
 }
 

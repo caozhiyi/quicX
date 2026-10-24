@@ -84,6 +84,11 @@ enum class HttpMethod : uint16_t {
     kTrace = 0x0080,
     kPatch = 0x0100,
     kAny = kGet | kHead | kPost | kPut | kDelete | kConnect | kOptions | kTrace | kPatch,
+    // Inbound requests with a method token this stack does not implement
+    // (RFC 9114 §4.1.2 extension methods). Deliberately NOT part of kAny so
+    // route matching rejects them instead of mis-routing them to a GET (or
+    // other) handler. Not valid for outgoing requests.
+    kUnknown = 0x0200,
 };
 
 /**

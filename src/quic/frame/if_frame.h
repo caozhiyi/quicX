@@ -101,12 +101,20 @@ public:
     bool HasDeliveryHandler() const { return delivery_handler_ != nullptr; }
 
     // Not fire-and-forget: the handler stays attached so re-queued copies of
-    // the same packet (PTO re-queue reuses the IPacket in place) keep their
-    // tracking. Reset-style handlers make repeat fires harmless.
+    // the same packet keep their tracking. kLost is delivered AT MOST ONCE per
+    // frame instance (RFC 9000 §13.3: one retransmission per loss generation);
+    // a re-emitted copy is a new instance with its own budget.
     void NotifyDelivery(FrameDeliveryState state) {
-        if (delivery_handler_) {
-            delivery_handler_(state);
+        if (!delivery_handler_) {
+            return;
         }
+        if (state == FrameDeliveryState::kLost) {
+            if (lost_notified_) {
+                return;
+            }
+            lost_notified_ = true;
+        }
+        delivery_handler_(state);
     }
     ///@}
 
@@ -116,6 +124,8 @@ protected:
     // Delivery tracking callback; null on the overwhelming majority of frames
     // (only control frames needing loss-response carry one).
     FrameDeliveryHandler delivery_handler_;
+    // One-shot latch for kLost, per frame instance (see NotifyDelivery).
+    bool lost_notified_ = false;
 };
 
 }  // namespace quic

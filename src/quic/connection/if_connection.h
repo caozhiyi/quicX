@@ -144,6 +144,17 @@ public:
         (void)addr;
         (void)bytes;
     }
+    // RFC 9000 §9.3: path state must not change before a datagram
+    // authenticates. Workers stash each datagram's path metadata here (instead
+    // of calling SetSocket/OnObservedPeerAddress themselves) and the
+    // connection consumes it inside OnPackets, right after the first packet
+    // of the datagram decrypts successfully. Default no-op.
+    virtual void SetPendingDatagramPath(common::SocketHandle sock, const common::Address& peer_addr,
+                                        bool local_socket_changed) {
+        (void)sock;
+        (void)peer_addr;
+        (void)local_socket_changed;
+    }
     // get destination address for next datagram; default current peer address
     virtual common::Address AcquireSendAddress() { return peer_addr_; }
 

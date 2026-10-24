@@ -87,6 +87,17 @@ public:
     void SetPreferredVersion(uint32_t version) { version_negotiator_->SetPreferredVersion(version); }
     uint32_t GetPreferredVersion() const { return version_negotiator_->GetPreferredVersion(); }
 
+    /**
+     * Freeze the compatible-version decision at "stay on the client's
+     * chosen_version". Used on the server for connections that came through
+     * Retry: a Retry-restarted client re-installs Initial keys for its own
+     * wire version and does not follow a server-side compat upgrade, so
+     * upgrading here desynchronizes the Initial keys and the handshake
+     * deadlocks until the client times out. The client's chosen_version is a
+     * fully legal steady state, so skipping the upgrade is safe.
+     */
+    void SkipCompatibleUpgrade() { version_negotiator_->MarkCompatVnCompleted(); }
+
     typedef VersionNegotiator::version_negotiation_callback version_negotiation_callback;
     void SetVersionNegotiationCallback(version_negotiation_callback cb) {
         version_negotiator_->SetVersionNegotiationCallback(std::move(cb));
@@ -124,18 +135,14 @@ public:
     virtual void SetPendingEcn(uint8_t ecn) override { pending_ecn_ = ecn; }
     virtual EncryptionLevel GetCurEncryptionLevel() override;
 
-    // Tie the timer controllers' lifetime guards to this connection exactly
-    // once. RecvControl::Bind / SendControl::Bind are idempotent but each
-    // call costs two atomic weak_ptr stores; OnPackets / TrySendBurst run
-    // per datagram and used to repeat it every time. Must only be called
-    // after the connection is owned by a shared_ptr (both call sites are).
-    void BindLifetimeGuardsOnce() {
-        bool expected = false;
-        if (lifetime_guards_bound_.compare_exchange_strong(expected, true)) {
-            recv_control_.Bind(weak_from_this());
-            send_manager_.Bind(weak_from_this());
-        }
-    }
+    // Tie the timer controllers' and stream manager's lifetime guards to this
+    // connection exactly once. RecvControl::Bind / SendControl::Bind are
+    // idempotent but each call costs two atomic weak_ptr stores; OnPackets /
+    // TrySendBurst run per datagram and used to repeat it every time. Must
+    // only be called after the connection is owned by a shared_ptr (both call
+    // sites are). Defined in the .cpp: binding the StreamManager needs its
+    // complete type.
+    void BindLifetimeGuardsOnce();
 
     // observed peer address from network; store as candidate if different
     virtual void OnObservedPeerAddress(const common::Address& addr) override;
@@ -225,6 +232,11 @@ protected:
     void HandlePacketsInClosingState(uint64_t now, std::vector<std::shared_ptr<IPacket>>& packets);
     void DropPacketsInDrainingState(std::vector<std::shared_ptr<IPacket>>& packets);
     bool DispatchByType(const std::shared_ptr<IPacket>& packet);
+    // RFC 9000 §9.2/§9.3: apply the worker-stashed datagram path metadata once
+    // |packet| has decrypted successfully. Called ahead of recv_control_
+    // bookkeeping so a triggered PATH_CHALLENGE still precedes the ACK for
+    // this datagram (interop rebind/connectionmigration assert that order).
+    void ConsumePendingDatagramPath(const std::shared_ptr<IPacket>& packet);
 
     bool OnInitialPacket(const std::shared_ptr<IPacket>& packet);
     bool On0rttPacket(const std::shared_ptr<IPacket>& packet);
@@ -537,6 +549,16 @@ protected:
             path_manager_->OnCandidatePathBytesReceived(bytes);
         }
     }
+    // RFC 9000 §9.3. Workers call this with the datagram's (socket, source
+    // address, local-listener-changed) instead of mutating path state
+    // themselves. OnPackets consumes the stash after the first packet of the
+    // datagram decrypts successfully — see ConsumePendingDatagramPath.
+    virtual void SetPendingDatagramPath(common::SocketHandle sock, const common::Address& peer_addr,
+                                        bool local_socket_changed) override {
+        pending_dgram_sock_ = sock;
+        pending_dgram_peer_addr_ = peer_addr;
+        pending_dgram_local_changed_ = local_socket_changed;
+    }
     virtual common::Address AcquireSendAddress() override {
         if (path_manager_) {
             return path_manager_->GetSendAddress();
@@ -621,6 +643,12 @@ protected:
 
     uint8_t pending_ecn_{0};
     bool ecn_enabled_;
+    // Per-datagram path metadata stashed by the worker (SetPendingDatagramPath)
+    // and consumed by OnPackets after the datagram's first packet
+    // authenticates. fd <= 0 means "nothing pending". See ConsumePendingDatagramPath.
+    common::SocketHandle pending_dgram_sock_{-1, 0};
+    common::Address pending_dgram_peer_addr_;
+    bool pending_dgram_local_changed_{false};
     // flow control
     SendFlowController send_flow_controller_;  // Send-side flow controller
     RecvFlowController recv_flow_controller_;  // Receive-side flow controller

@@ -219,7 +219,7 @@ TEST_F(SendStreamTest, ResetBasic) {
     FixBufferFrameVisitor visitor(1500);
     visitor.SetStreamDataSizeLimit(1500);
 
-    auto result = stream->TrySendData(&visitor);
+    auto result = stream->TrySendData(&visitor); (void)result; /* silence warning gate */
 
     EXPECT_EQ(stream->GetSendStateMachine()->GetStatus(), StreamState::kResetSent);
 }

@@ -266,6 +266,20 @@ void ReqRespBaseStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
         header_block_key_ = (sid << 32) | secno;
     }
 
+    // P0-S6: push the field-section bound INTO the decoder so it aborts
+    // mid-decompression instead of letting a 1-byte dynamic-table reference
+    // expand into a huge entry before EnforceFieldSectionSize() ever runs.
+    // 0 (unconfigured) normalises to the local fallback cap; UINT64_MAX
+    // genuinely disables the bound (testing only).
+    if (qpack_decoder_) {
+        if (max_field_section_size_ == UINT64_MAX) {
+            qpack_decoder_->SetFieldSectionSizeLimit(0);
+        } else {
+            qpack_decoder_->SetFieldSectionSizeLimit(
+                max_field_section_size_ > 0 ? max_field_section_size_ : kDefaultMaxFieldSectionSize);
+        }
+    }
+
     auto encoded_fields = headers_frame->GetEncodedFields();
 
     // RFC 9204 retry hazard: SingleBlockBuffer::CloneReadable advances the
@@ -301,6 +315,20 @@ void ReqRespBaseStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
     auto first_attempt =
         encoded_fields_template->CloneReadable(encoded_fields_template->GetDataLength(), /*move_write_pt=*/false);
     if (!qpack_decoder_->Decode(first_attempt, headers_)) {
+        // Only kBlocked is retryable; malformed / oversized sections must
+        // fail the stream instead of parking it in a retry loop.
+        const auto status = qpack_decoder_->GetLastDecodeStatus();
+        if (status != QpackEncoder::DecodeStatus::kBlocked) {
+            headers_.clear();
+            LOG_ERROR("ReqRespBaseStream::HandleHeaders: QPACK decode failed (status=%d), stream=%llu",
+                static_cast<int>(status), static_cast<unsigned long long>(GetStreamID()));
+            if (error_handler_) {
+                error_handler_(GetStreamID(),
+                    status == QpackEncoder::DecodeStatus::kSectionTooLarge ? Http3ErrorCode::kExcessiveLoad
+                                                                          : Http3ErrorCode::kQpackDecompressionFailed);
+            }
+            return;
+        }
         // RFC 9204 §2.1.4: header section blocked on Required Insert Count.
         // Three correctness concerns:
         //   1. The retry must populate THIS stream's headers_ member —
@@ -363,6 +391,24 @@ void ReqRespBaseStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
                 self->DrainPendingFrames();
 
             } else {
+                const auto retry_status = self->qpack_decoder_->GetLastDecodeStatus();
+                if (retry_status != QpackEncoder::DecodeStatus::kBlocked) {
+                    // P0-S6: the retry decoded the block and found it
+                    // malformed or oversized — retrying again can never
+                    // succeed, so fail the stream instead of re-parking it.
+                    self->is_currently_blocked_ = false;
+                    self->headers_.clear();
+                    LOG_ERROR("ReqRespBaseStream: QPACK retry failed (status=%d), stream=%llu",
+                        static_cast<int>(retry_status), static_cast<unsigned long long>(self->GetStreamID()));
+                    if (self->error_handler_) {
+                        self->error_handler_(self->GetStreamID(),
+                            retry_status == QpackEncoder::DecodeStatus::kSectionTooLarge
+                                ? Http3ErrorCode::kExcessiveLoad
+                                : Http3ErrorCode::kQpackDecompressionFailed);
+                    }
+                    self->blocked_retry_fn_ = nullptr;
+                    return;
+                }
                 // Still blocked — re-enqueue with the same retry so the
                 // next NotifyAll() picks us up again. Keep the gate set
                 // so any frames arriving in the meantime continue to
@@ -403,9 +449,18 @@ void ReqRespBaseStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
 }
 
 bool ReqRespBaseStream::EnforceFieldSectionSize() {
-    if (max_field_section_size_ == 0) {
+    // 0 normalises to the local fallback cap (see SetMaxFieldSectionSize);
+    // only UINT64_MAX genuinely disables the check. The decoder-side bound
+    // (P0-S6) already aborted mid-decompression on the same accounting, so
+    // this is the belt-and-braces check on the final list.
+    const uint64_t effective_limit =
+        (max_field_section_size_ == UINT64_MAX) ? 0
+        : (max_field_section_size_ > 0)         ? max_field_section_size_
+                                                : kDefaultMaxFieldSectionSize;
+    if (effective_limit == 0) {
         return true;
     }
+    const uint64_t section_limit = effective_limit;
 
     // RFC 9114 §4.2.2: "The size of a field list is calculated based on the
     // uncompressed size of fields, including the length of the name and value in
@@ -414,14 +469,14 @@ bool ReqRespBaseStream::EnforceFieldSectionSize() {
     uint64_t section_size = 0;
     for (const auto& field : headers_) {
         section_size += field.first.size() + field.second.size() + 32;
-        if (section_size > max_field_section_size_) {
+        if (section_size > section_limit) {
             break;
         }
     }
 
-    if (section_size > max_field_section_size_) {
+    if (section_size > section_limit) {
         LOG_ERROR("field section size %llu exceeds advertised max %llu, stream=%llu",
-            static_cast<unsigned long long>(section_size), static_cast<unsigned long long>(max_field_section_size_),
+            static_cast<unsigned long long>(section_size), static_cast<unsigned long long>(section_limit),
             static_cast<unsigned long long>(GetStreamID()));
         headers_.clear();
         if (error_handler_) {

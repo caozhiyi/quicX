@@ -8,6 +8,7 @@
 #include <quicx/quic/type.h>
 #include <vector>
 
+#include "common/log/log.h"
 #include "common/network/address.h"
 #include "common/network/socket_handle.h"
 #include "common/timer/if_timer_scheduler.h"
@@ -324,6 +325,26 @@ private:
 
     // Queue of pending candidate addresses for path validation
     std::vector<::quicx::common::Address> pending_candidate_addrs_;
+
+    // P0-S10: dedupe state for PATH_CHALLENGE responses (see
+    // OnPathChallenge) and the bounded enqueue helper for candidate
+    // addresses. The queue used to be unbounded: each distinct peer source
+    // address observed while a probe was in flight added one entry, so a
+    // NAT-rebinding peer (or a broken/malicious one flapping between
+    // addresses) grew the queue without limit.
+    static constexpr size_t kMaxPendingCandidateAddrs = 8;
+    uint8_t last_challenge_data_[8]{0};
+    bool last_challenge_valid_{false};
+    void EnqueueCandidateAddr(const ::quicx::common::Address& addr) {
+        if (pending_candidate_addrs_.size() >= kMaxPendingCandidateAddrs) {
+            // Bounded FIFO: drop the OLDEST candidate. A still-relevant peer
+            // will re-observe and re-queue its address; a flapping peer must
+            // not pin unbounded state.
+            pending_candidate_addrs_.erase(pending_candidate_addrs_.begin());
+            LOG_DEBUG("PathManager: candidate queue full, dropped oldest entry");
+        }
+        pending_candidate_addrs_.push_back(addr);
+    }
 
     // Flag: true if DCID was pre-rotated before starting probe (for client-initiated migration)
     // When true, OnPathResponse() will skip CID rotation (already done)

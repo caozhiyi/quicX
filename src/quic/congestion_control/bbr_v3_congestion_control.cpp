@@ -90,7 +90,7 @@ void BBRv3CongestionControl::Reset() {
 
 void BBRv3CongestionControl::OnPacketSent(const SentPacketEvent& ev) {
     bytes_in_flight_ += ev.bytes;
-    if (pacer_) pacer_->OnPacketSent(ev.sent_time / 1000, static_cast<size_t>(ev.bytes));
+    if (pacer_) pacer_->OnPacketSent(ev.sent_time, static_cast<size_t>(ev.bytes));  // us: matches the pacer contract
     if (end_of_round_pn_ == 0 || ev.pn > end_of_round_pn_) end_of_round_pn_ = ev.pn;
 }
 
@@ -224,7 +224,8 @@ uint64_t BBRv3CongestionControl::GetPacingRateBytesPerSec() const {
 
 uint64_t BBRv3CongestionControl::NextSendTime(uint64_t now) const {
     if (!pacer_) return now;
-    // pacer returns delta_ms until next send opportunity; convert to absolute time.
+    // Pacer contract is us: TimeUntilSend() returns a us delta; the caller
+    // passes a us now (SendManager bridges to the ms pacing timer).
     return now + pacer_->TimeUntilSend();
 }
 

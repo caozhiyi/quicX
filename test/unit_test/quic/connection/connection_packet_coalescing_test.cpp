@@ -226,7 +226,7 @@ TEST(QuicConnectionCoalescingTest, full_handshake_with_coalescing) {
 // frame list is generally empty. Kept for documentation; the structural
 // tests below rely on packet counts and datagram sizing rather than
 // on per-packet frame inspection.
-static size_t CountFramesOfType(const std::shared_ptr<IPacket>& pkt, uint16_t frame_type) {
+[[maybe_unused]] static size_t CountFramesOfType(const std::shared_ptr<IPacket>& pkt, uint16_t frame_type) {
     size_t n = 0;
     for (const auto& f : pkt->GetFrames()) {
         if (static_cast<uint16_t>(f->GetType()) == frame_type) {

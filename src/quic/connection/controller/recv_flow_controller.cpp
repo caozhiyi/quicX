@@ -10,9 +10,16 @@
 namespace quicx {
 namespace quic {
 
+namespace {
+// Fallback growth step when UpdateConfig() was never called (initial window
+// unknown). 1MiB keeps grants conservative rather than granting nothing.
+constexpr uint64_t kDefaultConnectionWindowIncrement = 1024 * 1024;
+}  // namespace
+
 RecvFlowController::RecvFlowController(StreamIDGenerator::StreamStarter local_starter):
     received_bytes_(0),
     max_data_(0),
+    initial_max_data_(0),
     max_streams_bidi_(0),
     max_streams_uni_(0),
     max_bidi_stream_id_(0),
@@ -21,6 +28,7 @@ RecvFlowController::RecvFlowController(StreamIDGenerator::StreamStarter local_st
 
 void RecvFlowController::UpdateConfig(const TransportParam& tp) {
     max_data_ = tp.GetInitialMaxData();
+    initial_max_data_ = max_data_;
     max_streams_bidi_ = tp.GetInitialMaxStreamsBidi();
     max_streams_uni_ = tp.GetInitialMaxStreamsUni();
 
@@ -56,13 +64,39 @@ bool RecvFlowController::ShouldSendMaxData(std::shared_ptr<IFrame>& max_data_fra
     uint64_t threshold = max_data_ / 10;  // 10% of max_data
 
     if (remaining <= threshold) {
-        // Increase the limit by doubling the window
-        // BUGFIX P2-3: Guard against uint64_t overflow when doubling
-        uint64_t increase_amount = max_data_;
-        if (max_data_ > UINT64_MAX - increase_amount) {
-            max_data_ = UINT64_MAX;  // Cap at max value instead of wrapping
+        // P0-S2: connection-level receive-memory budget. Pinned receive
+        // memory (ordered buffers + out-of-order reassembly across all
+        // streams) at or above 2x the current window — minimum 8 MiB —
+        // means the application is not keeping up. Stop growing the window
+        // rather than acknowledging-and-buffering unboundedly; the peer is
+        // flow-control blocked, which is exactly the backpressure the
+        // window exists to provide. Data already received keeps its ACKs
+        // (dropping it would violate the protocol); only growth stops.
+        if (buffered_bytes_getter_) {
+            const uint64_t budget = std::max<uint64_t>(2 * max_data_, 8ull * 1024 * 1024);
+            const uint64_t pinned = buffered_bytes_getter_();
+            if (pinned >= budget) {
+                LOG_DEBUG(
+                    "RecvFlowController::ShouldSendMaxData: receive budget %llu pinned, holding window at %llu",
+                    pinned, max_data_);
+                return true;  // window intentionally not raised
+            }
+        }
+
+        // Grow the window LINEARLY by the initial window size (P0-S1). The
+        // old code doubled max_data_ each time — with received_bytes_ only
+        // ever increasing (no consumption feedback yet) the window grew
+        // exponentially to UINT64_MAX, i.e. connection-level flow control
+        // silently stopped existing. Linear growth keeps granting capacity
+        // while keeping the advertised window proportional to what we have
+        // actually absorbed. A full consumption-driven window (RFC 9000 §4.2
+        // "implementations ... decide when ... MAX_DATA") is tracked for a
+        // later phase.
+        uint64_t step = initial_max_data_ > 0 ? initial_max_data_ : kDefaultConnectionWindowIncrement;
+        if (max_data_ > UINT64_MAX - step) {
+            max_data_ = UINT64_MAX;  // cap instead of wrapping
         } else {
-            max_data_ += increase_amount;
+            max_data_ += step;
         }
 
         auto frame = std::make_shared<MaxDataFrame>();
@@ -137,20 +171,17 @@ bool RecvFlowController::CheckBidiStreamLimit(std::shared_ptr<IFrame>& max_strea
         return false;
     }
 
-    // Check if we should increase the limit (peer is near the window)
-    uint64_t remaining = max_streams_bidi_ - current_stream_count;
-    if (remaining <= kStreamsIncreaseThreshold) {
-        // Increase the limit
-        max_streams_bidi_ += kStreamsIncreaseAmount;
+    // MAX_STREAMS is a CUMULATIVE cap (RFC 9000 §4.6), so the grant must keep
+    // the cumulative headroom positive regardless of how many streams closed.
+    if (max_streams_bidi_ - current_stream_count <= kStreamsIncreaseThreshold) {
+        max_streams_bidi_ = current_stream_count + kStreamsIncreaseAmount + 1;
 
         auto frame = std::make_shared<MaxStreamsFrame>(FrameType::kMaxStreamsBidirectional);
         frame->SetMaximumStreams(max_streams_bidi_);
         max_streams_frame = frame;
 
-        LOG_DEBUG(
-            "RecvFlowController::CheckBidiStreamLimit: increasing limit to %llu (remaining was %llu, "
-            "threshold=%llu)",
-            max_streams_bidi_, remaining, kStreamsIncreaseThreshold);
+        LOG_DEBUG("RecvFlowController::CheckBidiStreamLimit: increasing limit to %llu (opened=%llu)", max_streams_bidi_,
+            current_stream_count);
     }
 
     return true;
@@ -169,20 +200,16 @@ bool RecvFlowController::CheckUniStreamLimit(std::shared_ptr<IFrame>& max_stream
         return false;
     }
 
-    // Check if we should increase the limit (peer is near the window)
-    uint64_t remaining = max_streams_uni_ - current_stream_count;
-    if (remaining <= kStreamsIncreaseThreshold) {
-        // Increase the limit
-        max_streams_uni_ += kStreamsIncreaseAmount;
+    // Same cumulative-headroom rule as the bidirectional variant.
+    if (max_streams_uni_ - current_stream_count <= kStreamsIncreaseThreshold) {
+        max_streams_uni_ = current_stream_count + kStreamsIncreaseAmount + 1;
 
         auto frame = std::make_shared<MaxStreamsFrame>(FrameType::kMaxStreamsUnidirectional);
         frame->SetMaximumStreams(max_streams_uni_);
         max_streams_frame = frame;
 
-        LOG_DEBUG(
-            "RecvFlowController::CheckUniStreamLimit: increasing limit to %llu (remaining was %llu, "
-            "threshold=%llu)",
-            max_streams_uni_, remaining, kStreamsIncreaseThreshold);
+        LOG_DEBUG("RecvFlowController::CheckUniStreamLimit: increasing limit to %llu (opened=%llu)", max_streams_uni_,
+            current_stream_count);
     }
 
     return true;

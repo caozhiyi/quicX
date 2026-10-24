@@ -61,44 +61,6 @@ namespace quicx {
 namespace http3 {
 namespace {
 
-// Build a HEADERS frame whose encoded payload references the dynamic table
-// at absolute index 0 (RIC = 1, Base = 0). The encoder driver inserts the
-// (name, value) pair into ITS OWN dynamic table so the prefix encoding
-// (max_entries / RIC math) is correct, but we deliberately *do not* feed
-// that insert to the receiver-side decoder yet — that's what makes the
-// header block QPACK-blocked on arrival.
-std::shared_ptr<common::IBuffer> BuildBlockedHeadersFrame(
-    QpackEncoder& driver, const std::string& name, const std::string& value) {
-    // Drive the encoder so its internal dynamic table has 1 entry, which
-    // makes WriteHeaderPrefix(ric=1, base=0) produce a valid wire prefix.
-    {
-        auto chunk = std::make_shared<common::StandaloneBufferChunk>(256);
-        auto instr_buf = std::make_shared<common::SingleBlockBuffer>(chunk);
-        std::vector<std::pair<std::string, std::string>> ins{{name, value}};
-        EXPECT_TRUE(driver.EncodeEncoderInstructions(ins, instr_buf));
-        // Self-feed so driver.dynamic_table_ now has the entry at abs=0
-        EXPECT_TRUE(driver.DecodeEncoderInstructions(instr_buf));
-    }
-
-    // Build the HEADERS payload: prefix(ric=1, base=0) followed by a
-    // PostBaseIndexed reference to absolute index 0 (post_base_index = 0).
-    // Wire byte for "Indexed Header Field with Post-Base Index" is
-    // 0001xxxx — see QpackHeaderPattern::kPostBaseIndexed in qpack_encoder.cpp.
-    auto payload_chunk = std::make_shared<common::StandaloneBufferChunk>(64);
-    auto payload = std::make_shared<common::SingleBlockBuffer>(payload_chunk);
-    driver.WriteHeaderPrefix(payload, /*ric=*/1, /*base=*/0);
-    uint8_t post_base = 0x10;  // pattern 0001 0000, post_base_index=0
-    payload->Write(&post_base, 1);
-
-    // Wrap into a HeadersFrame and serialise to a wire buffer.
-    HeadersFrame headers_frame;
-    headers_frame.SetEncodedFields(payload);
-    auto frame_chunk = std::make_shared<common::StandaloneBufferChunk>(128);
-    auto frame_buf = std::make_shared<common::SingleBlockBuffer>(frame_chunk);
-    EXPECT_TRUE(headers_frame.Encode(frame_buf));
-    return frame_buf;
-}
-
 // Serialise a DATA frame carrying |body| into a fresh wire buffer.
 std::shared_ptr<common::IBuffer> BuildDataFrame(const std::string& body) {
     auto data_chunk = std::make_shared<common::StandaloneBufferChunk>(static_cast<uint32_t>(body.size() + 16));

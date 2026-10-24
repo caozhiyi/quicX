@@ -1,14 +1,4 @@
 # Top of file
-# MSVC / clang-cl reject GCC-style -Wno-* flags (D8021); route to /wd#### instead.
-# Uses the if() variable form: the $<CXX_COMPILER_FRONTEND_VARIANT> generator
-# expression only exists in CMake >= 3.30 and hard-fails configure on older
-# versions, while the CMAKE_CXX_COMPILER_FRONTEND_VARIANT variable has been
-# set by CMake since 3.0.
-if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" OR CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
-    add_compile_options(/wd4101 /wd4189 /wd4505)
-else()
-    add_compile_options(-Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function)
-endif()
 cmake_minimum_required(VERSION 3.16)
 project(quicx_utest)
 
@@ -19,14 +9,25 @@ enable_testing()
 set(GTEST_ROOT ${CMAKE_SOURCE_DIR}/third/googletest)
 if(EXISTS ${GTEST_ROOT}/CMakeLists.txt)
   add_subdirectory(${GTEST_ROOT} build_gtest EXCLUDE_FROM_ALL)
+  # Third-party googletest must never fail our warning gate, even where the
+  # directory-level -Wall/-Wextra/-Werror from QUICX_WARNINGS_AS_ERRORS
+  # propagates into its sources.
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" OR CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+      foreach(_gtest_tgt gtest gtest_main gmock gmock_main)
+          if(TARGET ${_gtest_tgt})
+              target_compile_options(${_gtest_tgt} PRIVATE /wd4100 /wd4101 /wd4189 /wd4505 /wd4514)
+          endif()
+      endforeach()
+  else()
+      foreach(_gtest_tgt gtest gtest_main gmock gmock_main)
+          if(TARGET ${_gtest_tgt})
+              target_compile_options(${_gtest_tgt} PRIVATE -Wno-error)
+          endif()
+      endforeach()
+  endif()
 else()
   message(FATAL_ERROR "third/googletest submodule missing. Please init submodules or set GTest_DIR.")
 endif()
-
-# Test lambdas/callbacks keep full protocol signatures while often using only
-# a subset of parameters; exempt -Wunused-parameter here only (src/ still
-# fails CI on it via QUICX_WARNINGS_AS_ERRORS).
-quicx_suppress_test_unused_warnings()
 
 # Collect all test sources under unit_test
 file(GLOB_RECURSE test_files

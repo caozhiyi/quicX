@@ -11,7 +11,7 @@ TreeMapTimer::~TreeMapTimer() {}
 
 uint64_t TreeMapTimer::AddTimer(TimerTask& task, uint32_t time_ms, uint64_t now) {
     if (now == 0) {
-        now = UTCTimeMsec();
+        now = MonotonicTimeMsec();
     }
 
     task.time_ = now + time_ms;
@@ -39,7 +39,7 @@ int32_t TreeMapTimer::MinTime(uint64_t now) {
     }
 
     if (now == 0) {
-        now = UTCTimeMsec();
+        now = MonotonicTimeMsec();
     }
 
     int32_t next_time = (int32_t)(timer_map_.begin()->first - now);
@@ -55,7 +55,7 @@ int32_t TreeMapTimer::MinTime(uint64_t now) {
 
 void TreeMapTimer::TimerRun(uint64_t now) {
     if (now == 0) {
-        now = UTCTimeMsec();
+        now = MonotonicTimeMsec();
     }
 
     int executed_count = 0;

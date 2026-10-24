@@ -24,7 +24,7 @@ public:
     virtual ~ControlSenderStream();
 
     // Send SETTINGS frame
-    virtual bool SendSettings(const std::unordered_map<uint16_t, uint64_t>& settings);
+    virtual bool SendSettings(const std::unordered_map<uint64_t, uint64_t>& settings);
 
     // Send GOAWAY frame
     virtual bool SendGoaway(uint64_t id);

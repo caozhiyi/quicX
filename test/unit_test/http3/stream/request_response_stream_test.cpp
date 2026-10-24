@@ -49,7 +49,7 @@ public:
         push_promise_ = push_promise;
     }
 
-    void ErrorHandle(uint64_t stream_id, uint32_t error_code) { error_code_ = error_code; }
+    void ErrorHandle(uint64_t /*stream_id*/, uint32_t error_code) { error_code_ = error_code; }
 
     const std::shared_ptr<IResponse>& GetResponse() { return response_; }
     const HttpFields& GetPushPromise() { return push_promise_; }
@@ -75,11 +75,11 @@ public:
             MockHttpProcessor(MockServerConnection* server):
                 server_(server) {}
             RouteConfig MatchRoute(
-                HttpMethod method, const std::string& path, std::shared_ptr<IRequest> request = nullptr) override {
+                HttpMethod method, const std::string& path, std::shared_ptr<IRequest> /*request*/ = nullptr) override {
                 return server_->MatchHandler(method, path);
             }
-            void BeforeHandlerProcess(std::shared_ptr<IRequest> req, std::shared_ptr<IResponse> resp) override {}
-            void AfterHandlerProcess(std::shared_ptr<IRequest> req, std::shared_ptr<IResponse> resp) override {}
+            void BeforeHandlerProcess(std::shared_ptr<IRequest> /*req*/, std::shared_ptr<IResponse> /*resp*/) override {}
+            void AfterHandlerProcess(std::shared_ptr<IRequest> /*req*/, std::shared_ptr<IResponse> /*resp*/) override {}
 
         private:
             MockServerConnection* server_;
@@ -98,9 +98,9 @@ public:
     }
     ~MockServerConnection() {}
 
-    void ErrorHandle(uint64_t stream_id, uint32_t error_code) { error_code_ = error_code; }
+    void ErrorHandle(uint64_t /*stream_id*/, uint32_t error_code) { error_code_ = error_code; }
 
-    RouteConfig MatchHandler(HttpMethod method, const std::string& path) {
+    RouteConfig MatchHandler(HttpMethod /*method*/, const std::string& /*path*/) {
         // Create wrapper that accesses http_handler_ at call time (not bind time)
         auto wrapper = [this](std::shared_ptr<IRequest> req, std::shared_ptr<IResponse> resp) {
             if (this->http_handler_) {
@@ -371,7 +371,7 @@ TEST_F(RequestResponseStreamTest, BinaryDataBuffer) {
 // ============================================================================
 TEST_F(RequestResponseStreamTest, GetHeadersThenSeparateFinDoesNotDoubleSendResponse) {
     int handler_invocations = 0;
-    auto http_handler = [&handler_invocations](std::shared_ptr<IRequest> req, std::shared_ptr<IResponse> resp) {
+    auto http_handler = [&handler_invocations](std::shared_ptr<IRequest> /*req*/, std::shared_ptr<IResponse> resp) {
         ++handler_invocations;
         resp->SetStatusCode(200);
         resp->AddHeader("content-type", "application/octet-stream");
@@ -418,7 +418,7 @@ TEST_F(RequestResponseStreamTest, GetHeadersThenSeparateFinDoesNotDoubleSendResp
 // fixing the split-FIN path.
 TEST_F(RequestResponseStreamTest, GetHeadersWithFinInSameBatchSendsResponseOnce) {
     int handler_invocations = 0;
-    auto http_handler = [&handler_invocations](std::shared_ptr<IRequest> req, std::shared_ptr<IResponse> resp) {
+    auto http_handler = [&handler_invocations](std::shared_ptr<IRequest> /*req*/, std::shared_ptr<IResponse> resp) {
         ++handler_invocations;
         resp->SetStatusCode(200);
         resp->AppendBody("OK");
