@@ -29,7 +29,7 @@ public:
 
     bool SendInsertCountIncrement(uint64_t delta) { return sender_stream_->SendInsertCountIncrement(delta); }
 
-    void ErrorHandle(uint64_t stream_id, uint32_t error_code) { error_code_ = error_code; }
+    void ErrorHandle(uint64_t /*stream_id*/, uint32_t error_code) { error_code_ = error_code; }
 
     uint32_t GetErrorCode() { return error_code_; }
 
@@ -68,7 +68,7 @@ public:
         }
     }
 
-    void ErrorHandle(uint64_t stream_id, uint32_t error_code) { error_code_ = error_code; }
+    void ErrorHandle(uint64_t /*stream_id*/, uint32_t error_code) { error_code_ = error_code; }
 
     void RetryCallback() { retry_count_++; }
 

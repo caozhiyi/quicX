@@ -10,6 +10,7 @@
 
 #include "common/buffer/if_buffer.h"
 
+#include "http3/config.h"
 #include "http3/qpack/dynamic_table.h"
 
 namespace quicx {
@@ -83,6 +84,20 @@ public:
 
     bool Encode(const std::vector<std::pair<std::string, std::string>>& headers, std::shared_ptr<common::IBuffer> buffer);
     bool Decode(const std::shared_ptr<common::IBuffer> buffer, std::vector<std::pair<std::string, std::string>>& headers);
+
+    // P0-S6: why Decode returned false. Callers must distinguish: only
+    // kBlocked may park the stream for a retry — malformed input and
+    // oversized sections are terminal for the header block, and treating
+    // them like "blocked" would retry forever.
+    enum class DecodeStatus { kOk, kBlocked, kMalformed, kSectionTooLarge };
+    DecodeStatus GetLastDecodeStatus() const { return last_decode_status_; }
+
+    // P0-S6: in-decoder bound on the decompressed field section size
+    // (RFC 9114 §4.2.2 accounting: per emitted field, name + value + 32).
+    // Enforced field-by-field so a 1-byte dynamic-table reference cannot
+    // expand into a huge entry before any size check sees it. 0 disables.
+    void SetFieldSectionSizeLimit(uint64_t limit) { field_section_size_limit_ = limit; }
+    uint64_t GetFieldSectionSizeLimit() const { return field_section_size_limit_; }
     // Returns the Required Insert Count of the most recently decoded header block.
     // RFC 9204 §4.4.1: the decoder MUST NOT emit Section Acknowledgment for header
     // blocks with a Required Insert Count of zero (no dependency on dynamic table).
@@ -235,6 +250,12 @@ private:
     uint64_t last_decoded_ric_{0};
     // Peer's Known Received Count; see OnPeerInsertCountIncrement() above.
     uint64_t known_received_count_{0};
+    // P0-S6: failure classification of the most recent Decode() and the
+    // in-decoder field-section bound (see GetLastDecodeStatus /
+    // SetFieldSectionSizeLimit). Defaults to the config fallback so even
+    // un-advertised connections get a decompression-bomb bound.
+    DecodeStatus last_decode_status_{DecodeStatus::kOk};
+    uint64_t field_section_size_limit_{kDefaultQpackDecodeSectionLimit};
 };
 
 }  // namespace http3

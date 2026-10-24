@@ -72,8 +72,8 @@ void IConnection::SetupControlAndQpackStreams() {
     control_sender_stream_ = std::make_shared<ControlClientSenderStream>(
         std::dynamic_pointer_cast<IQuicSendStream>(control_stream), MakeErrorHandler());
 
-    settings_ = AdaptSettings(settings);
-    control_sender_stream_->SendSettings(settings_);
+    local_settings_ = AdaptSettings(settings);
+    control_sender_stream_->SendSettings(local_settings_);
 
     // RFC 9204: QPACK is mandatory for HTTP/3 and the encoder/decoder streams
     // MUST be created even if the dynamic table capacity is 0; the settings
@@ -290,28 +290,35 @@ bool IConnection::IsMigrationInProgress() const {
     return qc->IsMigrationInProgress();
 }
 
-void IConnection::HandleSettings(const std::unordered_map<uint16_t, uint64_t>& settings) {
+void IConnection::HandleSettings(const std::unordered_map<uint64_t, uint64_t>& settings) {
     // RFC 9114 Section 4.1: Mark SETTINGS as received
     settings_received_ = true;
 
-    // merge settings
+    // Store the PEER's settings in their own map (P1-H3): merging them into
+    // the map holding our own advertised values used to make "peer omitted a
+    // setting" indistinguishable from "peer advertised our value".
     for (auto iter = settings.begin(); iter != settings.end(); ++iter) {
         // RFC 9114 §7.2.4.1: IDs 0x02, 0x03, 0x04, 0x05 are reserved (HTTP/2 legacy).
         // Receipt of these MUST be treated as a connection error of type H3_SETTINGS_ERROR.
-        uint16_t id = iter->first;
-        if (id == 0x02 || id == 0x03 || id == 0x04 || id == 0x05) {
-            LOG_ERROR("received forbidden HTTP/2 settings id: 0x%02x", id);
+        // (The frame decoder rejects them with full-width ids already; this is
+        // defence in depth for older/other frame paths.)
+        uint64_t id = iter->first;
+        if (id >= 0x02 && id <= 0x05) {
+            LOG_ERROR("received forbidden HTTP/2 settings id: 0x%llx", (unsigned long long)id);
             Close(0x109);  // H3_SETTINGS_ERROR
             return;
         }
         // RFC 9114 §7.2.4: Store peer's setting value directly (not min).
-        settings_[iter->first] = iter->second;
-        LOG_DEBUG("settings. key:%d, value:%d", iter->first, settings_[iter->first]);
+        peer_settings_[id] = iter->second;
+        LOG_DEBUG("peer setting. key:%llu, value:%llu", (unsigned long long)id,
+            (unsigned long long)peer_settings_[id]);
     }
 
     // RFC 9204 §3.2.3: After receiving peer's SETTINGS, cap our encoder's dynamic
     // table capacity to peer's advertised QPACK_MAX_TABLE_CAPACITY.
     // Our encoder MUST NOT use a capacity larger than what the peer allows.
+    // If the peer OMITS the setting its capacity is 0 (RFC 9204 default) —
+    // do NOT fall back to our local value (P1-H3).
     //
     // NOTE: SETTINGS may arrive *before* the local Init() finishes wiring its
     // own configured cap (the peer's control SETTINGS frame is delivered to
@@ -319,8 +326,8 @@ void IConnection::HandleSettings(const std::unordered_map<uint16_t, uint64_t>& s
     // harnesses). The encoder maintains separate local/peer cap fields and
     // recomputes min(local, peer) on each setter, so the order of arrival
     // does not matter — both sides converge on the same cap.
-    auto it = settings_.find(0x01);  // SETTINGS_QPACK_MAX_TABLE_CAPACITY = 0x01
-    if (it != settings_.end()) {
+    auto it = peer_settings_.find(0x01);  // SETTINGS_QPACK_MAX_TABLE_CAPACITY = 0x01
+    if (it != peer_settings_.end()) {
         uint32_t peer_cap = static_cast<uint32_t>(it->second);
         qpack_encoder_->SetPeerMaxTableCapacity(peer_cap);
         LOG_DEBUG("HandleSettings: peer qpack_max_table_capacity=%u, encoder cap set to %u", peer_cap,
@@ -343,9 +350,9 @@ std::function<void(uint64_t, uint32_t)> IConnection::MakeErrorHandler() {
     };
 }
 
-std::function<void(const std::unordered_map<uint16_t, uint64_t>&)> IConnection::MakeSettingsHandler() {
+std::function<void(const std::unordered_map<uint64_t, uint64_t>&)> IConnection::MakeSettingsHandler() {
     std::weak_ptr<IConnection> weak_self = weak_from_this();
-    return [weak_self](const std::unordered_map<uint16_t, uint64_t>& settings) {
+    return [weak_self](const std::unordered_map<uint64_t, uint64_t>& settings) {
         auto self = weak_self.lock();
         if (!self) {
             return;
@@ -521,8 +528,8 @@ void IConnection::WireReqRespStream(const std::shared_ptr<ReqRespBaseStream>& st
     }
 }
 
-const std::unordered_map<uint16_t, uint64_t> IConnection::AdaptSettings(const Http3Settings& settings) {
-    std::unordered_map<uint16_t, uint64_t> settings_map;
+const std::unordered_map<uint64_t, uint64_t> IConnection::AdaptSettings(const Http3Settings& settings) {
+    std::unordered_map<uint64_t, uint64_t> settings_map;
     // RFC 9114 §7.2.4.1: Only valid HTTP/3 settings may be sent on the wire.
     // IDs 0x02-0x05 are forbidden (HTTP/2 legacy) and MUST NOT be sent.
     settings_map[SettingsType::kMaxFieldSectionSize] = settings.max_field_section_size;

@@ -29,11 +29,11 @@ public:
 
     bool SendGoAway(uint64_t stream_id) { return sender_stream_->SendGoaway(stream_id); }
 
-    bool SendSettings(const std::unordered_map<uint16_t, uint64_t>& settings) {
+    bool SendSettings(const std::unordered_map<uint64_t, uint64_t>& settings) {
         return sender_stream_->SendSettings(settings);
     }
 
-    void ErrorHandle(uint64_t stream_id, uint32_t error_code) { error_code_ = error_code; }
+    void ErrorHandle(uint64_t /*stream_id*/, uint32_t error_code) { error_code_ = error_code; }
 
     uint32_t GetErrorCode() { return error_code_; }
 
@@ -79,26 +79,26 @@ public:
 
     void GoAwayHandler(uint64_t id) { goaway_id_ = id; }
 
-    void SettingHandler(const std::unordered_map<uint16_t, uint64_t>& settings) { settings_ = settings; }
+    void SettingHandler(const std::unordered_map<uint64_t, uint64_t>& settings) { settings_ = settings; }
 
     void MaxPushIdHandler(uint64_t push_id) { max_push_id_ = push_id; }
 
     void CancelHandler(uint64_t id) { cancel_id_ = id; }
 
-    void ErrorHandle(uint64_t stream_id, uint32_t error_code) { error_code_ = error_code; }
+    void ErrorHandle(uint64_t /*stream_id*/, uint32_t error_code) { error_code_ = error_code; }
 
     uint32_t GetErrorCode() { return error_code_; }
     uint64_t GetMaxPushId() { return max_push_id_; }
     uint64_t GetCancelId() { return cancel_id_; }
     uint64_t GetGoAwayId() { return goaway_id_; }
-    const std::unordered_map<uint16_t, uint64_t>& GetSettings() { return settings_; }
+    const std::unordered_map<uint64_t, uint64_t>& GetSettings() { return settings_; }
 
 private:
     uint32_t error_code_;
     uint64_t max_push_id_;
     uint64_t cancel_id_;
     uint64_t goaway_id_;
-    std::unordered_map<uint16_t, uint64_t> settings_;
+    std::unordered_map<uint64_t, uint64_t> settings_;
 
     std::shared_ptr<UnidentifiedStream> unidentified_stream_;
     std::shared_ptr<ControlServerReceiverStream> receiver_stream_;
@@ -145,7 +145,7 @@ TEST_F(ControlClientSenderStreamTest, SendGoAway) {
 }
 
 TEST_F(ControlClientSenderStreamTest, SendSettings) {
-    std::unordered_map<uint16_t, uint64_t> settings = {
+    std::unordered_map<uint64_t, uint64_t> settings = {
         {SettingsType::kMaxFieldSectionSize, 100}, {SettingsType::kQpackMaxTableCapacity, 4096}};
     client_connection_->SendSettings(settings);
     EXPECT_EQ(server_connection_->GetSettings(), settings);

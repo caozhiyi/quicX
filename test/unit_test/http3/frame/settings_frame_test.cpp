@@ -40,10 +40,11 @@ TEST_F(SettingsFrameTest, BasicProperties) {
 }
 
 TEST_F(SettingsFrameTest, EncodeAndDecode) {
-    // Setup test settings
+    // ids 0x02..0x05 are HTTP/2-reserved and MUST be rejected on decode
+    // (RFC 9114 §7.2.4.1), so tests use legal ids 0x01, 0x06, 0x07.
     frame_->SetSetting(1, 100);
-    frame_->SetSetting(2, 200);
-    frame_->SetSetting(3, 300);
+    frame_->SetSetting(6, 200);
+    frame_->SetSetting(7, 300);
 
     // Encode
     EXPECT_TRUE(frame_->Encode(buffer_));
@@ -70,9 +71,10 @@ TEST_F(SettingsFrameTest, RejectsTooManyEntries) {
     EXPECT_TRUE(enc.EncodeVarint((uint64_t)FrameType::kSettings));
     EXPECT_TRUE(enc.EncodeVarint((uint64_t)payload_size));
     for (int i = 0; i < kEntries; ++i) {
-        // Use ids in [1, 33] and values equal to id; both fit in a 1-byte varint.
-        EXPECT_TRUE(enc.EncodeVarint((uint64_t)(i + 1)));
-        EXPECT_TRUE(enc.EncodeVarint((uint64_t)(i + 1)));
+        // Use ids in [6, 38] (skipping the reserved 0x02..0x05) and values
+        // equal to id; both fit in a 1-byte varint.
+        EXPECT_TRUE(enc.EncodeVarint((uint64_t)(i + 6)));
+        EXPECT_TRUE(enc.EncodeVarint((uint64_t)(i + 6)));
     }
     enc.Flush();  // commit staged writes so Decode() sees them
 
@@ -92,13 +94,51 @@ TEST_F(SettingsFrameTest, AcceptsMaxEntries) {
     EXPECT_TRUE(enc.EncodeVarint((uint64_t)FrameType::kSettings));
     EXPECT_TRUE(enc.EncodeVarint((uint64_t)payload_size));
     for (int i = 0; i < kEntries; ++i) {
-        EXPECT_TRUE(enc.EncodeVarint((uint64_t)(i + 1)));
-        EXPECT_TRUE(enc.EncodeVarint((uint64_t)(i + 1)));
+        // ids in [6, 37] to skip the reserved 0x02..0x05.
+        EXPECT_TRUE(enc.EncodeVarint((uint64_t)(i + 6)));
+        EXPECT_TRUE(enc.EncodeVarint((uint64_t)(i + 6)));
     }
     enc.Flush();  // commit staged writes so Decode() sees them
 
     auto decode_frame = std::make_shared<SettingsFrame>();
     EXPECT_EQ(decode_frame->Decode(big_buffer, true), DecodeResult::kSuccess);
+}
+
+TEST_F(SettingsFrameTest, RejectsReservedIds) {
+    // RFC 9114 §7.2.4.1: ids 0x02..0x05 are reserved (HTTP/2 legacy) —
+    // receipt MUST be treated as H3_SETTINGS_ERROR (decode failure here).
+    for (uint64_t reserved : {2ULL, 3ULL, 4ULL, 5ULL}) {
+        auto chunk = std::make_shared<common::StandaloneBufferChunk>(256);
+        auto buf = std::make_shared<common::SingleBlockBuffer>(chunk);
+        common::BufferEncodeWrapper enc(buf);
+        EXPECT_TRUE(enc.EncodeVarint((uint64_t)FrameType::kSettings));
+        EXPECT_TRUE(enc.EncodeVarint((uint64_t)2));  // 1-byte id + 1-byte value
+        EXPECT_TRUE(enc.EncodeVarint(reserved));
+        EXPECT_TRUE(enc.EncodeVarint((uint64_t)1));
+        enc.Flush();
+
+        auto decode_frame = std::make_shared<SettingsFrame>();
+        EXPECT_EQ(decode_frame->Decode(buf, true), DecodeResult::kError) << "reserved id " << reserved;
+    }
+}
+
+TEST_F(SettingsFrameTest, RejectsDuplicateIds) {
+    // RFC 9114 §7.2.4: an identifier MUST NOT appear more than once in a
+    // frame. (The old uint16_t storage also let truncated GREASE ids alias
+    // real ids; full-width keys + duplicate detection close that hole.)
+    auto chunk = std::make_shared<common::StandaloneBufferChunk>(256);
+    auto buf = std::make_shared<common::SingleBlockBuffer>(chunk);
+    common::BufferEncodeWrapper enc(buf);
+    EXPECT_TRUE(enc.EncodeVarint((uint64_t)FrameType::kSettings));
+    EXPECT_TRUE(enc.EncodeVarint((uint64_t)4));  // two 2-byte entries
+    EXPECT_TRUE(enc.EncodeVarint((uint64_t)1));
+    EXPECT_TRUE(enc.EncodeVarint((uint64_t)100));
+    EXPECT_TRUE(enc.EncodeVarint((uint64_t)1));
+    EXPECT_TRUE(enc.EncodeVarint((uint64_t)200));
+    enc.Flush();
+
+    auto decode_frame = std::make_shared<SettingsFrame>();
+    EXPECT_EQ(decode_frame->Decode(buf, true), DecodeResult::kError);
 }
 
 TEST_F(SettingsFrameTest, EvaluateSize) {

@@ -26,8 +26,8 @@ public:
     virtual void SetContext(std::shared_ptr<void> context) { context_ = context; }
     virtual std::shared_ptr<void> GetContext() { return context_; }
 
-    virtual void GetLocalAddr(std::string& addr, uint32_t& port) {}
-    virtual void GetRemoteAddr(std::string& addr, uint32_t& port) {}
+    virtual void GetLocalAddr(std::string& /*addr*/, uint32_t& /*port*/) {}
+    virtual void GetRemoteAddr(std::string& /*addr*/, uint32_t& /*port*/) {}
 
     // Connection migration (no-op in mock: migration is exercised by the
     // dedicated path_migration_test suite against real connections)

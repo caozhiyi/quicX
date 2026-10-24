@@ -69,8 +69,9 @@ TEST_F(FrameDecodeTest, DecodeHeadersFrame) {
 
 TEST_F(FrameDecodeTest, DecodeSettingsFrame) {
     SettingsFrame settings_frame;
+    // id 0x02..0x05 are HTTP/2-reserved and rejected on decode; use legal ids.
     settings_frame.SetSetting(1, 100);
-    settings_frame.SetSetting(2, 200);
+    settings_frame.SetSetting(6, 200);
     settings_frame.Encode(buffer_);
 
     FrameDecoder decoder;

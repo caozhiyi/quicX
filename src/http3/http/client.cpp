@@ -361,7 +361,9 @@ void Client::OnConnection(
         }
 
         // Get the first context to determine the host name for connection mapping
-        auto first_context = wait_it->second.front();
+        // (const reference: no need to copy the whole context — including its
+        // variant handler — just to read the host name.)
+        const auto& first_context = wait_it->second.front();
         std::string host_name = first_context.host;
 
         // Create client connection

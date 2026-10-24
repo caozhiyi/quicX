@@ -134,6 +134,17 @@ bool FrameDecoder::DecodeFrames(std::shared_ptr<common::IBuffer> buffer, std::ve
                 return true;
             }
 
+            // Defensive: the `available < payload_length` branch above routes
+            // that case to the skip path, so payload_length <= available
+            // (uint32_t) and the cast is lossless. If a future edit ever breaks
+            // that invariant, treat it as a decode failure instead of silently
+            // truncating — never abort: this is a remote-input parsing path.
+            if (payload_length > available) {
+                LOG_ERROR("FrameDecoder: payload length %llu exceeds available %u for unknown frame type=0x%llx",
+                    (unsigned long long)payload_length, available,
+                    (unsigned long long)current_frame_type_);
+                return false;
+            }
             buffer->MoveReadPt(static_cast<uint32_t>(payload_length));
             LOG_DEBUG("FrameDecoder: ignored unknown frame type=0x%llx, length=%llu",
                 (unsigned long long)current_frame_type_, (unsigned long long)payload_length);

@@ -8,7 +8,7 @@
 namespace quicx {
 namespace http3 {
 
-bool SettingsFrame::GetSetting(uint16_t id, uint64_t& value) {
+bool SettingsFrame::GetSetting(uint64_t id, uint64_t& value) {
     auto it = settings_.find(id);
     if (it == settings_.end()) {
         return false;
@@ -82,7 +82,15 @@ DecodeResult SettingsFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool
             }
             return DecodeResult::kError;
         }
-        settings_[id] = value;
+        // RFC 9114 §7.2.4: ids 0x02..0x05 are reserved (HTTP/2-only) — a
+        // receipt MUST be treated as H3_SETTINGS_ERROR. And an identifier
+        // MUST NOT appear more than once in a frame.
+        if (id >= 0x02 && id <= 0x05) {
+            return DecodeResult::kError;
+        }
+        if (!settings_.emplace(id, value).second) {
+            return DecodeResult::kError;  // duplicate setting id (H3_SETTINGS_ERROR)
+        }
     }
     wrapper.Flush();
     return DecodeResult::kSuccess;

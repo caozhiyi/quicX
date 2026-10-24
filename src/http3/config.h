@@ -87,6 +87,26 @@ static constexpr uint32_t kStreamCleanupIntervalMs = 100;
 // too coarse to serve as the HTTP/3 frame limit.
 static constexpr uint64_t kMaxFrameLength = 16 * 1024 * 1024;  // 16 MiB
 
+// P0-S6: HEADERS / PUSH_PROMISE frames carry QPACK-compressed field sections.
+// The wire form is high-entropy compression, so 256KB of encoded bytes is
+// already far beyond any legitimate header set (real-world field sections
+// compress to a few hundred bytes; kDefaultMaxFieldSectionSize is the
+// post-decompression bound). Capping these frame types separately from
+// kMaxFrameLength stops a peer from declaring multi-megabyte header blocks
+// that sit in the stream buffer before QPACK even sees them — DATA keeps the
+// looser 16MiB bound because large DATA frames are legal and bounded by QUIC
+// flow control.
+static constexpr uint64_t kMaxHeadersFrameLength = 256 * 1024;  // 256 KiB
+
+// P0-S6: default limit enforced INSIDE the QPACK decoder while a field
+// section is being decompressed (RFC 9114 §4.2.2 accounting: per field,
+// name + value + 32). Without an in-decoder bound, a 1-byte dynamic-table
+// reference can expand to a huge entry — the size check that used to run
+// only after the whole section decoded let the expanded fields occupy
+// memory first (a decompression bomb). Applied when no explicit
+// SETTINGS_MAX_FIELD_SECTION_SIZE applies; 0 means "no decoder-side bound".
+static constexpr uint64_t kDefaultQpackDecodeSectionLimit = 64 * 1024;  // 64 KiB
+
 // RFC 9114 §7.2.4: a SETTINGS frame carries only a small, fixed set of
 // parameters. Bound the number of entries so a malicious peer cannot pin CPU
 // here by sending an arbitrarily long SETTINGS frame (DoS hardening).

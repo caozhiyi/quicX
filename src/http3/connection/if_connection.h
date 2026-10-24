@@ -158,7 +158,7 @@ protected:
     // handle error
     virtual void HandleError(uint64_t stream_id, uint32_t error_code) = 0;
     // handle settings
-    virtual void HandleSettings(const std::unordered_map<uint16_t, uint64_t>& settings);
+    virtual void HandleSettings(const std::unordered_map<uint64_t, uint64_t>& settings);
 
     /**
      * @brief Common HandleStream() prefix shared by client and server.
@@ -253,7 +253,7 @@ protected:
      */
     virtual bool HasInFlightRequests() const;
 
-    static const std::unordered_map<uint16_t, uint64_t> AdaptSettings(const Http3Settings& settings);
+    static const std::unordered_map<uint64_t, uint64_t> AdaptSettings(const Http3Settings& settings);
 
     /**
      * @brief Check if peer SETTINGS has been received
@@ -295,7 +295,7 @@ protected:
 
     // Build a settings handler that forwards to IConnection::HandleSettings
     // through a weak_ptr<IConnection>.
-    std::function<void(const std::unordered_map<uint16_t, uint64_t>&)> MakeSettingsHandler();
+    std::function<void(const std::unordered_map<uint64_t, uint64_t>&)> MakeSettingsHandler();
 
     // Build a GOAWAY handler that forwards to IConnection::HandleGoaway
     // through a weak_ptr<IConnection>.
@@ -334,7 +334,15 @@ protected:
     std::string unique_id_;
     std::shared_ptr<QpackBlockedRegistry> blocked_registry_;
     std::function<void(const std::string& unique_id, uint32_t error_code)> error_handler_;
-    std::unordered_map<uint16_t, uint64_t> settings_;
+    // RFC 9114 §7.2.4 settings are per-direction declarations. local_settings_
+    // is what WE advertise on the wire (encoded into our SETTINGS frame);
+    // peer_settings_ is what the PEER advertised (decoded from its SETTINGS).
+    // The old single settings_ map conflated both: when the peer omitted
+    // QPACK_MAX_TABLE_CAPACITY its default is 0, but the merged map still
+    // carried OUR value, so the encoder used a dynamic table the peer never
+    // allowed (P1-H3).
+    std::unordered_map<uint64_t, uint64_t> local_settings_;
+    std::unordered_map<uint64_t, uint64_t> peer_settings_;
     std::unordered_map<uint64_t, std::shared_ptr<IStream>> streams_;
 
     // Number of streams currently pending stream-type identification (i.e.

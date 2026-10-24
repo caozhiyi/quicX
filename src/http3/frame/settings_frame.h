@@ -15,9 +15,9 @@ public:
         IFrame(FrameType::kSettings),
         length_(0) {}
 
-    const std::unordered_map<uint16_t, uint64_t>& GetSettings() const { return settings_; }
-    void SetSetting(uint16_t id, uint64_t value) { settings_[id] = value; }
-    bool GetSetting(uint16_t id, uint64_t& value);
+    const std::unordered_map<uint64_t, uint64_t>& GetSettings() const { return settings_; }
+    void SetSetting(uint64_t id, uint64_t value) { settings_[id] = value; }
+    bool GetSetting(uint64_t id, uint64_t& value);
 
     bool Encode(std::shared_ptr<common::IBuffer> buffer) override;
     DecodeResult Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type = false) override;
@@ -26,7 +26,7 @@ public:
 
 private:
     uint64_t length_;
-    std::unordered_map<uint16_t, uint64_t> settings_;
+    std::unordered_map<uint64_t, uint64_t> settings_;
 };
 
 }  // namespace http3
