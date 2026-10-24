@@ -29,8 +29,8 @@ public:
         last_sent_string_ = data;
         return data.size();
     }
-    virtual int Recv(std::vector<uint8_t>& data, size_t max_size = 4096) override { return 0; }
-    virtual int Recv(std::string& data, size_t max_size = 4096) override { return 0; }
+    virtual int Recv(std::vector<uint8_t>& /*data*/, size_t /*max_size*/ = 4096) override { return 0; }
+    virtual int Recv(std::string& /*data*/, size_t /*max_size*/ = 4096) override { return 0; }
     virtual void Close() override { closed_ = true; }
     virtual bool IsValid() const override { return !closed_; }
     virtual std::string GetRemoteAddress() const override { return "127.0.0.1"; }

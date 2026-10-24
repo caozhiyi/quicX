@@ -96,23 +96,23 @@ public:
         write_called_(false),
         cleanup_called_(false) {}
 
-    virtual bool InitializeConnection(std::shared_ptr<ITcpSocket> socket) override {
+    virtual bool InitializeConnection(std::shared_ptr<ITcpSocket> /*socket*/) override {
         init_called_ = true;
         return true;
     }
 
-    virtual int ReadData(std::shared_ptr<ITcpSocket> socket, std::vector<uint8_t>& data) override {
+    virtual int ReadData(std::shared_ptr<ITcpSocket> /*socket*/, std::vector<uint8_t>& data) override {
         read_called_ = true;
         data = {0x48, 0x54, 0x54, 0x50};  // "HTTP"
         return data.size();
     }
 
-    virtual int WriteData(std::shared_ptr<ITcpSocket> socket, std::vector<uint8_t>& data) override {
+    virtual int WriteData(std::shared_ptr<ITcpSocket> /*socket*/, std::vector<uint8_t>& data) override {
         write_called_ = true;
         return data.size();
     }
 
-    virtual void CleanupConnection(std::shared_ptr<ITcpSocket> socket) override { cleanup_called_ = true; }
+    virtual void CleanupConnection(std::shared_ptr<ITcpSocket> /*socket*/) override { cleanup_called_ = true; }
 
     virtual std::string GetType() const override { return "TEST"; }
 
