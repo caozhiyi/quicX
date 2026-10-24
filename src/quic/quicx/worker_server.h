@@ -10,6 +10,7 @@
 #include "quic/connection/retry_token_manager.h"
 #include "quic/quicx/connection_rate_monitor.h"
 #include "quic/quicx/ip_rate_limiter.h"
+#include "quic/quicx/per_ip_connection_counter.h"
 #include "quic/quicx/worker.h"
 #include "quic/udp/if_sender.h"
 
@@ -22,7 +23,8 @@ public:
     ServerWorker(const QuicServerConfig& config, std::shared_ptr<TLSCtx> ctx, std::shared_ptr<ISender> sender,
         const QuicTransportParams& params, connection_state_callback connection_handler,
         std::shared_ptr<common::IEventLoop> event_loop,
-        std::shared_ptr<RetryTokenManager> shared_retry_token_manager = nullptr);
+        std::shared_ptr<RetryTokenManager> shared_retry_token_manager = nullptr,
+        std::shared_ptr<IPRateLimiter> shared_ip_limiter = nullptr);
     virtual ~ServerWorker();
 
     virtual bool InnerHandlePacket(PacketParseResult& packet_info) override;
@@ -131,7 +133,11 @@ private:
     uint32_t max_connections_per_ip_;
 
     /** Live connection count per source IP, and each connection's source IP. */
-    std::unordered_map<std::string, uint32_t> ip_conn_count_;
+    // P0-S10: per-IP live counts live in the process-wide
+    // PerIpConnectionCounter (see worker_server.cpp); the per-worker map used
+    // to multiply the operator's limit by the worker count. This map only
+    // remembers which IP each of THIS worker's connections came from, so
+    // release stays a local lookup.
     std::unordered_map<IConnection*, std::string> conn_source_ip_;
 
     /** Retry policy configuration */
