@@ -77,7 +77,11 @@ void EventLoop::AssertInLoopThread() {
 }
 
 int EventLoop::Wait() {
-    uint64_t now = UTCTimeMsec();
+    // Timer-engine clock base. MUST be the monotonic clock, consistently with
+    // every other Arm/Run/Rearm below: mixing the wall clock in here means an
+    // NTP step or VM pause makes "deadline - now" a huge unsigned value and
+    // timers never fire (or all fire at once).
+    uint64_t now = MonotonicTimeMsec();
     timer_core_->Run(now);
 
     int32_t next_ms = timer_core_->MinTime(now);
@@ -119,12 +123,12 @@ int EventLoop::Wait() {
     // (TimingWheelTimer cache corruption hiding short timers behind 10 s
     // idle timers). Cheap (one extra UTCTimeMsec call + one branch) and
     // invaluable if the symptom ever recurs from another root cause.
-    uint64_t enter_wait_ms = UTCTimeMsec();
+    uint64_t enter_wait_ms = MonotonicTimeMsec();
 
     int n = driver_->Wait(events_, timeout_ms);
 
     if (timeout_ms >= 0) {
-        int64_t blocked_ms = static_cast<int64_t>(UTCTimeMsec()) - static_cast<int64_t>(enter_wait_ms);
+        int64_t blocked_ms = static_cast<int64_t>(MonotonicTimeMsec()) - static_cast<int64_t>(enter_wait_ms);
         if (blocked_ms > timeout_ms + 100) {
             LOG_ERROR(
                 "EventLoop::Wait: driver overran timeout (blocked=%lldms, "
@@ -149,7 +153,7 @@ int EventLoop::Wait() {
     // only when prompted by I/O (e.g. unit tests, idle servers) it can be
     // delayed indefinitely. This was part of the same family of bugs as
     // the AddTimer-Wakeup() issue fixed above.
-    timer_core_->Run(UTCTimeMsec());
+    timer_core_->Run(MonotonicTimeMsec());
 
     // handle events
     for (int i = 0; i < n; i++) {
@@ -165,19 +169,27 @@ int EventLoop::Wait() {
             fd_to_handler_.erase(it);
             continue;
         }
-        switch (ev.type) {
-            case EventType::ET_READ:
+        // EventType values are bit flags (ET_READ|ET_WRITE|ET_ERROR|ET_CLOSE),
+        // and the drivers legitimately produce combinations: EPOLLIN|EPOLLOUT,
+        // EPOLLERR|EPOLLIN, EPOLLHUP|EPOLLERR... The old switch(ev.type) only
+        // matched exact single-bit values and silently dropped every combined
+        // value. On a level-triggered epoll that left the event permanently
+        // ready with no handler invoked — a busy Wait() loop at 100% CPU.
+        // Dispatch by bit test instead: error/hup take precedence (the fd is
+        // dead; handlers close and RemoveFd there), otherwise both readable
+        // and writable are delivered.
+        int32_t t = static_cast<int32_t>(ev.type);
+        if (t & static_cast<int32_t>(EventType::ET_ERROR)) {
+            handler->OnError(ev.fd);
+        } else if (t & static_cast<int32_t>(EventType::ET_CLOSE)) {
+            handler->OnClose(ev.fd);
+        } else {
+            if (t & static_cast<int32_t>(EventType::ET_READ)) {
                 handler->OnRead(ev.fd);
-                break;
-            case EventType::ET_WRITE:
+            }
+            if (t & static_cast<int32_t>(EventType::ET_WRITE)) {
                 handler->OnWrite(ev.fd);
-                break;
-            case EventType::ET_ERROR:
-                handler->OnError(ev.fd);
-                break;
-            case EventType::ET_CLOSE:
-                handler->OnClose(ev.fd);
-                break;
+            }
         }
     }
 
@@ -292,7 +304,7 @@ Timer EventLoop::AddTimer(std::weak_ptr<void> owner, std::function<void()> cb, u
     AssertInLoopThread();
     uint32_t gen = 0;
     uint32_t index = timer_core_->Arm(
-        std::move(cb), std::move(owner), /*has_owner=*/true, delay_ms, /*interval_ms=*/0, UTCTimeMsec(), gen);
+        std::move(cb), std::move(owner), /*has_owner=*/true, delay_ms, /*interval_ms=*/0, MonotonicTimeMsec(), gen);
     if (index == TimerCore::kNoEntry) {
         LOG_ERROR("EventLoop::AddTimer: timer slab exhausted");
         return Timer();
@@ -321,7 +333,7 @@ Timer EventLoop::AddRepeatTimer(std::weak_ptr<void> owner, std::function<void()>
     }
     uint32_t gen = 0;
     uint32_t index = timer_core_->Arm(
-        std::move(cb), std::move(owner), /*has_owner=*/true, interval_ms, interval_ms, UTCTimeMsec(), gen);
+        std::move(cb), std::move(owner), /*has_owner=*/true, interval_ms, interval_ms, MonotonicTimeMsec(), gen);
     if (index == TimerCore::kNoEntry) {
         LOG_ERROR("EventLoop::AddRepeatTimer: timer slab exhausted");
         return Timer();
@@ -332,7 +344,7 @@ Timer EventLoop::AddRepeatTimer(std::weak_ptr<void> owner, std::function<void()>
 void EventLoop::PostDelayed(std::function<void()> cb, uint32_t delay_ms) {
     AssertInLoopThread();
     // No handle, hence no slab entry and nothing for the caller to keep alive.
-    timer_core_->ArmDetached(std::move(cb), delay_ms, UTCTimeMsec());
+    timer_core_->ArmDetached(std::move(cb), delay_ms, MonotonicTimeMsec());
 }
 
 void EventLoop::PostTask(std::function<void()> fn) {

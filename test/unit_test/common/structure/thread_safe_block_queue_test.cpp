@@ -165,7 +165,7 @@ TEST(ThreadSafeBlockQueueTest, thread_safety_multiple_producers) {
     // Consumer thread
     std::thread consumer([&]() {
         while (total_received.load() < 100) {
-            int value = queue.Pop();
+            queue.Pop();
             total_received.fetch_add(1);
         }
     });

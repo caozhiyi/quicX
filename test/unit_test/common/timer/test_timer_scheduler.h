@@ -30,7 +30,7 @@ namespace common {
 class TestTimerScheduler: public ITimerScheduler {
 public:
     TestTimerScheduler():
-        now_(UTCTimeMsec()) {}
+        now_(MonotonicTimeMsec()) {}
 
     Timer AddTimer(std::weak_ptr<void> owner, std::function<void()> cb, uint32_t delay_ms) override {
         ++arm_count_;
@@ -72,7 +72,10 @@ public:
     int32_t MinTime() { return core_->MinTime(Now()); }
 
     uint64_t Now() const {
-        uint64_t real = UTCTimeMsec();
+        // Monotonic, matching the production EventLoop clock domain (see
+        // EventLoop::Wait/AddTimer). Mixing wall clock here would compare
+        // deadlines from different epochs inside TimerCore.
+        uint64_t real = MonotonicTimeMsec();
         return real > now_ ? real : now_;
     }
 

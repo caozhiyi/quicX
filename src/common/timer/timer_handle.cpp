@@ -78,7 +78,9 @@ bool Timer::Rearm(uint32_t delay_ms, uint64_t now) noexcept {
     }
     // Rearm reuses the same slot and generation, so the handle stays valid and
     // keeps referring to the timer it already owned. Do NOT detach here.
-    return core->Rearm(index_, gen_, delay_ms, now != 0 ? now : UTCTimeMsec());
+    // Default now: monotonic, matching the EventLoop clock domain the slot was
+    // armed in (see EventLoop::Wait/AddTimer).
+    return core->Rearm(index_, gen_, delay_ms, now != 0 ? now : MonotonicTimeMsec());
 }
 
 }  // namespace common

@@ -194,7 +194,7 @@ TEST(MultiBlockBufferTest, WriteRawDataAllocatesMultipleChunks) {
     EXPECT_EQ(payload.size(), buffer.GetDataLength());
 
     std::vector<uint32_t> segment_lengths;
-    buffer.VisitData([&](uint8_t* data, uint32_t len) {
+    buffer.VisitData([&](uint8_t* /*data*/, uint32_t len) {
         segment_lengths.push_back(len);
         return true;
     });
@@ -898,9 +898,9 @@ TEST(MultiBlockBufferTest, GetWritableSpanWithLength) {
     auto span1 = buffer.GetWritableSpan(10);
     EXPECT_GE(span1.GetLength(), 10u);
 
-    // Request more than available
-    auto span2 = buffer.GetWritableSpan(1000);
-    // May return 0 or available space depending on implementation
+    // Request more than available: may return 0 or available space depending
+    // on implementation — just exercise the call, no assertion on the length.
+    buffer.GetWritableSpan(1000);
 }
 
 // Test: GetChunk()
