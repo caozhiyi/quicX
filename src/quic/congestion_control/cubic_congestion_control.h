@@ -32,6 +32,10 @@ public:
     void OnPacketsDiscarded(uint64_t discarded_bytes) override {
         bytes_in_flight_ = (bytes_in_flight_ > discarded_bytes) ? bytes_in_flight_ - discarded_bytes : 0;
     }
+
+    // RFC 9002 §7.6: persistent congestion — collapse cwnd to the minimum
+    // window, clear the recovery period and re-enter slow start.
+    void OnPersistentCongestion() override;
     uint64_t GetPacingRateBytesPerSec() const override;
     uint64_t NextSendTime(uint64_t now) const override;
 

@@ -113,6 +113,30 @@ void RenoCongestionControl::OnPacketLost(const LossEvent& ev) {
     UpdatePacingRate();
 }
 
+void RenoCongestionControl::OnPersistentCongestion() {
+    // RFC 9002 §7.6: cwnd → kMinimumWindow, congestion_recovery_start_time
+    // cleared (Appendix B.8), and §7.3.1 re-enters slow start (the only way
+    // cwnd ends up below ssthresh). ssthresh keeps its last value.
+    uint64_t old_cwnd = cwnd_bytes_;
+    cwnd_bytes_ = cfg_.min_cwnd_bytes;
+    in_recovery_ = false;
+    recovery_start_time_ = 0;
+    in_slow_start_ = true;
+
+    if (qlog_trace_) {
+        common::CongestionStateUpdatedData data;
+        data.old_state = "recovery";
+        data.new_state = "slow_start";
+        QLOG_CONGESTION_STATE_UPDATED(qlog_trace_, data);
+    }
+
+    LOG_WARN("RenoCongestionControl::OnPersistentCongestion: cwnd: %llu->%llu (min window), re-entering slow start",
+        old_cwnd, cwnd_bytes_);
+
+    Metrics::GaugeSet(common::MetricsStd::CongestionWindowBytes, cwnd_bytes_);
+    UpdatePacingRate();
+}
+
 void RenoCongestionControl::OnRoundTripSample(uint64_t latest_rtt, uint64_t ack_delay) {
     (void)ack_delay;
     if (srtt_us_ == 0) {

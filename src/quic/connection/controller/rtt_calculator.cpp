@@ -50,6 +50,7 @@ bool RttCalculator::UpdateRtt(uint64_t send_time, uint64_t now, uint64_t ack_del
         min_rtt_.store(latest_rtt, std::memory_order_relaxed);
         smoothed_rtt_.store(latest_rtt, std::memory_order_relaxed);
         rtt_var_.store(latest_rtt >> 1, std::memory_order_relaxed);
+        first_rtt_sample_time_.store(now, std::memory_order_relaxed);
 
     } else {
         uint32_t cur_min = min_rtt_.load(std::memory_order_relaxed);
@@ -95,6 +96,7 @@ void RttCalculator::Reset() {
     min_rtt_.store(std::numeric_limits<uint32_t>::max(), std::memory_order_relaxed);
 
     last_update_time_.store(0, std::memory_order_relaxed);
+    first_rtt_sample_time_.store(0, std::memory_order_relaxed);
 }
 
 uint32_t RttCalculator::GetPTOInterval(uint32_t max_ack_delay) {

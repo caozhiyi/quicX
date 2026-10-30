@@ -33,6 +33,16 @@ public:
     void OnPacketsDiscarded(uint64_t discarded_bytes) override {
         bytes_in_flight_ = (bytes_in_flight_ > discarded_bytes) ? bytes_in_flight_ - discarded_bytes : 0;
     }
+
+    // RFC 9002 §7.6 as applied to a rate-based controller: after a
+    // persistent-congestion blackout the path model is void; clamp the
+    // in-flight cap to the minimum window so recovery does not dump a full
+    // BDP into a still-congested path. cwnd is re-derived from the BDP model
+    // by subsequent ACKs.
+    void OnPersistentCongestion() override {
+        cwnd_bytes_ = cfg_.min_cwnd_bytes;
+        if (pacer_) pacer_->OnPacingRateUpdated(GetPacingRateBytesPerSec());
+    }
     uint64_t GetPacingRateBytesPerSec() const override;
     uint64_t NextSendTime(uint64_t now) const override;
 

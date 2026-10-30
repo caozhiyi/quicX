@@ -79,9 +79,9 @@ void RecvControl::OnPacketRecv(uint64_t time, std::shared_ptr<IPacket> packet) {
     // starving the application-space ACK until the peer's PTO retransmitted
     // the whole response (duplicate data+FIN delivery → double response
     // callback in HTTP/3).
-    wait_ack_packet_numbers_[ns].insert(pkt_num);
+    recv_ranges_[ns].Insert(pkt_num);
     if (is_ack_eliciting) {
-        wait_ack_eliciting_[ns].insert(pkt_num);
+        unreported_eliciting_[ns].Insert(pkt_num);
         // A genuinely ack-eliciting packet resets the bounded-reply budget:
         // normal traffic (peer retransmissions, probes) means the peer is
         // making progress and future ACK-only packets deserve fresh replies.
@@ -142,8 +142,8 @@ void RecvControl::OnPacketRecv(uint64_t time, std::shared_ptr<IPacket> packet) {
         LOG_DEBUG("RecvControl::OnPacketRecv: packet %llu is not ack-eliciting, tracking in ranges only", pkt_num);
         return;
     }
-    LOG_DEBUG("RecvControl::OnPacketRecv: added packet %llu to ACK queue, ns=%d, queue size=%zu", pkt_num, ns,
-        wait_ack_packet_numbers_[ns].size());
+    LOG_DEBUG("RecvControl::OnPacketRecv: added packet %llu to ACK queue, ns=%d, unreported eliciting=%zu", pkt_num,
+        ns, unreported_eliciting_[ns].Size());
 
     // RFC 9000: Determine if immediate ACK is required.
     //
@@ -289,53 +289,27 @@ std::shared_ptr<IFrame> RecvControl::MayGenerateAckFrame(uint64_t now, PacketNum
     // max_ack_delay_ timer, or an OoO/gap trigger from a new arrival.
     ack_due_[ns] = false;
 
-    // Build ACK ranges from contiguous runs (descending by packet number)
-    auto& nums = wait_ack_packet_numbers_[ns];
-    std::vector<uint64_t> acked_packets;  // Track packets included in this ACK frame
-
-    // Limit number of ranges to prevent oversized ACK frames
-    // RFC 9000 doesn't specify a hard limit, but we need to fit in MTU
-    // 64 ranges is a safe upper bound (approx 64 * 16 bytes = 1KB)
-    if (nums.empty()) {
+    // Build ACK ranges from the received-range set: the kMaxAckRanges LARGEST
+    // ranges, descending (P1-P1: no per-packet set walk anymore).
+    //
+    // P0-C3 (RFC 9000 §13.2.3): reporting does NOT consume. recv_ranges_
+    // keeps everything until OnAckOfAck() learns the peer confirmed our ACK
+    // frame, so a lost ACK frame simply gets re-reported by the next emitted
+    // one instead of forcing the peer's loss detection to retransmit data it
+    // already sent.
+    auto& ranges = recv_ranges_[ns];
+    if (ranges.Empty()) {
         return nullptr;
     }
     Metrics::CounterInc(common::MetricsStd::DiagAckGenEmitted);
-    Metrics::CounterInc(common::MetricsStd::DiagAckQueueDepth, nums.size());
+    Metrics::CounterInc(common::MetricsStd::DiagAckQueueDepth, ranges.RangeCount());
 
-    // Collect runs as [high, low]
-    std::vector<std::pair<uint64_t, uint64_t>> runs;
-    auto rit = nums.rbegin();
-    uint64_t run_high = *rit;
-    uint64_t run_low = run_high;
-    acked_packets.push_back(*rit);
-    ++rit;
-
-    for (; rit != nums.rend(); ++rit) {
-        uint64_t pn = *rit;
-        if (pn + 1 == run_low) {
-            // still contiguous downward
-            run_low = pn;
-            acked_packets.push_back(pn);
-        } else {
-            // close current run and start a new one
-            runs.emplace_back(run_high, run_low);
-
-            if (runs.size() >= kMaxAckRanges) {
-                // Stop collecting ranges if we hit the limit
-                // The remaining packets will be ACKed in the next frame
-                LOG_WARN("RecvControl::MayGenerateAckFrame: hit max ACK ranges limit (%u), deferring remaining ACKs",
-                    kMaxAckRanges);
-                break;
-            }
-
-            run_high = pn;
-            run_low = pn;
-            acked_packets.push_back(pn);
-        }
-    }
-    // push last run if we haven't hit the limit
-    if (runs.size() < kMaxAckRanges) {
-        runs.emplace_back(run_high, run_low);
+    std::vector<std::pair<uint64_t, uint64_t>> runs = ranges.LargestRanges(kMaxAckRanges);  // (hi, lo) pairs
+    if (ranges.RangeCount() > runs.size()) {
+        // Stop collecting ranges if we hit the limit
+        // The remaining packets will be ACKed in the next frame
+        LOG_WARN("RecvControl::MayGenerateAckFrame: hit max ACK ranges limit (%u), deferring remaining ACKs",
+            kMaxAckRanges);
     }
 
     // Generate ACK or ACK_ECN frame based on ECN enable
@@ -434,19 +408,23 @@ std::shared_ptr<IFrame> RecvControl::MayGenerateAckFrame(uint64_t now, PacketNum
         frame->AddAckRange(gap, range_len);
     }
 
-    // Remove ONLY the packets that were actually included in this ACK frame
-    for (uint64_t pn : acked_packets) {
-        wait_ack_packet_numbers_[ns].erase(pn);
-        wait_ack_eliciting_[ns].erase(pn);
+    // P0-C3: clear the ack-eliciting OBLIGATION for exactly the ranges this
+    // frame reported. recv_ranges_ itself is untouched (re-report semantics
+    // above); under kMaxAckRanges truncation the older ranges keep their
+    // obligation and the space stays ack-due below, so the next frame
+    // continues draining them.
+    for (const auto& run : runs) {
+        unreported_eliciting_[ns].EraseRange(run.second, run.first);  // (lo, hi)
     }
 
-    LOG_DEBUG("RecvControl::MayGenerateAckFrame: generated ACK for %zu packets, remaining in queue: %zu",
-        acked_packets.size(), wait_ack_packet_numbers_[ns].size());
+    LOG_DEBUG("RecvControl::MayGenerateAckFrame: generated ACK with %zu ranges (truncated: %d), unreported "
+              "eliciting left: %zu",
+        runs.size(), ranges.RangeCount() > runs.size() ? 1 : 0, unreported_eliciting_[ns].Size());
 
-    // PERF FIX (P0): If kMaxAckRanges truncated us and packets remain
-    // unacked, re-mark the space as ack-due so the next TrySend() can
-    // continue draining the queue without waiting for a fresh trigger.
-    if (!wait_ack_packet_numbers_[ns].empty()) {
+    // PERF FIX (P0) + P0-C3: if truncation left obligations behind, re-mark
+    // the space as ack-due so the next TrySend() can continue draining them
+    // without waiting for a fresh trigger.
+    if (!unreported_eliciting_[ns].Empty()) {
         ack_due_[ns] = true;
     }
 
@@ -489,9 +467,6 @@ bool RecvControl::ShouldSendImmediateAck(PacketNumberSpace ns, uint64_t pkt_num,
         return true;
     }
 
-    auto& acked_packets = wait_ack_packet_numbers_[ns];
-    (void)acked_packets;
-
     // RFC 9000: Immediate ACK if packet number < previously received packet (out of order)
     if (pkt_num < pkt_num_largest_recvd_[ns]) {
         LOG_DEBUG("ShouldSendImmediateAck: Out-of-order (pkt=%llu < largest=%llu), immediate ACK", pkt_num,
@@ -521,7 +496,7 @@ bool RecvControl::ShouldSendImmediateAck(PacketNumberSpace ns, uint64_t pkt_num,
     // Count ACK-ELICITING packets only: ACK-only packets tracked in the ranges
     // do not carry an ACK obligation (RFC 9000 §13.2) and must not inflate the
     // trigger (see OnPacketRecv).
-    if (wait_ack_eliciting_[ns].size() >= kAckThreshold) {
+    if (unreported_eliciting_[ns].Size() >= kAckThreshold) {
         LOG_DEBUG("ShouldSendImmediateAck: %zu+ ack-eliciting packets in queue, sending ACK", kAckThreshold);
         Metrics::CounterInc(common::MetricsStd::DiagRecvAckThreshold);
         return true;
@@ -532,8 +507,8 @@ bool RecvControl::ShouldSendImmediateAck(PacketNumberSpace ns, uint64_t pkt_num,
 
 // RFC 9000 Section 4.10: Discard packet number space state
 void RecvControl::DiscardPacketNumberSpace(PacketNumberSpace ns) {
-    wait_ack_packet_numbers_[ns].clear();
-    wait_ack_eliciting_[ns].clear();
+    recv_ranges_[ns].Clear();
+    unreported_eliciting_[ns].Clear();
     ack_only_replies_[ns] = 0;
     ack_only_seq_[ns] = 0;
     pkt_num_largest_recvd_[ns] = 0;
@@ -554,7 +529,12 @@ void RecvControl::DiscardPacketNumberSpace(PacketNumberSpace ns) {
 //   - Application space: ack_due_ is set by an immediate-ACK trigger
 //     (threshold / OoO / gap / ECN-CE) or by the max_ack_delay_ timer.
 bool RecvControl::ShouldSendAckNow(PacketNumberSpace ns) const {
-    if (wait_ack_packet_numbers_[ns].empty()) {
+    // P0-C3: recv_ranges_ also holds already-reported (not yet confirmed)
+    // ranges, so "has something to say" is not by itself a trigger — the
+    // per-space gates below are. Reported ranges merely ride along whenever
+    // a frame IS emitted. (recv_ranges_ empty means nothing was ever received
+    // in this space, which is the old wait_ack_packet_numbers_ empty check.)
+    if (recv_ranges_[ns].Empty()) {
         return false;
     }
     // RFC 9000 §13.2.1: Initial and Handshake packets MUST be ACKed
@@ -566,9 +546,23 @@ bool RecvControl::ShouldSendAckNow(PacketNumberSpace ns) const {
     // integration regression: double response callback via full response
     // retransmission).
     if (ns == kInitialNumberSpace || ns == kHandshakeNumberSpace) {
-        return !wait_ack_eliciting_[ns].empty();
+        return !unreported_eliciting_[ns].Empty();
     }
     return ack_due_[ns];
+}
+
+// P0-C3 (RFC 9000 §13.2.3): the peer acknowledged a packet of ours that
+// carried an ACK frame, so it has received every range that frame reported.
+// Prune everything up to that frame's Largest Acknowledged from both the
+// re-report set and (defensively) the obligation set. Ranges above it may
+// still be unconfirmed and keep being re-reported.
+void RecvControl::OnAckOfAck(PacketNumberSpace ns, uint64_t largest_acked) {
+    if (recv_ranges_[ns].Empty() && unreported_eliciting_[ns].Empty()) {
+        return;
+    }
+    LOG_DEBUG("RecvControl::OnAckOfAck: ns=%d pruning ranges <= %llu", ns, (unsigned long long)largest_acked);
+    recv_ranges_[ns].EraseBelowOrEqual(largest_acked);
+    unreported_eliciting_[ns].EraseBelowOrEqual(largest_acked);
 }
 
 }  // namespace quic

@@ -277,6 +277,11 @@ static constexpr uint32_t kPacketThreshold = 3;
 static constexpr uint32_t kTimeThresholdNum = 9;
 static constexpr uint32_t kTimeThresholdDen = 8;
 
+// RFC 9002 §7.6.1: persistent congestion duration, expressed as a multiplier
+// of the base PTO interval (srtt + max(4*rttvar, kGranularity) + max_ack_delay).
+// RECOMMENDED 3, approximately equivalent to a TCP RTO after two TLPs.
+static constexpr uint32_t kPersistentCongestionThreshold = 3;
+
 // ============================================================================
 // ACK Policy
 // ============================================================================

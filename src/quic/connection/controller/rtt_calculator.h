@@ -43,7 +43,19 @@ public:
     // RFC 9002 Section 6.2: PTO with exponential backoff
     uint32_t GetPTOWithBackoff(uint32_t max_ack_delay);
     void OnPTOExpired();
+
+    // RFC 9002 §7.6.2: time of the first RTT sample (same ms clock the RTT
+    // updates use). Persistent congestion MUST NOT be established from
+    // packets sent before any RTT sample existed (pre-sample PTO is derived
+    // from the initial RTT and can be far off). 0 = no sample yet.
+    uint64_t GetFirstRttSampleTime() const { return first_rtt_sample_time_.load(std::memory_order_relaxed); }
     void OnPacketAcked();
+    // RFC 9002 A.11 OnPacketNumberSpaceDiscarded: "pto_count = 0" — dropping
+    // Initial/Handshake keys is forward progress; the backoff accumulated
+    // while probing those spaces must not tax the surviving space.
+    void OnPacketNumberSpaceDiscarded() {
+        pto_count_.store(0, std::memory_order_relaxed);
+    }
     uint32_t GetConsecutivePTOCount() const { return consecutive_pto_count_.load(std::memory_order_relaxed); }
 
     // RFC 9000 §4.1.2: the handshake is confirmed once the peer acknowledges a
@@ -65,6 +77,7 @@ private:
     std::atomic<uint32_t> smoothed_rtt_{0};
 
     std::atomic<uint64_t> last_update_time_{0};
+    std::atomic<uint64_t> first_rtt_sample_time_{0};
 
     // RFC 9002: PTO backoff state
     std::atomic<uint32_t> pto_count_{0};              // Current backoff exponent

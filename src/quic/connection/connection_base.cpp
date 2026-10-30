@@ -102,6 +102,13 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_
         OnFrameReady(ping);
     });
 
+    // P0-C3 (RFC 9000 §13.2.3): the peer acknowledged one of our packets
+    // carrying an ACK frame — tell the receiver side its ACK frame arrived so
+    // it stops re-reporting the confirmed ranges (and its range set stays
+    // bounded on long-lived connections).
+    send_manager_.GetSendControl().SetAckOfAckCallback(
+        [this](PacketNumberSpace ns, uint64_t largest_acked) { recv_control_.OnAckOfAck(ns, largest_acked); });
+
     // RFC 9002 §6.2.4 (Bug-19): post-handshake PTO probe.
     // When PTO fires after the handshake is complete, queue a PING in 1-RTT
     // (Application) space *in addition* to retransmitting the oldest unacked
@@ -2078,7 +2085,16 @@ bool BaseConnection::TrySendRetransmit() {
     // deadlock this whole path used to be). Skipped packets are dropped, not
     // re-queued. Mixed 1-RTT packets that also carry STREAM data are NOT
     // skipped: their re-encode is still the STREAM recovery path.
-    if (crypto_level != kApplication &&
+    //
+    // EXCEPTION (longrtt regression, 2026-10-27): PTO-probe entries
+    // (lost_entry.pto_probe) must NOT be dropped. OnLossDetectionTimeout
+    // deliberately fires no frame kLost (PTO is not a loss event), so the
+    // frame-level re-queue never happened — dropping here discards the only
+    // copy of the probe payload and the PTO cycle degrades to a PING (the
+    // "Expected at least 2 ClientHellos. Got: 1" client-mode longrtt wipe:
+    // at 750ms one-way delay the initial PTO fires before the server flight
+    // returns, and the ClientHello was never retransmitted).
+    if (!lost_entry.pto_probe && crypto_level != kApplication &&
         (lost_pkt->GetFrameTypeBit() &
             ~(FrameTypeBit::kCryptoBit | FrameTypeBit::kAckBit | FrameTypeBit::kAckEcnBit |
                 FrameTypeBit::kPaddingBit)) == 0) {
@@ -2191,7 +2207,7 @@ bool BaseConnection::TrySendRetransmit() {
     // object is renumbered, while the stale key is still derivable from it.
     // Once SetPacketNumber() runs, that entry becomes unreachable by lookup
     // (its key no longer matches the object's PN) yet survives in the table,
-    // and OnPTOTimer() -- which only inspects begin() -- would then keep
+    // and OnLossDetectionTimeout() -- which only inspects begin() -- would then keep
     // landing on it and stop finding anything to retransmit after the first
     // PTO. See SendControl::RemoveStaleUnackedEntry().
     send_control.RemoveStaleUnackedEntry(ns, orig_pn, lost_pkt);

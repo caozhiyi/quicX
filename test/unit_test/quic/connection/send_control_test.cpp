@@ -19,6 +19,7 @@
 #include "quic/frame/ping_frame.h"
 #include "quic/frame/type.h"
 #include "quic/packet/handshake_packet.h"
+#include "quic/packet/init_packet.h"
 #include "quic/packet/packet_number.h"
 #include "quic/packet/rtt_1_packet.h"
 #include "quic/quicx/global_resource.h"
@@ -982,6 +983,40 @@ TEST(CcConfigTest, OverrideRejectedAfterFirstSend) {
 }
 
 }  // namespace cc_config
+
+// G2-S13 [PER-PACKET RETRANSMIT TIMER]: Initial/Handshake-space packets arm
+// an independent retransmit timer at the BASE PTO interval (not the backed-off
+// connection-level PTO). This is the handshake-recovery workhorse the
+// 2026-10-29 bisect found essential: the connection-level PTO backs off
+// exponentially (storm protection) and alone cannot carry a lost ServerHello
+// through sustained 30% loss, while the per-packet cadence re-arms at the
+// same interval on every retransmission (arithmetic, ~750ms).
+TEST(SendControlG2Test, S13_PerPacketTimerDrivesHandshakeRetransmit) {
+    auto timer = std::make_shared<common::TestTimerScheduler>();
+    SendControl sc(timer);
+    auto owner = std::make_shared<int>(42);
+    sc.Bind(owner);
+
+    // One Initial-space CRYPTO packet in flight.
+    auto pkt = std::make_shared<InitPacket>();
+    pkt->SetPacketNumber(1);
+    pkt->GetHeader()->SetPacketNumberLength(PacketNumber::GetPacketNumberLength(1));
+    pkt->AddFrameTypeBit(FrameTypeBit::kCryptoBit);
+    uint64_t now = common::MonotonicTimeMsec();
+    sc.OnPacketSend(now, pkt, 1200);
+
+    // Per-packet retransmit timer + connection-level PTO timer, both armed.
+    EXPECT_EQ(timer->PendingCount(), 2u);
+
+    // Advance ~800ms in real-time-synced steps: the per-packet timer fires
+    // (initial RTT 250ms -> base PTO ~750ms), the handler declares the
+    // packet lost and queues it for retransmission.
+    for (int i = 0; i < 85; ++i) {
+        timer->Advance(10);
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_FALSE(sc.GetLostPacket().empty())
+        << "per-packet retransmit timer must declare the handshake packet lost";}
 
 }  // namespace
 }  // namespace quic

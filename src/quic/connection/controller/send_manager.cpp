@@ -105,6 +105,18 @@ SendOperation SendManager::GetSendOperation() {
 }
 
 void SendManager::EnqueueFrame(std::shared_ptr<IFrame> frame) {
+    // PING dedup. probe_needed_cb_ fires on every PTO cycle and each call
+    // queued one more PING; when the egress round could not drain the queue
+    // (cwnd / amp / send-limited), the backlog piled up and the next
+    // unblocked round emitted them all back-to-back. A PING's whole purpose
+    // is to be ack-eliciting; one queued copy is sufficient.
+    if (frame && frame->GetType() == FrameType::kPing) {
+        for (const auto& f : wait_frame_list_) {
+            if (f && f->GetType() == FrameType::kPing) {
+                return;
+            }
+        }
+    }
     // FIFO (P0-S4): frames leave in generation order. See wait_frame_list_.
     if (wait_frame_list_.size() >= kMaxQueuedFrames) {
         LOG_ERROR("SendManager: frame queue at cap %zu, dropping oldest frame (type:%u)", kMaxQueuedFrames,

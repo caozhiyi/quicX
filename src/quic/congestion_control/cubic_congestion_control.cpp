@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "common/metrics/metrics_std.h"
 #include "common/qlog/qlog.h"
 
 #include "quic/congestion_control/cubic_congestion_control.h"
@@ -217,6 +218,33 @@ void CubicCongestionControl::OnPacketLost(const LossEvent& ev) {
     // Reset HyStart on loss
     ResetHyStart();
 
+    if (pacer_) pacer_->OnPacingRateUpdated(GetPacingRateBytesPerSec());
+}
+
+void CubicCongestionControl::OnPersistentCongestion() {
+    // RFC 9002 §7.6 (+ RFC 9438 §4.7 RTO-style reset): cwnd → kMinimumWindow,
+    // recovery cleared, slow start re-entered with HyStart re-armed and the
+    // CUBIC epoch reset. W_max bookkeeping is kept: slow start will re-reach
+    // it and the cubic probe resumes from a valid epoch.
+    uint64_t old_cwnd = cwnd_bytes_;
+    cwnd_bytes_ = cfg_.min_cwnd_bytes;
+    in_recovery_ = false;
+    recovery_start_time_us_ = 0;
+    in_slow_start_ = true;
+    epoch_start_us_ = 0;
+    ResetHyStart();
+
+    if (qlog_trace_) {
+        common::CongestionStateUpdatedData qlog_data;
+        qlog_data.old_state = "recovery";
+        qlog_data.new_state = "slow_start";
+        QLOG_CONGESTION_STATE_UPDATED(qlog_trace_, qlog_data);
+    }
+
+    LOG_WARN("CubicCongestionControl::OnPersistentCongestion: cwnd: %llu->%llu (min window), re-entering slow start",
+        old_cwnd, cwnd_bytes_);
+
+    Metrics::GaugeSet(common::MetricsStd::CongestionWindowBytes, cwnd_bytes_);
     if (pacer_) pacer_->OnPacingRateUpdated(GetPacingRateBytesPerSec());
 }
 

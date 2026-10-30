@@ -33,6 +33,13 @@ public:
     void OnPacketsDiscarded(uint64_t discarded_bytes) override {
         bytes_in_flight_ = (bytes_in_flight_ > discarded_bytes) ? bytes_in_flight_ - discarded_bytes : 0;
     }
+
+    // RFC 9002 §7.6 (see BBRv1CongestionControl::OnPersistentCongestion):
+    // clamp the in-flight cap; the bandwidth model rebuilds it.
+    void OnPersistentCongestion() override {
+        cwnd_bytes_ = cfg_.min_cwnd_bytes;
+        if (pacer_) pacer_->OnPacingRateUpdated(GetPacingRateBytesPerSec());
+    }
     uint64_t GetPacingRateBytesPerSec() const override;
     uint64_t NextSendTime(uint64_t now) const override;
 

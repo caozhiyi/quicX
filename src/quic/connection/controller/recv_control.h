@@ -3,11 +3,11 @@
 
 #include <functional>
 #include <memory>
-#include <set>
 
 #include "common/timer/if_timer_scheduler.h"
 
 #include "quic/config.h"
+#include "quic/connection/range_set.h"
 #include "quic/connection/transport_param.h"
 #include "quic/packet/if_packet.h"
 #include "quic/packet/type.h"
@@ -55,8 +55,17 @@ public:
     void OnEcnCounters(uint8_t ecn, PacketNumberSpace ns);
     std::shared_ptr<IFrame> MayGenerateAckFrame(uint64_t now, PacketNumberSpace ns, bool ecn_enabled = true);
 
-    // Check if there are packets waiting to be ACKed
-    bool HasPendingAck(PacketNumberSpace ns) const { return !wait_ack_packet_numbers_[ns].empty(); }
+    // P0-C3 (RFC 9000 §13.2.3): called by the connection when a packet WE sent
+    // that carried an ACK frame is itself acknowledged by the peer. The peer
+    // has therefore received every range that frame reported up to its
+    // Largest Acknowledged — stop re-reporting them. `largest_acked` is the
+    // Largest Acknowledged field of OUR ack frame that got confirmed.
+    void OnAckOfAck(PacketNumberSpace ns, uint64_t largest_acked);
+
+    // True when the space still has an unreported ack-eliciting obligation.
+    // Reported-but-unconfirmed ranges stay in recv_ranges_ and are re-reported
+    // (see MayGenerateAckFrame); they do not by themselves make a space due.
+    bool HasPendingAck(PacketNumberSpace ns) const { return !unreported_eliciting_[ns].Empty(); }
 
     // Check whether an ACK frame should be emitted *right now* for `ns`.
     //
@@ -98,13 +107,22 @@ private:
 
     uint64_t pkt_num_largest_recvd_[PacketNumberSpace::kNumberSpaceCount];
     uint64_t largest_recv_time_[PacketNumberSpace::kNumberSpaceCount];
-    std::set<uint64_t> wait_ack_packet_numbers_[PacketNumberSpace::kNumberSpaceCount];
-    // ACK-ELICITING subset of wait_ack_packet_numbers_ — these are the only
-    // packets that carry an ACK obligation (RFC 9000 §13.2). ACK-only packets
-    // are reported in ACK ranges but never make a space "ack due"; keying the
-    // Initial/Handshake MUST-ACK path on the combined set caused an unbounded
-    // ACK-of-ACK ping-pong between two quicx endpoints (2026-09-01).
-    std::set<uint64_t> wait_ack_eliciting_[PacketNumberSpace::kNumberSpaceCount];
+    // P0-C3 (RFC 9000 §13.2.3): the full set of received packet numbers, as
+    // disjoint ranges. Every generated ACK frame re-reports the largest
+    // ranges from this set — reporting does NOT consume. Entries are pruned
+    // only by OnAckOfAck (peer confirmed our ACK frame) or space discard, so
+    // a lost ACK frame is recovered by the next one instead of being
+    // retransmitted by the peer's loss detection. Also fixes P1-P1: one node
+    // per contiguous run instead of one std::set node per packet.
+    RangeSet recv_ranges_[PacketNumberSpace::kNumberSpaceCount];
+    // The ack-eliciting subset that has NOT yet been included in any emitted
+    // ACK frame — these carry the actual ACK obligation (RFC 9000 §13.2).
+    // Cleared for the ranges an emitted frame covered; ranges left out by
+    // kMaxAckRanges truncation keep their obligation for the next frame.
+    // Keying the Initial/Handshake MUST-ACK path on this set (not the full
+    // ranges) prevented the unbounded ACK-of-ACK ping-pong between two quicx
+    // endpoints (2026-09-01).
+    RangeSet unreported_eliciting_[PacketNumberSpace::kNumberSpaceCount];
     // Bounded ACK-of-ACK budget per PN space (see OnPacketRecv): replies to
     // ACK-only packets in Initial/Handshake are the sole recovery channel for
     // peers that only send ACK-only handshake packets after losing their

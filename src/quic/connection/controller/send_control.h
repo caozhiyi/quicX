@@ -1,11 +1,12 @@
 #ifndef QUIC_CONNECTION_CONTROLER_SEND_CONTROL
 #define QUIC_CONNECTION_CONTROLER_SEND_CONTROL
 
+#include <deque>
 #include <functional>
 #include <list>
+#include <map>
 #include <memory>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 #include "common/qlog/event/transport_events.h"
@@ -64,20 +65,11 @@ class SendControl {
 public:
     SendControl(std::shared_ptr<common::ITimerScheduler> scheduler);
     ~SendControl() {
-        // Every timer we own is held by a Timer handle, and ~Timer() cancels, so
-        // the per-packet handles in unacked_packets_ and pto_timer_ are cleaned
-        // up by their own destructors. Keeping the explicit teardown anyway:
-        // ClearRetransmissionData() also settles congestion-control accounting,
-        // and doing it here documents the ordering requirement.
-        //
-        // History: the per-packet retransmit callbacks capture `this`, and before
-        // the P3 work they almost always self-completed inside the ~775 ms initial
-        // PTO window, which hid the fact that nothing cancelled them. Benchmarks
-        // with aggressive initial-RTT overrides (docs/internal/perf_e2e_analysis.md
-        // §6 P3) shortened that window to ~100 ms and turned MultiStream teardown
-        // into heap corruption. Handles make that class of bug structural rather
-        // than a matter of remembering to clean up.
-        pto_timer_.Cancel();
+        // Handles make teardown structural: cancelling loss_detection_timer_
+        // here, and letting the unacked entries' own state die with the table
+        // (no per-packet timers exist anymore), cannot leave an armed callback
+        // behind. ClearRetransmissionData() also settles CC accounting.
+        loss_detection_timer_.Cancel();
         ClearRetransmissionData();
         // Clear callbacks to prevent dangling references
         stream_data_ack_cb_ = nullptr;
@@ -170,6 +162,20 @@ public:
     struct LostPacketEntry {
         std::shared_ptr<IPacket> packet;
         std::vector<StreamDataInfo> stream_data;
+        // True when queued by OnLossDetectionTimeout's PTO probe (RFC 9002
+        // §6.2.2), false when queued by DetectLostPackets (a real loss event).
+        // A PTO probe deliberately does NOT FireFrameDelivery(kLost) — so for
+        // pure-CRYPTO handshake packets (e.g. the ClientHello) the frame-level
+        // re-queue never happened and TrySendRetransmit's pure-CRYPTO drop
+        // would discard the ONLY copy of the probe payload, leaving the PING
+        // fallback as the sole output. The longrtt regression (2026-10-27
+        // interop: "Expected at least 2 ClientHellos. Got: 1", client mode
+        // 0/16): at 750ms delay the initial PTO (~1s) fires before the
+        // server's flight (1.5s RTT) arrives, every probe went out as
+        // PING-only and the ClientHello was never retransmitted. Real-loss
+        // entries keep the drop: their frames were already re-queued
+        // frame-level and re-encoding would double-send the bytes.
+        bool pto_probe = false;
     };
     std::list<LostPacketEntry>& GetLostPacket() { return lost_packets_; }
 
@@ -184,7 +190,7 @@ public:
     // address it again, yet it keeps occupying the table with its timer armed.
     //
     // Three consequences, all observed while debugging handshakeloss:
-    //   1. OnPTOTimer() probes unacked_packets_[ns].begin() only. The stale
+    //   1. OnLossDetectionTimeout() probes unacked_packets_[ns].begin() only. The stale
     //      entry always sorts first (smallest key) and is permanently
     //      is_lost, so after the very first PTO the timer lands on it forever
     //      and silently stops finding anything to retransmit.
@@ -218,6 +224,18 @@ public:
     // Called when PTO fires during handshake but no ACK-eliciting data to retransmit
     using ProbeNeededCallback = std::function<void()>;
     void SetProbeNeededCallback(ProbeNeededCallback callback) { probe_needed_cb_ = callback; }
+
+    // RFC 9002 A.8: the loss detection timer MUST NOT be armed while the
+    // server is blocked by the anti-amplification limit. SendManager injects
+    // the query (it owns AntiAmplificationController.amp_blocked_).
+    void SetAmpBlockedProvider(std::function<bool()> cb) { amp_blocked_cb_ = std::move(cb); }
+
+    // Set callback for ack-of-ack (P0-C3, RFC 9000 §13.2.3): fired when the
+    // peer acknowledges one of OUR packets that carried an ACK frame.
+    // `largest_acked` is the Largest Acknowledged field of that ACK frame;
+    // the receiver side uses it to stop re-reporting confirmed ranges.
+    using AckOfAckCallback = std::function<void(PacketNumberSpace ns, uint64_t largest_acked)>;
+    void SetAckOfAckCallback(AckOfAckCallback callback) { ack_of_ack_cb_ = std::move(callback); }
 
     // Set callback for a protocol violation detected while processing a peer
     // frame — currently only ACK frames (RFC 9000 §19.3.1: an endpoint MUST
@@ -258,13 +276,13 @@ public:
     }
 
     // RFC 9002 §6.2.4 completion guarantee: every PTO cycle MUST put at least
-    // one ack-eliciting packet on the wire. The immediate probe in OnPTOTimer
+    // one ack-eliciting packet on the wire. The immediate probe in OnLossDetectionTimeout
     // only fires when nothing at all is queued for retransmission. When a
     // retransmission IS queued, it may still produce zero bytes: pre-handshake
     // pure-CRYPTO packets are dropped by TrySendRetransmit (frame-level
     // recovery owns them) and their CRYPTO segments may already be acked via a
     // LATER packet's frame delivery — the earlier packets then survive as
-    // zombie unacked entries that every PTO re-queues and re-drops. OnPTOTimer
+    // zombie unacked entries that every PTO re-queues and re-drops. OnLossDetectionTimeout
     // arms this flag in that case; the send round consumes it only if it ends
     // with zero packets emitted, injecting a PING probe then. Any successful
     // ACK-ELICITING send clears the flag (TrackPacketInCongestionControl):
@@ -293,7 +311,7 @@ public:
     // so it MUST be treated as zero when computing PTO. All four PTO
     // callsites in send_control.cpp (OnPacketSend's per-packet timer,
     // OnPacketSend's pto_timer_ rearm, OnPacketAck's handshake-phase rearm,
-    // and OnPTOTimer's post-fire rearm) route through this accessor so the
+    // and OnLossDetectionTimeout's post-fire rearm) route through this accessor so the
     // pre-handshake PTO stays spec-compliant. Returns 0 pre-handshake-complete,
     // max_ack_delay_ afterwards.
     uint32_t GetEffectiveMaxAckDelay() const { return handshake_complete_ ? max_ack_delay_ : 0u; }
@@ -327,6 +345,12 @@ public:
     // RFC 9000 Section 4.10: Discard packet number space state
     void DiscardPacketNumberSpace(PacketNumberSpace ns);
 
+    // RFC 9002 A.8 re-arm entry point. Public for the anti-amplification
+    // unblock path (SendManager::OnCandidatePathBytesReceived, RFC A.6):
+    // while the server was blocked the timer stayed cancelled; fresh budget
+    // re-arms it, and a deadline already in the past fires immediately.
+    void SetLossDetectionTimer();
+
     // Reset Initial packet number to 0 (used for Retry)
     void ResetInitialPacketNumber();
 
@@ -336,38 +360,88 @@ private:
 
     enum class EcnState { kUnknown, kValidated, kFailed };
     std::list<LostPacketEntry> lost_packets_;
+
+    // RFC 9002 §7.6.2: persistent congestion requires that NO packet sent
+    // strictly between the oldest and newest lost packets was acknowledged.
+    // Acked packets leave unacked_packets_, so their send times are kept as
+    // [min,max] anchors: one in-progress range per ACK round (committed to a
+    // bounded deque of the last kMaxAckAnchors rounds in OnPacketAck). An
+    // anchor range intersecting a candidate loss window falsifies the
+    // "everything in between was lost" condition.
+    struct AckSendTimeAnchor {
+        uint64_t min_send_time;
+        uint64_t max_send_time;
+    };
+    std::deque<AckSendTimeAnchor> recent_ack_anchors_;
+    bool round_ack_anchor_valid_ = false;
+    uint64_t round_ack_min_send_time_ = 0;
+    uint64_t round_ack_max_send_time_ = 0;
+
+    // RFC 9002 §7.6: called at the end of a loss round. Declares persistent
+    // congestion when the lost packets (sent after the first RTT sample) span
+    // more than (srtt + max(4*rttvar, 1ms) + max_ack_delay) *
+    // kPersistentCongestionThreshold and nothing sent in between was acked,
+    // then collapses the CC's congestion window to the minimum.
+    void MaybeDeclarePersistentCongestion(const std::vector<uint64_t>& lost_send_times);
+
+    // Callback body for the per-packet retransmit timer (Initial/Handshake
+    // spaces only — see TrackPacketForRetransmission). Declares the packet
+    // lost and feeds lost_packets_; PTO backoff is NOT touched here.
+    std::function<void()> MakeRetransmitTimeoutHandler(
+        const std::shared_ptr<IPacket>& packet, uint32_t pkt_len, PacketNumberSpace ns);
+
+    // One entry per tracked ack-eliciting packet. On top of the single
+    // loss_detection_timer_ (RFC 9002 Appendix A), Initial/Handshake-space
+    // entries additionally carry a PER-PACKET retransmit timer armed at the
+    // base PTO interval (see TrackPacketForRetransmission): under sustained
+    // loss the connection-level PTO backs off exponentially (§6.2.1 storm
+    // protection), which is correct for App space (ACK/PTO-driven recovery)
+    // but starves handshake flight recovery — the 2026-10-29 handshakeloss
+    // bisect: with the per-packet timer removed, the 90-byte ServerHello
+    // retransmission cadence went 750ms→4.5s→… and the connection died on
+    // packet-loss luck; the baseline's arithmetic 750ms cadence (each
+    // retransmission re-arms the base interval) carried the handshake
+    // through the same loss pattern (baseline 3/3 runs clean vs 39/32/11).
+    // The handle is move-only on purpose: losing it cancels.
     struct PacketTimerInfo {
         uint64_t send_time_;
         uint32_t pkt_len_;
-        // Retransmit timer for this packet. Move-only, which is exactly the
-        // point: the previous `common::TimerTask` was a *copy* of the
-        // registration, and cancelling through a copy only worked because the
-        // wheel looked the id up in a side table and shrugged when it was
-        // missing. With a handle there is one owner, here, and losing it cancels.
         common::Timer timer_;
         std::vector<StreamDataInfo> stream_data;  // Stream data contained in this packet
         std::shared_ptr<IPacket> packet;          // Store packet for retransmission
         bool is_lost = false;
 
         PacketTimerInfo() {}
-        PacketTimerInfo(uint64_t t, uint32_t len, common::Timer&& timer):
+        PacketTimerInfo(uint64_t t, uint32_t len):
+            send_time_(t),
+            pkt_len_(len) {}
+        PacketTimerInfo(uint64_t t, uint32_t len, const std::vector<StreamDataInfo>& data):
             send_time_(t),
             pkt_len_(len),
-            timer_(std::move(timer)) {}
+            stream_data(data) {}
         PacketTimerInfo(uint64_t t, uint32_t len, common::Timer&& timer, const std::vector<StreamDataInfo>& data):
             send_time_(t),
             pkt_len_(len),
             timer_(std::move(timer)),
             stream_data(data) {}
-        PacketTimerInfo(uint64_t t, uint32_t len, common::Timer&& timer, const std::vector<StreamDataInfo>& data,
-            std::shared_ptr<IPacket> pkt):
-            send_time_(t),
-            pkt_len_(len),
-            timer_(std::move(timer)),
-            stream_data(data),
-            packet(pkt) {}
     };
-    std::unordered_map<uint64_t, PacketTimerInfo> unacked_packets_[PacketNumberSpace::kNumberSpaceCount];
+    // Ordered by packet number (P0-C4): PNs are allocated monotonically, so
+    // begin() is always the oldest in-flight packet — the one PTO probes and
+    // the time-threshold deadline is computed from. Iteration order is also
+    // the contract behind the early-exit scans in OnLossDetectionTimeout()
+    // and the loss_time_ update in DetectLostPackets(). (Was unordered_map,
+    // where "oldest" was whatever the hash layout served first.)
+    std::map<uint64_t, PacketTimerInfo> unacked_packets_[PacketNumberSpace::kNumberSpaceCount];
+
+    // P0-C3 (RFC 9000 §13.2.3): our_pn -> Largest Acknowledged of the ACK
+    // frame that packet carried (there is at most one per packet). Populated
+    // in OnPacketSend for every packet (ACK-only or piggybacked — both are
+    // confirmed the same way), consumed in AckOnePacket to fire
+    // ack_of_ack_cb_. ACK frames are never retransmitted (RFC 9002 §7.4), so
+    // entries below the peer's latest largest_acked are dropped wholesale in
+    // OnPacketAck — a dropped ACK frame's information is recovered by the
+    // receiver re-reporting ranges, not by resending it.
+    std::map<uint64_t, uint64_t> ack_of_ack_[PacketNumberSpace::kNumberSpaceCount];
 
     // Frame-level delivery tracking (aioquic QuicDeliveryState model). Fires
     // the optional per-frame handler on every frame of the packet for the
@@ -381,9 +455,10 @@ private:
     ProbeNeededCallback probe_needed_cb_;
     ApplicationProbeCallback application_probe_cb_;
     ProtocolViolationCallback protocol_violation_cb_;
+    AckOfAckCallback ack_of_ack_cb_;
     bool handshake_complete_ = false;
     bool skip_initial_for_pto_ = false;
-    // Armed by OnPTOTimer when a retransmission is queued but may not be
+    // Armed by OnLossDetectionTimeout when a retransmission is queued but may not be
     // sendable; see ConsumePendingPtoProbe().
     bool pto_probe_pending_ = false;
 
@@ -432,16 +507,60 @@ private:
     std::weak_ptr<void> life_token_;
     std::weak_ptr<void> conn_self_;
 
-    // RFC 9002: PTO timer for detecting persistent timeouts
-    common::Timer pto_timer_;
+    // RFC 9002 Appendix A: THE loss detection timer. Replaces the historical
+    // per-packet retransmit timers + connection PTO timer with one timer that
+    // fires in one of two modes:
+    //   kTimeThreshold — a packet number space has unacked packets whose
+    //     9/8-RTT time threshold has passed (Appendix A.5): run
+    //     DetectLostPackets on that space. This is the only timer-driven
+    //     loss declaration, and it applies to ALL spaces equally (a packet
+    //     older than the threshold relative to a known largest_acked can be
+    //     declared lost even before the next ACK arrives).
+    //   kPto — nothing left to declare by time threshold; send probe(s)
+    //     per §6.2. A PTO expiry is NOT a loss event (§6.2: probes make the
+    //     peer ack; they never shrink the cwnd).
+    common::Timer loss_detection_timer_;
+    enum class LossDetectionMode { kTimeThreshold, kPto };
+    LossDetectionMode loss_detection_mode_ = LossDetectionMode::kPto;
+    PacketNumberSpace loss_detection_ns_ = PacketNumberSpace::kApplicationNumberSpace;
+
+    // RFC 9002 A.3 time_of_last_ack_eliciting_packet[kPacketNumberSpace]: the
+    // send time of the most recent ack-eliciting packet per packet number
+    // space. GetPtoTimeAndSpace (A.8) arms the PTO at
+    //   time_of_last_ack_eliciting_packet[space] + PTO_duration
+    // per space and keeps the earliest across spaces. Per-space bookkeeping is
+    // what makes RFC's "SHOULD restart the PTO timer on every ack-eliciting
+    // send" (§6.2.1) safe: a keep-alive PING in Application Data never defers
+    // the PTO of an unacknowledged Handshake flight. Probes are accounted here
+    // at enqueue time (see OnLossDetectionTimeout) because RFC fires probes
+    // synchronously; our async send path updates it again with the real send
+    // time in OnPacketSend.
+    uint64_t last_ack_eliciting_send_time_[PacketNumberSpace::kNumberSpaceCount] = {0, 0, 0};
+
+    // RFC 9002 A.8: "if the server is at its anti-amplification limit, the
+    // loss detection timer is not set, as nothing can be sent." Injected by
+    // SendManager (owns AntiAmplificationController). When this returns true
+    // the PTO timer MUST stay cancelled; the budget-restored path
+    // (SendManager::OnCandidatePathBytesReceived, RFC A.6 OnDatagramReceived)
+    // re-arms it, and a deadline already in the past fires immediately.
+    std::function<bool()> amp_blocked_cb_;
+
+    // RFC 9002 A.9: per-space earliest time a still-tracked packet could be
+    // declared lost by the time threshold (send_time + loss_delay of the
+    // oldest unacked packet below largest_acked). 0 = no candidate. Updated
+    // at the end of every DetectLostPackets run; SetLossDetectionTimer picks
+    // the earliest across spaces.
+    uint64_t loss_time_[PacketNumberSpace::kNumberSpaceCount] = {0};
     uint64_t last_ack_eliciting_sent_time_ = 0;  // Track when we last sent ack-eliciting data
 
-    // RFC 9002: PTO timer callback
-    void OnPTOTimer();
+    // Timer callback: dispatches by loss_detection_mode_ (see above).
+    void OnLossDetectionTimeout();
 
-    // Arm or rearm the PTO timer. Rearm is the common case (once per outgoing
-    // packet), and it reuses the existing timer node.
-    void ArmPtoTimer(uint64_t delay_ms);
+    // Recompute the earliest deadline across all spaces (Appendix A.9
+    // SetLossDetectionTimer): time-threshold deadline if any space has one
+    // pending, else a PTO deadline while ack-eliciting packets are in flight
+    // (or the handshake is incomplete, §6.2.2.1), else cancel. Called after
+    // every send / ACK / discard / expiry.
 
     // --- OnPacketSend helpers, in call order ---
 
@@ -455,15 +574,8 @@ private:
     // datagram (see BeginSendDatagram). No-op without a qlog trace.
     void EmitQlogPacketSent(const std::shared_ptr<IPacket>& packet, uint32_t pkt_len);
 
-    // Build the per-packet retransmit-timeout callback: declares the packet
-    // lost exactly once (guarded against DetectLostPackets racing it), fires
-    // frame delivery, queues the retransmission and reports the loss to CC.
-    std::function<void()> MakeRetransmitTimeoutHandler(
-        const std::shared_ptr<IPacket>& packet, uint32_t pkt_len, PacketNumberSpace ns);
-
-    // Register one outgoing ack-eliciting packet for loss detection: arms
-    // its retransmit timer, inserts it into unacked_packets_ and (re)arms
-    // the connection-level PTO timer.
+    // Register one outgoing ack-eliciting packet for loss detection: records
+    // it in unacked_packets_ and updates the loss detection timer deadline.
     void TrackPacketForRetransmission(const std::shared_ptr<IPacket>& packet, uint32_t pkt_len, PacketNumberSpace ns,
         const std::vector<StreamDataInfo>& stream_data);
 

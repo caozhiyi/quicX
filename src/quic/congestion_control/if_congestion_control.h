@@ -80,6 +80,19 @@ public:
      */
     virtual void OnPacketsDiscarded(uint64_t discarded_bytes) { (void)discarded_bytes; }
 
+    /**
+     * @brief RFC 9002 §7.6: persistent congestion established.
+     *
+     * Every ack-eliciting packet sent across a duration exceeding
+     * (smoothed_rtt + max(4*rttvar, kGranularity) + max_ack_delay) *
+     * kPersistentCongestionThreshold was declared lost. MUST collapse the
+     * congestion window to the minimum congestion window (kMinimumWindow =
+     * 2 * max_datagram_size) and clear the recovery period, re-entering
+     * slow start. bytes_in_flight is unaffected (those packets are still
+     * unacked). Default no-op for controllers without an implementation.
+     */
+    virtual void OnPersistentCongestion() {}
+
     enum class SendState { kOk, kBlockedByCwnd, kBlockedByPacing };
     virtual SendState CanSend(uint64_t now, uint64_t& can_send_bytes) const = 0;
 
