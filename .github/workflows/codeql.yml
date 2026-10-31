@@ -1,0 +1,54 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+    steps:
+      # third/boringssl is a submodule required by CMake configure
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # Default runner disk (~14G) is tight for a boringssl build plus the
+      # CodeQL database; free ~15G of preinstalled toolchains first.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android \
+                       /usr/share/dotnet \
+                       /opt/ghc \
+                       /usr/local/.ghcup \
+                       /usr/share/swift
+          df -h /
+
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: cpp
+          build-mode: manual
+
+      # CodeQL intercepts the compile commands in this step. Only the core
+      # library is built: examples/tests/benchmarks add nothing to security
+      # coverage and roughly double build time and disk usage.
+      - name: Build
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_EXAMPLES=OFF \
+            -DENABLE_TESTING=OFF \
+            -DENABLE_BENCHMARKS=OFF \
+            -DENABLE_CC_SIMULATOR=OFF \
+            -DENABLE_INTEGRATION=OFF \
+            -DENABLE_PERF_TESTS=OFF
+          cmake --build build -j2
+
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:cpp"
