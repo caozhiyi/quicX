@@ -52,6 +52,7 @@
 
 // HTTP/3 QPACK
 #include "http3/qpack/huffman_encoder.h"
+#include "http3/qpack/qpack_decoder.h"
 #include "http3/qpack/qpack_encoder.h"
 
 namespace quicx {
@@ -230,6 +231,7 @@ static void BM_CpuHotspot_QpackEncode(benchmark::State& state) {
 
 static void BM_CpuHotspot_QpackDecode(benchmark::State& state) {
     http3::QpackEncoder encoder;
+    http3::QpackDecoder decoder;  // P1-H4d: decode role split out of QpackEncoder
 
     // Pre-encode headers
     std::vector<std::pair<std::string, std::string>> headers = {
@@ -252,7 +254,7 @@ static void BM_CpuHotspot_QpackDecode(benchmark::State& state) {
         buf->Write(encoded_data.data(), static_cast<uint32_t>(encoded_data.size()));
 
         std::vector<std::pair<std::string, std::string>> decoded;
-        encoder.Decode(buf, decoded);
+        decoder.Decode(buf, decoded);
 
         benchmark::DoNotOptimize(decoded.size());
     }
@@ -280,7 +282,10 @@ static void BM_CpuHotspot_HuffmanDecode(benchmark::State& state) {
     auto encoded = huff.Encode(input);
 
     for (auto _ : state) {
-        auto decoded = huff.Decode(encoded);
+        // H5f: Decode is bool + out-param since the failure-propagation fix.
+        std::string decoded;
+        bool ok = huff.Decode(encoded, decoded);
+        benchmark::DoNotOptimize(ok);
         benchmark::DoNotOptimize(decoded.data());
     }
     state.SetBytesProcessed(state.iterations() * encoded.size());

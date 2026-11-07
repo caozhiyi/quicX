@@ -53,6 +53,11 @@ public:
 
     virtual void Reset(uint32_t error) override;
 
+    // P1-H1 dispatch-test observation: error code and count seen by the
+    // transport stream mock (RESET_STREAM + STOP_SENDING both land here).
+    uint32_t GetLastResetError() const { return last_reset_error_; }
+    uint32_t GetResetCount() const { return reset_count_; }
+
     virtual void SetStreamReadCallBack(stream_read_callback cb) override;
 
     virtual int32_t Send(uint8_t* data, uint32_t len) override;
@@ -101,6 +106,10 @@ private:
     // must not deliver a second FIN (production code may legitimately call
     // Close() more than once during stream teardown).
     bool fin_sent_ = false;
+
+    // P1-H1 observation fields.
+    uint32_t last_reset_error_ = 0;
+    uint32_t reset_count_ = 0;
 
     // Inbound bytes that arrived before SetStreamReadCallBack() installed
     // a read callback. The HTTP/3 Init() flow opens the QPACK encoder /

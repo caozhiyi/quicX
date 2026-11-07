@@ -22,7 +22,7 @@ namespace http3 {
 uint64_t ResponseStream::max_request_body_size_ = 16 * 1024 * 1024;
 
 ResponseStream::ResponseStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
-    const std::shared_ptr<QpackEncoder>& qpack_decoder, const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
+    const std::shared_ptr<QpackDecoder>& qpack_decoder, const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
     const std::shared_ptr<IQuicBidirectionStream>& stream, std::weak_ptr<IHttpProcessor> http_processor,
     const std::function<void(std::shared_ptr<IResponse>, std::shared_ptr<ResponseStream>)> push_handler,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
@@ -39,14 +39,14 @@ ResponseStream::~ResponseStream() {
     // Do NOT call Close() here - it should have been called by the base class after sending response
 }
 
-void ResponseStream::SendPushPromise(const HttpFields& headers, int32_t push_id) {
+void ResponseStream::SendPushPromise(const HttpFields& headers, uint64_t push_id) {
     // Create and encode push promise frame
     PushPromiseFrame push_frame;
     push_frame.SetPushId(push_id);
 
     auto headers_buffer =
         std::make_shared<common::MultiBlockBuffer>(quic::GlobalResource::Instance().GetThreadLocalBlockPool());
-    if (!qpack_encoder_->Encode(headers, headers_buffer)) {
+    if (!qpack_encoder_->Encode(headers, headers_buffer, GetStreamID())) {
         LOG_ERROR("ResponseStream::SendPushPromise qpack encode error");
         if (error_handler_) {
             error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);
@@ -158,6 +158,35 @@ bool ResponseStream::SendResponse(std::shared_ptr<IResponse> response) {
 }
 
 void ResponseStream::HandleHeaders() {
+    // P1-H6d (RFC 9114 §4.1 / RFC 9110 §6.5): any field section after the
+    // first is trailers. The pre-fix code re-ran the whole request pipeline
+    // (rebuild Request, re-route, re-invoke the handler) for it, which both
+    // executed handlers twice and produced a nonsense second "request".
+    // Trailers are appended to the existing request and the stream just
+    // carries on; pseudo-header fields are only legal in the first section
+    // (RFC 9114 §4.3) and abort the stream in trailers.
+    if (saw_initial_field_section_) {
+        for (const auto& f : headers_) {
+            if (!f.first.empty() && f.first[0] == ':') {
+                LOG_ERROR("ResponseStream::HandleHeaders: pseudo header '%s' in trailers", f.first.c_str());
+                if (error_handler_) {
+                    error_handler_(GetStreamID(), Http3ErrorCode::kMessageError);
+                }
+                return;
+            }
+        }
+        if (request_) {
+            for (const auto& f : headers_) {
+                request_->AppendTrailer(f.first, f.second);
+            }
+        }
+        LOG_DEBUG("ResponseStream::HandleHeaders: appended %zu trailer fields", headers_.size());
+        headers_.clear();
+        saw_trailers_ = true;
+        return;
+    }
+    saw_initial_field_section_ = true;
+
     // Note: We do NOT reject requests when peer SETTINGS hasn't been received yet.
     // In HTTP/3, the control stream (carrying SETTINGS) and request streams are
     // independent QUIC streams. Due to QUIC's stream multiplexing, a request may
@@ -176,17 +205,43 @@ void ResponseStream::HandleHeaders() {
 
     request_->SetHeaders(headers_);
 
-    PseudoHeader::Instance().DecodeRequest(request_);
+    // P1-H6a: a malformed request field section is H3_MESSAGE_ERROR — the
+    // request never reaches routing (RFC 9114 §4.3).
+    if (!PseudoHeader::Instance().DecodeRequest(request_)) {
+        if (error_handler_) {
+            error_handler_(GetStreamID(), static_cast<uint32_t>(Http3ErrorCode::kMessageError));
+        }
+        return;
+    }
 
     bool has_content_length = false;
     std::string content_length;
-    if (FindField(headers_, "content-length", content_length)) {
+    // P1-H6c (RFC 9110 §8.6): duplicated content-length fields are only
+    // legal when every copy carries the same (numeric) value. A mismatched
+    // duplicate is the classic request-smuggling vector; the pre-fix code
+    // took the first occurrence and silently ignored the rest.
+    for (const auto& f : headers_) {
+        if (f.first == "content-length") {
+            if (!has_content_length) {
+                content_length = f.second;
+                has_content_length = true;
+            } else if (f.second != content_length) {
+                LOG_ERROR("ResponseStream::HandleHeaders: conflicting content-length values '%s' vs '%s'",
+                    content_length.c_str(), f.second.c_str());
+                if (error_handler_) {
+                    error_handler_(GetStreamID(), Http3ErrorCode::kMessageError);
+                }
+                return;
+            }
+        }
+    }
+    has_content_length_ = has_content_length;
+    if (has_content_length) {
         try {
             // stoull, not stoul: unsigned long is 32-bit on Windows (LLP64),
             // and stoul would throw out_of_range for declarations >4GB —
             // exactly the oversized-body payloads this check exists for.
             body_length_ = std::stoull(content_length);
-            has_content_length = true;
         } catch (const std::exception& e) {
             LOG_ERROR("ResponseStream::HandleHeaders: invalid content-length value '%s': %s",
                 content_length.c_str(), e.what());
@@ -275,11 +330,60 @@ void ResponseStream::HandleHeaders() {
     }
     LOG_DEBUG("HandleHeaders: complete handler called");
     // If body_length_ > 0, wait for HandleData to accumulate and process the body
+
+    // P1-H6c: FIN was attached to THIS HEADERS frame (single-frame batch,
+    // e.g. a coalesced request) — no HandleData/HandleFinWithoutData will
+    // ever fire after this. A declared non-empty body that will never
+    // arrive is a truncated message (RFC 9114 §4.3), not something to wait
+    // on forever.
+    if (current_frame_is_last_ && has_content_length && body_length_ > 0) {
+        LOG_ERROR("ResponseStream::HandleHeaders: FIN on the HEADERS frame but declared content-length %llu",
+            (unsigned long long)body_length_);
+        if (error_handler_) {
+            error_handler_(GetStreamID(), Http3ErrorCode::kMessageError);
+        }
+        return;
+    }
 }
 
 void ResponseStream::HandleData(const std::shared_ptr<common::IBuffer>& data, bool is_last) {
     LOG_DEBUG("ResponseStream::HandleData: data size=%zu, is_last=%d, body_length_=%llu, received_body_length_=%u",
         data->GetDataLength(), is_last, (unsigned long long)body_length_, received_body_length_);
+
+    // P1-H6d (RFC 9114 §4.1): the trailing field section is the FINAL frame
+    // of the message — a DATA frame after the trailers is malformed.
+    if (saw_trailers_) {
+        LOG_ERROR("ResponseStream::HandleData: DATA frame after trailers, stream=%llu", GetStreamID());
+        if (error_handler_) {
+            error_handler_(GetStreamID(), Http3ErrorCode::kMessageError);
+        }
+        return;
+    }
+
+    // P1-H6c (RFC 9110 §8.6): "content-length: 0" must not be followed by a
+    // DATA frame. Accepting it let a smuggled body ride along under a
+    // zero-length declaration (the pre-fix code silently buffered it).
+    if (has_content_length_ && body_length_ == 0 && data->GetDataLength() > 0) {
+        LOG_ERROR("ResponseStream::HandleData: content-length: 0 but DATA frame with %u bytes arrived",
+            data->GetDataLength());
+        if (error_handler_) {
+            error_handler_(GetStreamID(), Http3ErrorCode::kMessageError);
+        }
+        return;
+    }
+
+    // P1-H6c: FIN before the declared content-length was satisfied — the
+    // message is truncated (RFC 9114 §4.3: a request must be complete before
+    // it is processed). The pre-fix code treated is_last as "process what we
+    // have", letting short bodies reach the handler.
+    if (is_last && has_content_length_ && static_cast<uint64_t>(received_body_length_) + data->GetDataLength() < body_length_) {
+        LOG_ERROR("ResponseStream::HandleData: FIN before content-length satisfied, declared %llu, got %u",
+            (unsigned long long)body_length_, received_body_length_ + data->GetDataLength());
+        if (error_handler_) {
+            error_handler_(GetStreamID(), Http3ErrorCode::kMessageError);
+        }
+        return;
+    }
 
     // Enforce the request body cap on actually received bytes too: a peer
     // can under-declare content-length (or omit it) and stream more data,
@@ -431,6 +535,21 @@ void ResponseStream::HandleResponse() {
 void ResponseStream::HandleFinWithoutData() {
     // Called when FIN is received but no HTTP/3 frames were decoded
     // For server side (ResponseStream), this means the client finished sending the request
+
+    // P1-H6c: HEADERS declared a body but the stream FINed without any DATA
+    // (truncated message — RFC 9114 §4.3). Only for the "response not yet
+    // sent" case: a late empty FIN after the response went out (the
+    // quic-go HEADERS-then-empty-FIN pattern, see Bug #24 note above) is
+    // legal and must keep flowing through the normal completion path.
+    if (!is_response_sent_ && has_content_length_ && body_length_ > 0) {
+        LOG_ERROR("ResponseStream::HandleFinWithoutData: FIN without body, declared content-length %llu",
+            (unsigned long long)body_length_);
+        if (error_handler_) {
+            error_handler_(GetStreamID(), Http3ErrorCode::kMessageError);
+        }
+        return;
+    }
+
     if (route_config_.IsAsyncServer()) {
         auto async_handler = route_config_.GetAsyncServerHandler();
         // Notify async handler that request body is complete (empty)

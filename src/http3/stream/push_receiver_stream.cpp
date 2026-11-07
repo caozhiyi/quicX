@@ -15,13 +15,14 @@
 namespace quicx {
 namespace http3 {
 
-PushReceiverStream::PushReceiverStream(const std::shared_ptr<QpackEncoder>& qpack_decoder,
+PushReceiverStream::PushReceiverStream(const std::shared_ptr<QpackDecoder>& qpack_decoder,
     const std::shared_ptr<IQuicRecvStream>& stream,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
-    const http_response_handler& response_handler):
+    const http_response_handler& response_handler, const std::function<bool(uint64_t)>& push_id_validator):
     IRecvStream(StreamType::kPush, stream, error_handler),
     qpack_decoder_(qpack_decoder),
     response_handler_(response_handler),
+    push_id_validator_(push_id_validator),
     parse_state_(ParseState::kReadingPushId),
     push_id_(0),
     body_length_(0) {
@@ -35,7 +36,14 @@ PushReceiverStream::PushReceiverStream(const std::shared_ptr<QpackEncoder>& qpac
 PushReceiverStream::~PushReceiverStream() {
     // Note: Do NOT call stream_->Reset() here during destruction.
     // See QpackDecoderSenderStream destructor comment for details.
-    stream_.reset();
+    // P1-H7a: unregister the read callback BEFORE dropping the stream
+    // reference — the underlying QUIC stream outlives this wrapper (the
+    // connection holds it), and a callback still capturing `this` would
+    // fire into a destroyed object.
+    if (stream_) {
+        stream_->SetStreamReadCallBack(nullptr);
+        stream_.reset();
+    }
 }
 
 void PushReceiverStream::OnData(std::shared_ptr<IBufferRead> data, bool /*is_last*/, uint32_t error) {
@@ -65,6 +73,19 @@ void PushReceiverStream::OnData(std::shared_ptr<IBufferRead> data, bool /*is_las
             }
 
             LOG_DEBUG("PushReceiverStream: push_id=%llu", push_id_);
+
+            // P1-H6f (RFC 9114 §4.6): a push id above the MAX_PUSH_ID we
+            // advertised, or one already consumed by another push stream,
+            // is H3_ID_ERROR. (A promise that has not (yet) arrived is NOT
+            // an error — the PUSH_PROMISE travels on a request stream and
+            // may legitimately be reordered behind the push stream.)
+            if (push_id_validator_ && !push_id_validator_(push_id_)) {
+                LOG_ERROR("PushReceiverStream: push id %llu rejected (above MAX_PUSH_ID or duplicate), stream=%llu",
+                    push_id_, stream_->GetStreamID());
+                error_handler_(stream_->GetStreamID(), Http3ErrorCode::kIdError);
+                return;
+            }
+
             parse_state_ = ParseState::kReadingFrames;
 
         } else if (parse_state_ == ParseState::kReadingFrames) {

@@ -23,7 +23,12 @@ public:
     ~PseudoHeader();
 
     void EncodeRequest(std::shared_ptr<IRequest> request);
-    void DecodeRequest(std::shared_ptr<IRequest> request);
+    // P1-H6a (RFC 9114 §4.3): validate + extract. Returns false and leaves
+    // the request untouched when the field section violates the message
+    // rules — missing/unknown/duplicated pseudo-headers, pseudo-headers after
+    // regular fields, uppercase or connection-specific regular field names.
+    // Callers must treat false as H3_MESSAGE_ERROR.
+    bool DecodeRequest(std::shared_ptr<IRequest> request);
 
     void EncodeResponse(std::shared_ptr<IResponse> response);
     void DecodeResponse(std::shared_ptr<IResponse> response);

@@ -25,9 +25,13 @@ public:
     // Returns the encoded string
     std::vector<uint8_t> Encode(const std::string& input);
 
-    // Decode a QPACK Huffman encoded string
-    // Returns the decoded string, or empty string if decoding fails
-    std::string Decode(const std::vector<uint8_t>& input);
+    // Decode a QPACK Huffman encoded string.
+    // P1-H5f: returns false (and leaves |out| untouched) when the bitstream
+    // is malformed or the EOS padding is invalid — the old empty-string
+    // return was indistinguishable from a legitimately empty decoded value,
+    // so garbage was accepted as a legal header value. Callers must treat
+    // false as QPACK_DECOMPRESSION_FAILED (connection error).
+    bool Decode(const std::vector<uint8_t>& input, std::string& out);
 
 private:
     // Helper function to write bits to output

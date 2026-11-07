@@ -1,6 +1,6 @@
 // Fuzz target for the QPACK header-block decoder (#9, code review round 2).
 //
-// QpackEncoder::Decode() parses a peer-controlled header block: the prefix
+// QpackDecoder::Decode() parses a peer-controlled header block: the prefix
 // (Required Insert Count + Base), then a sequence of representations whose
 // indexes / string lengths / dynamic-table references are all attacker
 // controlled. The dynamic-table path (DecodeEncoderInstructions: Insert /
@@ -18,7 +18,7 @@
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
 
-#include "http3/qpack/qpack_encoder.h"
+#include "http3/qpack/qpack_decoder.h"
 
 namespace {
 
@@ -40,7 +40,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     // available (capacity driven by the first input byte, covering the
     // disabled path at 0 and the default 1024 at mid-range).
     {
-        quicx::http3::QpackEncoder dec;
+        quicx::http3::QpackDecoder dec;
         uint32_t cap = static_cast<uint32_t>(data[0]) * 64;
         dec.SetMaxTableCapacity(cap);
         dec.SetDynamicTableEnabled(true);
@@ -54,7 +54,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     // block. This reaches the dynamic-index and name-ref representation
     // paths that only fire when the table holds entries.
     {
-        quicx::http3::QpackEncoder dec;
+        quicx::http3::QpackDecoder dec;
         dec.SetMaxTableCapacity(4096);
         dec.SetDynamicTableEnabled(true);
         (void)dec.DecodeEncoderInstructions(WrapInput(data, size));
@@ -65,7 +65,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     // Variant C: same as B but with a small capacity, so the instruction
     // stream drives eviction on every insert (the historically buggy loop).
     {
-        quicx::http3::QpackEncoder dec;
+        quicx::http3::QpackDecoder dec;
         dec.SetMaxTableCapacity(64);
         dec.SetDynamicTableEnabled(true);
         (void)dec.DecodeEncoderInstructions(WrapInput(data, size));

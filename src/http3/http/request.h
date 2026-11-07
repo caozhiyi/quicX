@@ -45,6 +45,15 @@ public:
     virtual const HttpFields& GetHeaders() const override { return headers_; }
     virtual std::string GetBodyAsString() const override;
 
+    // P1-H6d (RFC 9110 §6.5): trailing field lines — a second field section
+    // delivered after the message body. Stored separately from headers_ so
+    // routing/handlers are never re-run for them, and pseudo-header (":x")
+    // injection into trailers is rejected at the stream layer.
+    virtual void AppendTrailer(const std::string& name, const std::string& value) {
+        trailers_.emplace_back(name, value);
+    }
+    virtual const HttpFields& GetTrailers() const { return trailers_; }
+
     // Request body sending (client)
     virtual void SetBody(std::shared_ptr<common::IBuffer> body) { body_ = body; }
     virtual void AppendBody(const std::string& body) override;
@@ -79,6 +88,9 @@ private:
 
 private:
     HttpFields headers_;
+    // P1-H6d: trailing field lines (RFC 9110 §6.5), kept distinct from the
+    // leading field section.
+    HttpFields trailers_;
     std::shared_ptr<common::IBuffer> body_;
     body_provider request_body_provider_;   // For streaming request body sending (client)
     body_consumer response_body_consumer_;  // For streaming response body receiving (client)

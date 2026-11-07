@@ -13,6 +13,7 @@
 #include "http3/frame/frame_decoder.h"
 #include "http3/frame/if_frame.h"
 #include "http3/qpack/blocked_registry.h"
+#include "http3/qpack/qpack_decoder.h"
 #include "http3/qpack/qpack_encoder.h"
 #include "http3/stream/if_stream.h"
 
@@ -32,7 +33,7 @@ namespace http3 {
 class ReqRespBaseStream: public IStream, public std::enable_shared_from_this<ReqRespBaseStream> {
 public:
     ReqRespBaseStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
-        const std::shared_ptr<QpackEncoder>& qpack_decoder,
+        const std::shared_ptr<QpackDecoder>& qpack_decoder,
         const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
         const std::shared_ptr<IQuicBidirectionStream>& stream,
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler);
@@ -58,6 +59,13 @@ public:
     void SetMaxFieldSectionSize(uint64_t size) { max_field_section_size_ = size; }
 
     virtual void OnData(std::shared_ptr<IBufferRead> data, bool is_last, uint32_t error);
+
+    // RFC 9114 §8 stream-scoped error signalling: BidirectionStream::Reset
+    // emits RESET_STREAM (abort our send half) and STOP_SENDING (tell the
+    // peer to stop its send half) with the H3 error code, so the peer
+    // actually observes the failure instead of waiting for a response that
+    // will never come. Invoked by IConnection::DispatchH3Error.
+    virtual void ResetTransport(uint32_t h3_error_code) override;
 
 protected:
     virtual void HandleHeaders(std::shared_ptr<IFrame> frame);
@@ -122,7 +130,7 @@ protected:
     uint64_t header_block_key_{0};
     uint32_t next_section_number_{0};
     std::shared_ptr<QpackEncoder> qpack_encoder_;  // For encoding outgoing headers
-    std::shared_ptr<QpackEncoder> qpack_decoder_;  // For decoding incoming headers (RFC 9204 dual-table)
+    std::shared_ptr<QpackDecoder> qpack_decoder_;  // For decoding incoming headers (RFC 9204 dual-table)
     std::shared_ptr<IQuicBidirectionStream> stream_;
     std::shared_ptr<QpackBlockedRegistry> blocked_registry_;
 

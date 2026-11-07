@@ -38,6 +38,86 @@ enum Http3ErrorCode : uint32_t {
     kQpackDecoderStreamError = 0x0202,   // Error on the decoder stream (e.g., malformed decoder instruction).
 };
 
+// RFC 9114 §8.1 error-code scope classification. Drives IConnection::
+// DispatchH3Error: an error raised on a critical stream (control / QPACK /
+// unidentified) is ALWAYS a connection error (§6.2.1); elsewhere the scope
+// table decides between closing the connection and resetting just the
+// request stream.
+enum class Http3ErrorScope {
+    kConnection,     // MUST close the whole connection wherever it is raised
+    kRequestStream,  // reset the request stream only (RESET_STREAM + STOP_SENDING)
+    kContextual,     // request stream: reset that stream; critical stream: connection
+};
+
+// Whether |code| is one of the HTTP/3 / QPACK application error codes this
+// stack defines. Anything else reaching IConnection::DispatchH3Error did not
+// originate from our own validators: it is a QUIC transport error code, or the
+// application error code the PEER put in its RESET_STREAM / STOP_SENDING (62
+// bits, attacker-chosen, truncated to 32 here). Such a value must never be
+// echoed back on the wire.
+inline bool IsKnownHttp3ErrorCode(uint32_t code) {
+    switch (code) {
+        case kNoError:
+        case kGeneralProtocolError:
+        case kInternalError:
+        case kStreamCreationError:
+        case kClosedCriticalStream:
+        case kFrameUnexpected:
+        case kFrameError:
+        case kExcessiveLoad:
+        case kIdError:
+        case kSettingsError:
+        case kMissingSettings:
+        case kRequestRejected:
+        case kRequestCancelled:
+        case kRequestIncomplete:
+        case kMessageError:
+        case kConnectError:
+        case kVersionFallback:
+        case kQpackDecompressionFailed:
+        case kQpackEncoderStreamError:
+        case kQpackDecoderStreamError:
+            return true;
+        default:
+            return false;
+    }
+}
+
+inline Http3ErrorScope GetErrorScope(Http3ErrorCode code) {
+    switch (code) {
+        // Unambiguously connection-level (RFC 9114 §8.1 wording: "connection
+        // ... MUST be closed" or inherently critical-stream/QPACK errors).
+        case kClosedCriticalStream:
+        case kStreamCreationError:
+        case kMissingSettings:
+        case kSettingsError:
+        case kIdError:
+        case kVersionFallback:
+        case kQpackDecompressionFailed:
+        case kQpackEncoderStreamError:
+        case kQpackDecoderStreamError:
+            return Http3ErrorScope::kConnection;
+
+        // Unambiguously request-stream-scoped lifecycle codes.
+        case kRequestRejected:
+        case kRequestCancelled:
+        case kRequestIncomplete:
+            return Http3ErrorScope::kRequestStream;
+
+        // Contextual: on a request stream these reset that stream; on a
+        // control/QPACK stream they close the connection.
+        case kGeneralProtocolError:
+        case kInternalError:
+        case kFrameUnexpected:
+        case kFrameError:
+        case kExcessiveLoad:
+        case kMessageError:
+        case kConnectError:
+        default:
+            return Http3ErrorScope::kContextual;
+    }
+}
+
 }
 }  // namespace quicx
 

@@ -17,7 +17,7 @@ namespace quicx {
 namespace http3 {
 
 ReqRespBaseStream::ReqRespBaseStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
-    const std::shared_ptr<QpackEncoder>& qpack_decoder, const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
+    const std::shared_ptr<QpackDecoder>& qpack_decoder, const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
     const std::shared_ptr<IQuicBidirectionStream>& stream,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler):
     IStream(StreamType::kReqResp, error_handler),
@@ -59,6 +59,18 @@ void ReqRespBaseStream::Init() {
             self->HandleSent(length, error);
         }
     });
+}
+
+void ReqRespBaseStream::ResetTransport(uint32_t h3_error_code) {
+    if (!stream_) {
+        return;
+    }
+    // BidirectionStream::Reset emits RESET_STREAM (send half) + STOP_SENDING
+    // (peer's send half) carrying the H3 application error code. Idempotence
+    // is handled inside (state machine + local_stop_sending_ latch).
+    LOG_INFO("ReqRespBaseStream: resetting transport for stream %llu with H3 error 0x%x",
+        (unsigned long long)GetStreamID(), h3_error_code);
+    stream_->Reset(h3_error_code);
 }
 
 void ReqRespBaseStream::OnData(std::shared_ptr<IBufferRead> data, bool is_last, uint32_t error) {
@@ -318,13 +330,13 @@ void ReqRespBaseStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
         // Only kBlocked is retryable; malformed / oversized sections must
         // fail the stream instead of parking it in a retry loop.
         const auto status = qpack_decoder_->GetLastDecodeStatus();
-        if (status != QpackEncoder::DecodeStatus::kBlocked) {
+        if (status != QpackDecoder::DecodeStatus::kBlocked) {
             headers_.clear();
             LOG_ERROR("ReqRespBaseStream::HandleHeaders: QPACK decode failed (status=%d), stream=%llu",
                 static_cast<int>(status), static_cast<unsigned long long>(GetStreamID()));
             if (error_handler_) {
                 error_handler_(GetStreamID(),
-                    status == QpackEncoder::DecodeStatus::kSectionTooLarge ? Http3ErrorCode::kExcessiveLoad
+                    status == QpackDecoder::DecodeStatus::kSectionTooLarge ? Http3ErrorCode::kExcessiveLoad
                                                                           : Http3ErrorCode::kQpackDecompressionFailed);
             }
             return;
@@ -360,6 +372,12 @@ void ReqRespBaseStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
             }
             // Re-clone so each attempt sees a fresh read pointer at the
             // start of the field section (Decode will advance it).
+            // P1-H5e: start every retry from a clean slate — a previous
+            // attempt (or a decode of a DIFFERENT section sharing this
+            // stream's headers_ vector, e.g. trailers) may have left
+            // partially decoded fields behind, which would surface to the
+            // application as duplicated/garbled fields.
+            self->headers_.clear();
             auto attempt = encoded_fields_template->CloneReadable(
                 encoded_fields_template->GetDataLength(), /*move_write_pt=*/false);
             if (attempt && self->qpack_decoder_->Decode(attempt, self->headers_)) {
@@ -378,6 +396,9 @@ void ReqRespBaseStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
                     return;
                 }
                 self->HandleHeaders();
+                // P1-H6d: same consume-and-clear as HandleFrame's kHeaders
+                // case — headers_ is one field section's staging vector.
+                self->headers_.clear();
 
                 // Clear the retry callback to break any captures and free resources
                 self->blocked_retry_fn_ = nullptr;
@@ -392,7 +413,7 @@ void ReqRespBaseStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
 
             } else {
                 const auto retry_status = self->qpack_decoder_->GetLastDecodeStatus();
-                if (retry_status != QpackEncoder::DecodeStatus::kBlocked) {
+                if (retry_status != QpackDecoder::DecodeStatus::kBlocked) {
                     // P0-S6: the retry decoded the block and found it
                     // malformed or oversized — retrying again can never
                     // succeed, so fail the stream instead of re-parking it.
@@ -402,7 +423,7 @@ void ReqRespBaseStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
                         static_cast<int>(retry_status), static_cast<unsigned long long>(self->GetStreamID()));
                     if (self->error_handler_) {
                         self->error_handler_(self->GetStreamID(),
-                            retry_status == QpackEncoder::DecodeStatus::kSectionTooLarge
+                            retry_status == QpackDecoder::DecodeStatus::kSectionTooLarge
                                 ? Http3ErrorCode::kExcessiveLoad
                                 : Http3ErrorCode::kQpackDecompressionFailed);
                     }
@@ -509,6 +530,13 @@ void ReqRespBaseStream::HandleFrame(std::shared_ptr<IFrame> frame) {
     switch (frame->GetType()) {
         case FrameType::kHeaders:
             HandleHeaders(frame);
+            // P1-H6d: headers_ is the staging vector for ONE field section —
+            // QPACK Decode APPENDS to it. Clear after each HEADERS frame so
+            // a later section (trailers) starts clean; a stale first section
+            // leaking into the trailers check would misfire on leftover
+            // pseudo-headers. The blocked-retry path re-decodes into a
+            // cleared vector itself (the retry lambda clears first).
+            headers_.clear();
             break;
 
         case FrameType::kData:
@@ -620,7 +648,7 @@ bool ReqRespBaseStream::SendBodyDirectly(const std::shared_ptr<common::IBuffer>&
 bool ReqRespBaseStream::SendHeaders(const HttpFields& headers) {
     auto headers_buffer =
         std::make_shared<common::MultiBlockBuffer>(quic::GlobalResource::Instance().GetThreadLocalBlockPool());
-    if (!qpack_encoder_->Encode(headers, headers_buffer)) {
+    if (!qpack_encoder_->Encode(headers, headers_buffer, GetStreamID())) {
         LOG_ERROR("SendHeaders error");
         if (error_handler_) {
             error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);

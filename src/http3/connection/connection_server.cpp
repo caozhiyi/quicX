@@ -205,7 +205,7 @@ std::shared_ptr<IRecvStream> ServerConnection::CreateTypedStream(
     switch (stream_type) {
         case static_cast<uint64_t>(StreamType::kControl):  // Control Stream (RFC 9114 Section 6.2.1)
             LOG_DEBUG("ServerConnection: creating Control Stream for stream %llu", stream->GetStreamID());
-            return std::make_shared<ControlServerReceiverStream>(stream, qpack_decoder_, MakeErrorHandler(),
+            return std::make_shared<ControlServerReceiverStream>(stream, qpack_encoder_, qpack_decoder_, MakeErrorHandler(),
                 MakeGoawayHandler(), MakeSettingsHandler(),
                 [weak_self = WeakSelfAs<ServerConnection>()](uint64_t max_push_id) {
                     if (auto self = weak_self.lock()) {

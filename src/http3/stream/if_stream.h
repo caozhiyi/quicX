@@ -37,6 +37,16 @@ public:
     // learning_project_roadmap.md §2.
     virtual void Close(uint32_t /*error_code*/) {}
 
+    // Abort the underlying transport for this stream so the PEER sees the
+    // error (RFC 9114 §8: stream-scoped errors MUST be signalled with
+    // RESET_STREAM + STOP_SENDING carrying the H3 error code). Default
+    // no-op for streams without a resettable transport (control/QPACK
+    // receiver wrappers — their errors are connection-level by nature and
+    // go through IConnection::Close instead). ReqRespBaseStream overrides
+    // this with BidirectionStream::Reset(code), which emits both frames.
+    // Used by IConnection::DispatchH3Error.
+    virtual void ResetTransport(uint32_t /*h3_error_code*/) {}
+
 protected:
     StreamType stream_type_;
     std::function<void(uint64_t stream_id, uint32_t error_code)> error_handler_;

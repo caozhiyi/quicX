@@ -43,6 +43,7 @@
 #include "http3/connection/connection_server.h"
 #include "http3/http/request.h"
 #include "http3/qpack/blocked_registry.h"
+#include "http3/qpack/qpack_decoder.h"
 #include "http3/qpack/qpack_encoder.h"
 
 #include "test/unit_test/http3/connection/mock_quic_connection.h"
@@ -92,7 +93,7 @@ class InspectableClientConnection: public ClientConnection {
 public:
     using ClientConnection::ClientConnection;
     std::shared_ptr<QpackEncoder> Encoder() const { return qpack_encoder_; }
-    std::shared_ptr<QpackEncoder> Decoder() const { return qpack_decoder_; }
+    std::shared_ptr<QpackDecoder> Decoder() const { return qpack_decoder_; }
     std::shared_ptr<QpackBlockedRegistry> BlockedRegistry() const { return blocked_registry_; }
 };
 
@@ -100,7 +101,7 @@ class InspectableServerConnection: public ServerConnection {
 public:
     using ServerConnection::ServerConnection;
     std::shared_ptr<QpackEncoder> Encoder() const { return qpack_encoder_; }
-    std::shared_ptr<QpackEncoder> Decoder() const { return qpack_decoder_; }
+    std::shared_ptr<QpackDecoder> Decoder() const { return qpack_decoder_; }
     std::shared_ptr<QpackBlockedRegistry> BlockedRegistry() const { return blocked_registry_; }
 };
 
@@ -123,7 +124,7 @@ public:
             }
         });
     }
-    void BeforeHandlerProcess(std::shared_ptr<IRequest>, std::shared_ptr<IResponse>) override {}
+    bool BeforeHandlerProcess(std::shared_ptr<IRequest>, std::shared_ptr<IResponse>) override { return true; }
     void AfterHandlerProcess(std::shared_ptr<IRequest>, std::shared_ptr<IResponse>) override {}
 
 private:
@@ -1416,7 +1417,7 @@ TEST_F(QpackDynamicTableE2ETest, ProbeEncodeEmptyHeadersMap) {
 
     // Round-trip back through Decode on a fresh decoder — must produce
     // an empty map, no errors.
-    auto dec = std::make_shared<QpackEncoder>();
+    auto dec = std::make_shared<QpackDecoder>();
     dec->SetMaxTableCapacity(4096);
     std::vector<std::pair<std::string, std::string>> out;
     EXPECT_TRUE(dec->Decode(buf, out));
@@ -1464,7 +1465,7 @@ TEST_F(QpackDynamicTableE2ETest, ProbeCapZeroEmitsNoEncoderStreamInserts) {
 //            still-present (but high-absolute-index) entry.
 //            Pre-fix, this returned false; post-fix, it must succeed.
 TEST_F(QpackDynamicTableE2ETest, ProbeDecodeRicAgainstInsertCountAfterEviction) {
-    auto dec = std::make_shared<QpackEncoder>();
+    auto dec = std::make_shared<QpackDecoder>();
     dec->SetMaxTableCapacity(80);  // holds exactly one ~49-byte entry
     dec->SetDynamicTableEnabled(true);
 
@@ -1490,15 +1491,18 @@ TEST_F(QpackDynamicTableE2ETest, ProbeDecodeRicAgainstInsertCountAfterEviction) 
     // Use an encoder we drive manually so we control the exact wire bytes.
     auto hdr_chunk = std::make_shared<common::StandaloneBufferChunk>(64);
     auto hdr_buf = std::make_shared<common::SingleBlockBuffer>(hdr_chunk);
-    QpackEncoder driver;
+    QpackEncoder driver;         // writes the prefix; RIC encoding keys off its cap
+    QpackDecoder driver_mirror;   // mirrors the decoder-side table state
     driver.SetMaxTableCapacity(80);
     driver.SetDynamicTableEnabled(true);
+    driver_mirror.SetMaxTableCapacity(80);
+    driver_mirror.SetDynamicTableEnabled(true);
     // Mirror the decoder state so the driver writes the right RIC encoding
     // (encoded RIC depends on max_entries derived from the cap).
     auto sync = make_insert("x-trace-id", "trace-A");
-    driver.DecodeEncoderInstructions(sync);
+    driver_mirror.DecodeEncoderInstructions(sync);
     auto sync2 = make_insert("x-trace-id", "trace-B");
-    driver.DecodeEncoderInstructions(sync2);
+    driver_mirror.DecodeEncoderInstructions(sync2);
     // Manually write a HEADERS block: prefix (RIC=2, base=2) then
     // a single dynamic-indexed reference at absolute index 1
     // (relative_index = base - 1 - abs = 2 - 1 - 1 = 0).
@@ -1690,7 +1694,7 @@ TEST_F(QpackDynamicTableE2ETest, ProbeManyRequestsNoEvictionAccumulating) {
 //            propagation is a separate (currently-unimplemented) concern.
 //            This probe focuses on the local invariants only.
 TEST_F(QpackDynamicTableE2ETest, ProbeRuntimeShrinkLocalInvariants) {
-    auto enc = std::make_shared<QpackEncoder>();
+    auto enc = std::make_shared<QpackDecoder>();
     enc->SetMaxTableCapacity(4096);
     enc->SetDynamicTableEnabled(true);
 
@@ -1812,9 +1816,13 @@ TEST_F(QpackDynamicTableE2ETest, ProbeBlockedRegistryMaxBlockedEnforced) {
 //            the older duplicate at a higher deque position must NOT be
 //            corrupted (it remains addressable via its absolute index).
 TEST_F(QpackDynamicTableE2ETest, ProbeDuplicateInsertSurvivesEncoder) {
-    auto enc = std::make_shared<QpackEncoder>();
+    auto enc = std::make_shared<QpackDecoder>();  // receive-side mirror
     enc->SetMaxTableCapacity(4096);  // plenty of room for two duplicates
     enc->SetDynamicTableEnabled(true);
+    // The prefix writer stays on the encoder side: EncodedRIC keys off the
+    // writer's max_table_capacity, so give it the same cap as the mirror.
+    QpackEncoder wire_writer;
+    wire_writer.SetMaxTableCapacity(4096);
 
     auto make_insert = [](const std::string& name, const std::string& value) {
         auto c = std::make_shared<common::StandaloneBufferChunk>(256);
@@ -1832,7 +1840,7 @@ TEST_F(QpackDynamicTableE2ETest, ProbeDuplicateInsertSurvivesEncoder) {
     // by post-base index 0 with base=0 — wire bytes constructed below.
     auto hdr_chunk = std::make_shared<common::StandaloneBufferChunk>(64);
     auto hdr_buf = std::make_shared<common::SingleBlockBuffer>(hdr_chunk);
-    enc->WriteHeaderPrefix(hdr_buf, /*ric*/ 1, /*base*/ 0);
+    wire_writer.WriteHeaderPrefix(hdr_buf, /*ric*/ 1, /*base*/ 0);
     // Post-Base Indexed: 0001xxxx with post_base_index=0.
     uint8_t pb = 0x10;
     hdr_buf->Write(&pb, 1);
@@ -1848,7 +1856,7 @@ TEST_F(QpackDynamicTableE2ETest, ProbeDuplicateInsertSurvivesEncoder) {
 //            / RFC 7541 §4.4 — a connection error on the encoder stream).
 //            Pre-fix, AddHeaderItem returning false was silently swallowed.
 TEST_F(QpackDynamicTableE2ETest, ProbeOversizedInsertInstructionRejected) {
-    auto dec = std::make_shared<QpackEncoder>();
+    auto dec = std::make_shared<QpackDecoder>();
     dec->SetMaxTableCapacity(64);  // very small cap
     dec->SetDynamicTableEnabled(true);
 
@@ -1872,7 +1880,7 @@ TEST_F(QpackDynamicTableE2ETest, ProbeOversizedInsertInstructionRejected) {
 //            to fail (returns false) per RFC 9204 §3.2.3 — the peer's
 //            encoder MUST NOT advertise a cap larger than we promised.
 TEST_F(QpackDynamicTableE2ETest, ProbeSetCapacityExceedingMaxRejected) {
-    auto dec = std::make_shared<QpackEncoder>();
+    auto dec = std::make_shared<QpackDecoder>();
     dec->SetMaxTableCapacity(1024);
     dec->SetDynamicTableEnabled(true);
 
@@ -1892,7 +1900,7 @@ TEST_F(QpackDynamicTableE2ETest, ProbeSetCapacityExceedingMaxRejected) {
 //            must be accepted and actually shrink (or grow) the table.
 //            A subsequent insert must respect the new cap.
 TEST_F(QpackDynamicTableE2ETest, ProbeSetCapacityWithinLimitTakesEffect) {
-    auto dec = std::make_shared<QpackEncoder>();
+    auto dec = std::make_shared<QpackDecoder>();
     dec->SetMaxTableCapacity(4096);
     dec->SetDynamicTableEnabled(true);
 
@@ -2128,7 +2136,7 @@ TEST_F(QpackDynamicTableE2ETest, ProbeEncodeOnlyPseudoHeaders) {
     EXPECT_GT(buf->GetDataLength(), 0u);
 
     std::vector<std::pair<std::string, std::string>> out;
-    QpackEncoder dec;
+    QpackDecoder dec;
     EXPECT_TRUE(dec.Decode(buf, out));
     EXPECT_EQ(out.size(), 4u);
     EXPECT_EQ(*FindValue(out, ":method"), "GET");
@@ -2160,7 +2168,7 @@ TEST_F(QpackDynamicTableE2ETest, ProbeEncodeMixedCaseNameLiteral) {
     auto buf = std::make_shared<common::SingleBlockBuffer>(chunk);
     EXPECT_TRUE(enc.Encode(in, buf));
 
-    QpackEncoder dec;
+    QpackDecoder dec;
     std::vector<std::pair<std::string, std::string>> out;
     EXPECT_TRUE(dec.Decode(buf, out));
     // Current implementation: original case round-trips faithfully.
@@ -2174,7 +2182,7 @@ TEST_F(QpackDynamicTableE2ETest, ProbeEncodeMixedCaseNameLiteral) {
 //            decoding an instruction sequence in two halves; each call
 //            should succeed without losing the boundary state.
 TEST_F(QpackDynamicTableE2ETest, ProbeEncoderInstructionsFragmented) {
-    auto dec = std::make_shared<QpackEncoder>();
+    auto dec = std::make_shared<QpackDecoder>();
     dec->SetMaxTableCapacity(4096);
     dec->SetDynamicTableEnabled(true);
 

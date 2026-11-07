@@ -76,6 +76,20 @@ bool FrameDecoder::DecodeFrames(std::shared_ptr<common::IBuffer> buffer, std::ve
             // Without this, DataFrame::Decode will re-read these bytes as length!
             wrapper.Flush();
 
+            // P1-H2e (RFC 9114 §7.2.8): frame types 0x02 / 0x06 / 0x08 / 0x09
+            // are reserved from HTTP/2 semantics and MUST be treated as an
+            // error (H3_FRAME_UNEXPECTED), NOT skipped as unknown types. The
+            // unknown-type skip path exists for genuine GREASE / future
+            // frames. We surface this as a decode failure; the stream layer
+            // then raises a connection error (code fidelity: most callers
+            // report kFrameError, which RFC 9114 also defines as a
+            // connection error — the on-wire close is what matters).
+            if (frame_type == 0x02 || frame_type == 0x06 || frame_type == 0x08 || frame_type == 0x09) {
+                LOG_ERROR("DecodeFrames: HTTP/2 reserved frame type 0x%llx received — error, not ignorable",
+                    (unsigned long long)frame_type);
+                return false;
+            }
+
             // Create frame instance
             auto creator = kFrameCreatorMap.find(frame_type);
             if (creator == kFrameCreatorMap.end()) {

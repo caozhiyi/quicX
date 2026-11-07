@@ -5,11 +5,14 @@ namespace quicx {
 namespace quic {
 
 void MockQuicConnection::Close() {
-    // TODO: implement this
+    closed_ = true;
 }
 
-void MockQuicConnection::Reset(uint32_t /*error_code*/) {
-    // TODO: implement this
+void MockQuicConnection::Reset(uint32_t error_code) {
+    // P1-H1 dispatch tests observe the on-wire CONNECTION_CLOSE code here.
+    last_reset_error_code_ = error_code;
+    reset_count_++;
+    closed_ = true;
 }
 
 std::shared_ptr<IQuicStream> MockQuicConnection::MakeStream(StreamDirection type) {

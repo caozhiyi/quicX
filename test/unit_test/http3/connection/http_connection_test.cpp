@@ -46,6 +46,9 @@ public:
     uint32_t GetErrorCode() const { return error_code_; }
     const std::string& GetLastErrorUniqueId() const { return last_error_unique_id_; }
 
+    // P1-H1 dispatch tests drive the error dispatch entry point directly.
+    std::shared_ptr<ClientConnection> GetConn() const { return conn_; }
+
 private:
     uint32_t error_code_;
     std::string last_error_unique_id_;
@@ -65,7 +68,7 @@ public:
                 HttpMethod method, const std::string& path, std::shared_ptr<IRequest> /*request*/ = nullptr) override {
                 return server_->MatchHandler(method, path);
             }
-            void BeforeHandlerProcess(std::shared_ptr<IRequest> /*req*/, std::shared_ptr<IResponse> /*resp*/) override {}
+            bool BeforeHandlerProcess(std::shared_ptr<IRequest> /*req*/, std::shared_ptr<IResponse> /*resp*/) override { return true; }
             void AfterHandlerProcess(std::shared_ptr<IRequest> /*req*/, std::shared_ptr<IResponse> /*resp*/) override {}
 
         private:
@@ -223,6 +226,115 @@ TEST_F(HttpConnectionTest, ServerShutdownRefusesNewPushes) {
     mock_server_->Shutdown();
 
     EXPECT_FALSE(mock_server_->IsAcceptingNewPushes());
+}
+
+// ---------------------------------------------------------------------------
+// P1-H1: RFC 9114 §8 error dispatch (h3spec-style assertions on the on-wire
+// behaviour that used to be completely missing: errors stopped at the local
+// user callback and the peer never observed anything).
+// ---------------------------------------------------------------------------
+
+// The scope table must classify the RFC 9114 §8.1 codes this dispatch relies
+// on. Spot-check every branch plus the contextual default.
+TEST(Http3ErrorScope, TableClassifiesRfc9114Codes) {
+    // Unambiguously connection-level.
+    EXPECT_EQ(GetErrorScope(Http3ErrorCode::kClosedCriticalStream), Http3ErrorScope::kConnection);
+    EXPECT_EQ(GetErrorScope(Http3ErrorCode::kSettingsError), Http3ErrorScope::kConnection);
+    EXPECT_EQ(GetErrorScope(Http3ErrorCode::kMissingSettings), Http3ErrorScope::kConnection);
+    EXPECT_EQ(GetErrorScope(Http3ErrorCode::kStreamCreationError), Http3ErrorScope::kConnection);
+    EXPECT_EQ(GetErrorScope(Http3ErrorCode::kIdError), Http3ErrorScope::kConnection);
+    EXPECT_EQ(GetErrorScope(Http3ErrorCode::kQpackDecompressionFailed), Http3ErrorScope::kConnection);
+    EXPECT_EQ(GetErrorScope(Http3ErrorCode::kQpackEncoderStreamError), Http3ErrorScope::kConnection);
+    EXPECT_EQ(GetErrorScope(Http3ErrorCode::kQpackDecoderStreamError), Http3ErrorScope::kConnection);
+    EXPECT_EQ(GetErrorScope(Http3ErrorCode::kVersionFallback), Http3ErrorScope::kConnection);
+
+    // Unambiguously request-stream scoped.
+    EXPECT_EQ(GetErrorScope(Http3ErrorCode::kRequestRejected), Http3ErrorScope::kRequestStream);
+    EXPECT_EQ(GetErrorScope(Http3ErrorCode::kRequestCancelled), Http3ErrorScope::kRequestStream);
+    EXPECT_EQ(GetErrorScope(Http3ErrorCode::kRequestIncomplete), Http3ErrorScope::kRequestStream);
+
+    // Contextual: depends on which stream raised them.
+    EXPECT_EQ(GetErrorScope(Http3ErrorCode::kFrameUnexpected), Http3ErrorScope::kContextual);
+    EXPECT_EQ(GetErrorScope(Http3ErrorCode::kFrameError), Http3ErrorScope::kContextual);
+    EXPECT_EQ(GetErrorScope(Http3ErrorCode::kMessageError), Http3ErrorScope::kContextual);
+    EXPECT_EQ(GetErrorScope(Http3ErrorCode::kInternalError), Http3ErrorScope::kContextual);
+}
+
+// A connection-scope code (or an error on a critical stream) MUST close the
+// connection carrying the H3 error code: the transport sees
+// CONNECTION_CLOSE(error_code) instead of the old silent local cleanup.
+TEST_F(HttpConnectionTest, ConnectionLevelErrorClosesConnectionWithH3Code) {
+    // kSettingsError on an unknown stream id: scope alone drives the close.
+    mock_client_->GetConn()->DispatchH3Error(/*stream_id=*/9999,
+        static_cast<uint32_t>(Http3ErrorCode::kSettingsError));
+
+    EXPECT_EQ(mock_conn_1_->GetResetCount(), 1u);
+    EXPECT_EQ(mock_conn_1_->GetLastResetErrorCode(), static_cast<uint32_t>(Http3ErrorCode::kSettingsError));
+    // The local user callback is still notified.
+    EXPECT_EQ(mock_client_->GetErrorCode(), static_cast<uint32_t>(Http3ErrorCode::kSettingsError));
+}
+
+// A request-stream scope code on a (non-critical / unknown) stream must NOT
+// tear down the whole connection: the transport sees no CONNECTION_CLOSE.
+TEST_F(HttpConnectionTest, StreamLevelErrorDoesNotCloseConnection) {
+    mock_client_->GetConn()->DispatchH3Error(/*stream_id=*/9999,
+        static_cast<uint32_t>(Http3ErrorCode::kRequestCancelled));
+
+    EXPECT_EQ(mock_conn_1_->GetResetCount(), 0u);
+    // Local user notification still happens.
+    EXPECT_EQ(mock_client_->GetErrorCode(), static_cast<uint32_t>(Http3ErrorCode::kRequestCancelled));
+}
+
+// error 0 is normal completion: no transport signalling at all.
+TEST_F(HttpConnectionTest, ZeroErrorIsSilentCompletion) {
+    mock_client_->GetConn()->DispatchH3Error(/*stream_id=*/9999, 0);
+    EXPECT_EQ(mock_conn_1_->GetResetCount(), 0u);
+    EXPECT_EQ(mock_client_->GetErrorCode(), 0u);
+}
+
+
+// ---------------------------------------------------------------------------
+// Review item 7: a code that is not an HTTP/3 code (a QUIC transport code, or
+// the value the PEER chose in its own RESET_STREAM) must never be reflected
+// back on the wire. The local callback still sees the original for diagnosis.
+// ---------------------------------------------------------------------------
+
+TEST(Http3ErrorScope, KnownCodeTableCoversEveryDefinedCodeAndNothingElse) {
+    for (uint32_t code : {0x0100u, 0x0101u, 0x0102u, 0x0103u, 0x0104u, 0x0105u, 0x0106u, 0x0107u, 0x0108u, 0x0109u,
+             0x010au, 0x010bu, 0x010cu, 0x010du, 0x010eu, 0x010fu, 0x0110u, 0x0200u, 0x0201u, 0x0202u}) {
+        EXPECT_TRUE(IsKnownHttp3ErrorCode(code)) << std::hex << code;
+    }
+    for (uint32_t code : {0x00u, 0x01u, 0x0au, 0x0111u, 0x01ffu, 0x0203u, 0xdeadbeefu, 0xffffffffu}) {
+        EXPECT_FALSE(IsKnownHttp3ErrorCode(code)) << std::hex << code;
+    }
+}
+
+TEST_F(HttpConnectionTest, UnknownCodeOnRequestStreamKeepsConnectionAndDiagnosticCode) {
+    constexpr uint32_t kPeerChosen = 0xdeadbeef;
+    mock_client_->GetConn()->DispatchH3Error(/*stream_id=*/9999, kPeerChosen);
+
+    // Mapped to H3_REQUEST_CANCELLED (request scope): the connection survives...
+    EXPECT_EQ(mock_conn_1_->GetResetCount(), 0u);
+    // ...and the local notification keeps the original value for diagnosis.
+    EXPECT_EQ(mock_client_->GetErrorCode(), kPeerChosen);
+}
+
+TEST_F(HttpConnectionTest, UnknownCodeOnACriticalStreamClosesWithClosedCriticalStreamNotTheEcho) {
+    constexpr uint32_t kPeerChosen = 0xdeadbeef;
+    // Init() wires up the control + QPACK streams (two-phase init), which are
+    // the critical streams; they take the first stream ids of this connection.
+    // Raise the unknown code on each until the connection closes: whichever it
+    // is, the wire code must be H3_CLOSED_CRITICAL_STREAM and never the
+    // peer-chosen value.
+    mock_client_->GetConn()->Init();
+    bool closed = false;
+    for (uint64_t id = 0; id < 8 && !closed; ++id) {
+        mock_client_->GetConn()->DispatchH3Error(id, kPeerChosen);
+        closed = mock_conn_1_->GetResetCount() > 0;
+    }
+    ASSERT_TRUE(closed) << "an error on a critical stream is a connection error";
+    EXPECT_EQ(mock_conn_1_->GetLastResetErrorCode(), static_cast<uint32_t>(Http3ErrorCode::kClosedCriticalStream));
+    EXPECT_NE(mock_conn_1_->GetLastResetErrorCode(), kPeerChosen);
 }
 
 }  // namespace

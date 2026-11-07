@@ -29,6 +29,7 @@
 
 #include "http3/qpack/blocked_registry.h"
 #include "http3/qpack/dynamic_table.h"
+#include "http3/qpack/qpack_decoder.h"
 #include "http3/qpack/qpack_encoder.h"
 
 namespace quicx {
@@ -115,7 +116,7 @@ static void BM_Qpack_Decode_LargeHeaders(benchmark::State& state) {
         auto buf = MakeBuffer(wire.size() + 256);
         buf->Write(wire.data(), static_cast<uint32_t>(wire.size()));
 
-        http3::QpackEncoder dec;  // fresh decoder so dynamic table state is clean
+        http3::QpackDecoder dec;  // fresh decoder so dynamic table state is clean
         std::vector<std::pair<std::string, std::string>> out;
         bool ok = dec.Decode(buf, out);
         benchmark::DoNotOptimize(ok);

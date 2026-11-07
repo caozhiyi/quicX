@@ -16,6 +16,7 @@ class ControlServerReceiverStream: public ControlReceiverStream {
 public:
     ControlServerReceiverStream(const std::shared_ptr<IQuicRecvStream>& stream,
         const std::shared_ptr<QpackEncoder>& qpack_encoder,
+        const std::shared_ptr<QpackDecoder>& qpack_decoder,
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
         const std::function<void(uint64_t id)>& goaway_handler,
         const std::function<void(const std::unordered_map<uint64_t, uint64_t>& settings)>& settings_handler,

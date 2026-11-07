@@ -1,8 +1,11 @@
 #ifndef HTTP3_QPACK_QPACK_ENCODER
 #define HTTP3_QPACK_QPACK_ENCODER
 
+#include <cstdint>
+#include <deque>
 #include <functional>
 #include <memory>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -11,6 +14,7 @@
 #include "common/buffer/if_buffer.h"
 
 #include "http3/config.h"
+#include "http3/frame/qpack_decoder_frames.h"
 #include "http3/qpack/dynamic_table.h"
 
 namespace quicx {
@@ -75,47 +79,59 @@ public:
     // Count at or below the peer's applied count and makes blocking
     // impossible. New entries are still inserted and announced on the encoder
     // stream, so subsequent header blocks get the compression benefit.
-    void OnPeerInsertCountIncrement(uint64_t delta) { known_received_count_ += delta; }
-    uint64_t GetKnownReceivedCount() const { return known_received_count_; }
+    //
+    // Known Received Count lives in ONE place -- the DynamicTable -- which also
+    // consults it for the eviction guard. (It used to be mirrored here and
+    // hand-synchronised; a second copy can only drift.)
+    //
+    // Section Acknowledgment (RFC 9204 4.4.1) also advances the count, to the
+    // acknowledged section's Required Insert Count. This encoder never has that
+    // to add: it only references entries with abs_index < known_received_count_
+    // (see DecideHeaderEncoding), so every section it emits has
+    // RIC <= known_received_count_ and acknowledging it can never raise the
+    // count. If the encoder is ever changed to reference not-yet-acknowledged
+    // entries (post-base references), Section Ack MUST be wired to
+    // AdvanceKnownReceived as well.
+    void OnPeerInsertCountIncrement(uint64_t delta) { dynamic_table_.AdvanceKnownReceived(delta); }
+    uint64_t GetKnownReceivedCount() const { return dynamic_table_.GetKnownReceivedCount(); }
 
-    // Enable or disable dynamic table usage (default: enabled for better compression)
+    // RFC 9204 4.4.1 Section Acknowledgment: the peer's decoder finished a header
+    // block on |stream_id|. Acknowledgments are in order per stream, so it
+    // retires the EARLIEST outstanding section of that stream: its entries stop
+    // being pinned, and Known Received Count advances to at least its Required
+    // Insert Count (RFC 9204 2.1.4 -- an acknowledged section proves the
+    // decoder applied that many inserts). Returns false if the stream has no
+    // outstanding section (a peer error per the RFC; the caller decides how to
+    // react -- this class only logs and ignores).
+    bool OnPeerSectionAck(uint64_t stream_id);
+    // RFC 9204 4.4.2 Stream Cancellation: every outstanding section of the
+    // stream is abandoned; nothing will ever acknowledge it.
+    void OnPeerStreamCancellation(uint64_t stream_id);
+
+    // Observability / tests.
+    size_t GetOutstandingSectionCount() const { return outstanding_count_; }
+    static constexpr size_t kMaxOutstandingSections = 4096;
+
+    // Enable or disable dynamic table usage (starts disabled; the connection
+    // layer enables it once SETTINGS advertise a non-zero QPACK table).
     void SetDynamicTableEnabled(bool enabled) { enable_dynamic_table_ = enabled; }
     bool IsDynamicTableEnabled() const { return enable_dynamic_table_; }
 
-    bool Encode(const std::vector<std::pair<std::string, std::string>>& headers, std::shared_ptr<common::IBuffer> buffer);
-    bool Decode(const std::shared_ptr<common::IBuffer> buffer, std::vector<std::pair<std::string, std::string>>& headers);
-
-    // P0-S6: why Decode returned false. Callers must distinguish: only
-    // kBlocked may park the stream for a retry — malformed input and
-    // oversized sections are terminal for the header block, and treating
-    // them like "blocked" would retry forever.
-    enum class DecodeStatus { kOk, kBlocked, kMalformed, kSectionTooLarge };
-    DecodeStatus GetLastDecodeStatus() const { return last_decode_status_; }
-
-    // P0-S6: in-decoder bound on the decompressed field section size
-    // (RFC 9114 §4.2.2 accounting: per emitted field, name + value + 32).
-    // Enforced field-by-field so a 1-byte dynamic-table reference cannot
-    // expand into a huge entry before any size check sees it. 0 disables.
-    void SetFieldSectionSizeLimit(uint64_t limit) { field_section_size_limit_ = limit; }
-    uint64_t GetFieldSectionSizeLimit() const { return field_section_size_limit_; }
-    // Returns the Required Insert Count of the most recently decoded header block.
-    // RFC 9204 §4.4.1: the decoder MUST NOT emit Section Acknowledgment for header
-    // blocks with a Required Insert Count of zero (no dependency on dynamic table).
-    uint64_t GetLastDecodedRequiredInsertCount() const { return last_decoded_ric_; }
+    // |stream_id| is the stream the encoded block will be SENT on. It keys the
+    // outstanding-section bookkeeping that protects referenced dynamic-table
+    // entries from eviction until the peer's decoder acknowledges the block
+    // (Section Acknowledgment) or abandons the stream (Stream Cancellation),
+    // RFC 9204 2.1.1. Every production caller MUST pass it. kNoStreamId means
+    // "no decoder-feedback channel" (unit tests, offline tools): the block is
+    // still encoded and may reference the dynamic table, but nothing protects
+    // those entries afterwards.
+    static constexpr uint64_t kNoStreamId = UINT64_MAX;
+    bool Encode(const std::vector<std::pair<std::string, std::string>>& headers,
+        std::shared_ptr<common::IBuffer> buffer, uint64_t stream_id = kNoStreamId);
     // Set a callback used to send encoder instructions (Insert entries) on QPACK encoder stream
     void SetInstructionSender(std::function<void(const std::vector<std::pair<std::string, std::string>>&)> cb) {
         instruction_sender_ = std::move(cb);
     }
-    // Optional: set a function to emit decoder stream frames (Section Ack, Stream Cancel, Insert Count Increment)
-    void SetDecoderFeedbackSender(std::function<void(uint8_t type, uint64_t value)> cb) {
-        decoder_feedback_sender_ = std::move(cb);
-    }
-    // Emit a decoder feedback frame via bound sender
-    void EmitDecoderFeedback(uint8_t type, uint64_t value) {
-        if (decoder_feedback_sender_) decoder_feedback_sender_(type, value);
-    }
-    // Decoder-stream side: parse QPACK encoder instructions (RFC 9204)
-    bool DecodeEncoderInstructions(const std::shared_ptr<common::IBuffer> instr_buf);
     // Encoder-stream side: generate QPACK encoder instructions (RFC 9204)
     bool EncodeEncoderInstructions(const std::vector<std::pair<std::string, std::string>>& inserts,
         std::shared_ptr<common::IBuffer> instr_buf, bool with_name_ref = false, bool set_capacity = false,
@@ -143,14 +159,13 @@ private:
         // negotiated effective capacity.  Without this, AddHeaderItem rejects
         // any entry whose size exceeds the *constructor-default* capacity
         // (1024 bytes) even when SETTINGS negotiated something larger, and
-        // the caller (Encode / DecodeEncoderInstructions) would then emit /
-        // accept a bogus reference to a non-existent entry.  RFC 9204 §3.2.3
+        // the caller (Encode / the decoder's instruction parser) would then
+        // emit / accept a bogus reference to a non-existent entry.  RFC 9204 §3.2.3
         // requires the encoder/decoder dynamic tables to track the
         // negotiated cap.
         dynamic_table_.UpdateMaxTableSize(max_table_capacity_);
     }
     void EncodeString(const std::string& str, std::shared_ptr<common::IBuffer> buffer);
-    bool DecodeString(const std::shared_ptr<common::IBuffer> buffer, std::string& output);
 
     // ==================== header-block encoding internals (RFC 9204 §4.5) ====================
 
@@ -191,28 +206,6 @@ private:
     void WriteHeaderRepresentation(
         const HeaderEncoding& enc, int64_t base, const std::shared_ptr<common::IBuffer>& buffer);
 
-    // ==================== header-block decoding internals (RFC 9204 §4.5) ====================
-    //
-    // One method per wire pattern; Decode() is the dispatch loop only.
-    // |first_byte| is the pattern byte the loop already consumed; each method
-    // reads whatever varints/strings follow and inserts the header into
-    // |headers|. |base| is the block's decoded Base.
-
-    bool DecodeIndexedStatic(const std::shared_ptr<common::IBuffer>& buffer, uint8_t first_byte,
-        [[maybe_unused]] int64_t base, std::vector<std::pair<std::string, std::string>>& headers);
-    bool DecodeIndexedDynamic(const std::shared_ptr<common::IBuffer>& buffer, uint8_t first_byte, int64_t base,
-        std::vector<std::pair<std::string, std::string>>& headers);
-    bool DecodeLiteralNameRefStatic(const std::shared_ptr<common::IBuffer>& buffer, uint8_t first_byte,
-        [[maybe_unused]] int64_t base, std::vector<std::pair<std::string, std::string>>& headers);
-    bool DecodeLiteralNameRefDynamic(const std::shared_ptr<common::IBuffer>& buffer, uint8_t first_byte, int64_t base,
-        std::vector<std::pair<std::string, std::string>>& headers);
-    bool DecodeLiteralNoNameRef(const std::shared_ptr<common::IBuffer>& buffer, uint8_t first_byte,
-        [[maybe_unused]] int64_t base, std::vector<std::pair<std::string, std::string>>& headers);
-    bool DecodePostBaseIndexed(const std::shared_ptr<common::IBuffer>& buffer, uint8_t first_byte, int64_t base,
-        std::vector<std::pair<std::string, std::string>>& headers);
-    bool DecodePostBaseLiteralNameRef(const std::shared_ptr<common::IBuffer>& buffer, uint8_t first_byte, int64_t base,
-        std::vector<std::pair<std::string, std::string>>& headers);
-
     // ==================== encoder-instruction internals (RFC 9204 §4.3) ====================
 
     // Insert With Name Reference (1Sxxxxxx): static index if the name is in
@@ -224,13 +217,6 @@ private:
     // literals, the name sharing the instruction byte's 6-bit length prefix.
     bool EncodeInsertWithLiteralName(
         const std::pair<std::string, std::string>& insert, const std::shared_ptr<common::IBuffer>& instr_buf);
-
-    // Decoder-stream side: one method per instruction pattern;
-    // DecodeEncoderInstructions() is the dispatch loop only.
-    bool DecodeInstrInsertWithNameRef(const std::shared_ptr<common::IBuffer>& instr_buf, uint8_t fb);
-    bool DecodeInstrInsertWithLiteralName(const std::shared_ptr<common::IBuffer>& instr_buf, uint8_t fb);
-    bool DecodeInstrSetCapacity(const std::shared_ptr<common::IBuffer>& instr_buf, uint8_t fb);
-    bool DecodeInstrDuplicate(const std::shared_ptr<common::IBuffer>& instr_buf, uint8_t fb);
 
 private:
     DynamicTable dynamic_table_;
@@ -246,16 +232,27 @@ private:
     // Can be disabled via SetDynamicTableEnabled() if needed
     bool enable_dynamic_table_{true};
     std::function<void(const std::vector<std::pair<std::string, std::string>>&)> instruction_sender_;
-    std::function<void(uint8_t type, uint64_t value)> decoder_feedback_sender_;
-    uint64_t last_decoded_ric_{0};
-    // Peer's Known Received Count; see OnPeerInsertCountIncrement() above.
-    uint64_t known_received_count_{0};
-    // P0-S6: failure classification of the most recent Decode() and the
-    // in-decoder field-section bound (see GetLastDecodeStatus /
-    // SetFieldSectionSizeLimit). Defaults to the config fallback so even
-    // un-advertised connections get a decompression-bomb bound.
-    DecodeStatus last_decode_status_{DecodeStatus::kOk};
-    uint64_t field_section_size_limit_{kDefaultQpackDecodeSectionLimit};
+    // Header blocks sent but not yet acknowledged / cancelled, oldest first per
+    // stream. Only blocks that reference the dynamic table are recorded (a
+    // block with Required Insert Count 0 is never acknowledged, RFC 9204 4.4.1).
+    struct OutstandingSection {
+        uint64_t required_insert_count;
+        uint64_t min_referenced;  // lowest absolute index the block references
+    };
+    std::unordered_map<uint64_t, std::deque<OutstandingSection>> outstanding_;
+    std::multiset<uint64_t> outstanding_min_refs_;  // one per outstanding section
+    size_t outstanding_count_{0};
+    // Lowest absolute index referenced by the block being encoded RIGHT NOW.
+    // Pass 1 may insert (and therefore evict) between two of the block's own
+    // references; the block's earlier references must already be protected.
+    uint64_t inflight_block_min_ref_{UINT64_MAX};
+    // Push min(outstanding sections, in-flight block) down to the table.
+    void RefreshPinFloor();
+
+    // P1-H4d: the decode-side state machine (header-block decoding, encoder-
+    // instruction parsing, decoder feedback) moved to QpackDecoder. This class
+    // keeps only the encoder role: field-section encoding, dynamic-table
+    // inserts and capacity negotiation, outstanding-section tracking.
 };
 
 }  // namespace http3

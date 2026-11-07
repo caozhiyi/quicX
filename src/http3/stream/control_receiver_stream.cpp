@@ -10,6 +10,7 @@ namespace http3 {
 
 ControlReceiverStream::ControlReceiverStream(const std::shared_ptr<IQuicRecvStream>& stream,
     const std::shared_ptr<QpackEncoder>& /*qpack_encoder*/,
+    const std::shared_ptr<QpackDecoder>& /*qpack_decoder*/,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
     const std::function<void(uint64_t id)>& goaway_handler,
     const std::function<void(const std::unordered_map<uint64_t, uint64_t>& settings)>& settings_handler):
@@ -26,13 +27,26 @@ ControlReceiverStream::ControlReceiverStream(const std::shared_ptr<IQuicRecvStre
 ControlReceiverStream::~ControlReceiverStream() {
     // Note: Do NOT call stream_->Reset() here during destruction.
     // See QpackDecoderSenderStream destructor comment for details.
-    stream_.reset();
+    // P1-H7a: unregister the read callback BEFORE dropping the stream
+    // reference — the underlying QUIC stream outlives this wrapper (the
+    // connection holds it), and a callback still capturing `this` would
+    // fire into a destroyed object.
+    if (stream_) {
+        stream_->SetStreamReadCallBack(nullptr);
+        stream_.reset();
+    }
 }
 
 void ControlReceiverStream::OnData(std::shared_ptr<IBufferRead> data, bool is_last, uint32_t error) {
     if (error != 0) {
-        LOG_ERROR("IRecvStream::OnData error: %d", error);
-        error_handler_(stream_->GetStreamID(), error);
+        // P1-H2a (RFC 9114 §6.2.1): the control stream was reset or its read
+        // half errored — that is ALWAYS H3_CLOSED_CRITICAL_STREAM, a
+        // connection error. Forwarding the raw transport error code would
+        // leak a QUIC-level code into the H3 error space and DispatchH3Error
+        // would reset instead of closing (control stream = critical).
+        LOG_ERROR("ControlReceiverStream: control stream %llu errored (%u) — H3_CLOSED_CRITICAL_STREAM",
+            (unsigned long long)stream_->GetStreamID(), error);
+        error_handler_(stream_->GetStreamID(), static_cast<uint32_t>(Http3ErrorCode::kClosedCriticalStream));
         return;
     }
     size_t total_length = data->GetDataLength();
@@ -101,16 +115,35 @@ void ControlReceiverStream::HandleFrame(std::shared_ptr<IFrame> frame) {
             break;
         }
         default:
-            // RFC 9114 Section 9: Unknown frame types on the control stream MUST be ignored
-            // This includes CANCEL_PUSH and any future extension frame types
-            LOG_WARN("ControlReceiverStream: unknown frame type %d on control stream, ignoring", frame->GetType());
+            // P1-H2d (RFC 9114 §6.2.4): only SETTINGS / GOAWAY / CANCEL_PUSH /
+            // MAX_PUSH_ID (and future unknown types, §9) are permitted on the
+            // control stream. A DATA / HEADERS / PUSH_PROMISE arriving here
+            // is H3_FRAME_UNEXPECTED — a connection error on a critical
+            // stream (DispatchH3Error closes the connection). The old code
+            // lumped these in with unknown types and silently ignored them.
+            switch (frame->GetType()) {
+                case FrameType::kData:
+                case FrameType::kHeaders:
+                case FrameType::kPushPromise:
+                    LOG_ERROR("ControlReceiverStream: frame type %u not permitted on control stream, "
+                              "H3_FRAME_UNEXPECTED",
+                        frame->GetType());
+                    error_handler_(stream_->GetStreamID(), static_cast<uint32_t>(Http3ErrorCode::kFrameUnexpected));
+                    return;
+                default:
+                    // RFC 9114 Section 9: unknown frame types MUST be ignored
+                    LOG_WARN("ControlReceiverStream: unknown frame type %d on control stream, ignoring",
+                        frame->GetType());
+                    break;
+            }
             break;
     }
 }
 
 void ControlReceiverStream::HandleRawData(std::shared_ptr<IBufferRead> data) {
     // Interpret as QPACK encoder instructions and update dynamic table
-    qpack_encoder_->DecodeEncoderInstructions(std::dynamic_pointer_cast<common::IBuffer>(data));
+    // P1-H4d: encoder-stream instructions drive the local DECODER table.
+    qpack_decoder_->DecodeEncoderInstructions(std::dynamic_pointer_cast<common::IBuffer>(data));
 }
 
 }  // namespace http3

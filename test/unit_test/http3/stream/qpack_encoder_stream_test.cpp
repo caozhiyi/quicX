@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 
 #include "http3/qpack/blocked_registry.h"
+#include "http3/qpack/qpack_decoder.h"
 #include "http3/stream/qpack_encoder_receiver_stream.h"
 #include "http3/stream/qpack_encoder_sender_stream.h"
 #include "http3/stream/type.h"
@@ -55,7 +56,7 @@ public:
         error_code_(0),
         notify_count_(0) {
         blocked_registry_ = std::make_shared<QpackBlockedRegistry>();
-        qpack_encoder_ = std::make_shared<QpackEncoder>();
+        qpack_decoder_ = std::make_shared<QpackDecoder>();
 
         // Start with UnidentifiedStream to read stream type
         unidentified_stream_ = std::make_shared<UnidentifiedStream>(stream,
@@ -71,7 +72,7 @@ public:
         EXPECT_EQ(stream_type, static_cast<uint64_t>(StreamType::kQpackEncoder));
 
         // Create the actual QPACK encoder receiver stream
-        receiver_stream_ = std::make_shared<QpackEncoderReceiverStream>(stream, qpack_encoder_, blocked_registry_,
+        receiver_stream_ = std::make_shared<QpackEncoderReceiverStream>(stream, qpack_decoder_, blocked_registry_,
             std::bind(&MockReceiverConnection::ErrorHandle, this, std::placeholders::_1, std::placeholders::_2));
 
         // Feed remaining data to the encoder stream
@@ -92,7 +93,7 @@ private:
     uint32_t error_code_;
     uint32_t notify_count_;
 
-    std::shared_ptr<QpackEncoder> qpack_encoder_;
+    std::shared_ptr<QpackDecoder> qpack_decoder_;
     std::shared_ptr<QpackBlockedRegistry> blocked_registry_;
     std::shared_ptr<UnidentifiedStream> unidentified_stream_;
     std::shared_ptr<QpackEncoderReceiverStream> receiver_stream_;

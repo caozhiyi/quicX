@@ -52,6 +52,7 @@
 #include "http3/frame/data_frame.h"
 #include "http3/frame/headers_frame.h"
 #include "http3/qpack/blocked_registry.h"
+#include "http3/qpack/qpack_decoder.h"
 #include "http3/qpack/qpack_encoder.h"
 #include "http3/stream/request_stream.h"
 
@@ -104,7 +105,7 @@ protected:
 
         // Receiver-side decoder. Its dynamic table starts at InsertCount=0
         // so any HEADERS with RIC>=1 will block.
-        decoder_ = std::make_shared<QpackEncoder>();
+        decoder_ = std::make_shared<QpackDecoder>();
         decoder_->SetMaxTableCapacity(4096);
         decoder_->SetDynamicTableEnabled(true);
 
@@ -133,7 +134,7 @@ protected:
 
     std::shared_ptr<quic::MockQuicStream> stream_;
     std::shared_ptr<QpackEncoder> encoder_;  // outgoing; unused by reads
-    std::shared_ptr<QpackEncoder> decoder_;  // incoming; starts empty
+    std::shared_ptr<QpackDecoder> decoder_;  // incoming; starts empty
     std::shared_ptr<QpackBlockedRegistry> blocked_registry_;
     std::shared_ptr<RequestStream> request_stream_;
 

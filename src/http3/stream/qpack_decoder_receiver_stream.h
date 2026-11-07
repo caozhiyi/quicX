@@ -38,6 +38,12 @@ private:
     uint64_t insert_count_{0};
     // Parse decoder stream frames: Section Acknowledgement, Stream Cancellation, Insert Count Increment
     void ParseDecoderFrames(std::shared_ptr<IBufferRead> data);
+
+    // P1-H5a: cap on an instruction-in-waiting tail (see
+    // QpackEncoderReceiverStream::kMaxPendingInstrBytes). A peer declaring an
+    // absurd varint that never completes pins the receive buffer; past the
+    // cap the tail is treated as malformed → QPACK_DECODER_STREAM_ERROR.
+    static constexpr uint32_t kMaxPendingInstrBytes = 64 * 1024;
 };
 
 }  // namespace http3

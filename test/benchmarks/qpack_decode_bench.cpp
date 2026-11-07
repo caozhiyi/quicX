@@ -6,6 +6,7 @@
 
 #include "common/allocator/pool_block.h"
 #include "common/buffer/multi_block_buffer.h"
+#include "http3/qpack/qpack_decoder.h"
 #include "http3/qpack/qpack_encoder.h"
 #include "http3/qpack/static_table.h"
 #include "http3/qpack/util.h"
@@ -19,14 +20,15 @@ static std::shared_ptr<common::IBuffer> MakeBuffer(size_t cap = 4096) {
 }
 
 static void BM_Qpack_Decode_StaticIndexed(benchmark::State& state) {
-    QpackEncoder dec;
+    QpackEncoder wire;  // builds the header block under test
+    QpackDecoder dec;   // P1-H4d: decode side is a QpackDecoder now
     // Choose a known static entry index
     int32_t sidx = StaticTable::Instance().FindHeaderItemIndex(":method", "GET");
     if (sidx < 0) sidx = 17;  // fallback to typical index if lookup fails
 
     for (auto _ : state) {
         auto hdr = MakeBuffer();
-        dec.WriteHeaderPrefix(hdr, /*ric*/ 0, /*base*/ 0);
+        wire.WriteHeaderPrefix(hdr, /*ric*/ 0, /*base*/ 0);
         QpackEncodePrefixedInteger(hdr, 6, 0xC0, static_cast<uint64_t>(sidx));
         std::vector<std::pair<std::string, std::string>> headers;
         bool ok = dec.Decode(hdr, headers);
@@ -37,7 +39,7 @@ static void BM_Qpack_Decode_StaticIndexed(benchmark::State& state) {
 
 static void BM_Qpack_Decode_DynamicIndexed(benchmark::State& state) {
     QpackEncoder enc;
-    QpackEncoder dec;
+    QpackDecoder dec;  // P1-H4d
     // Warm up: insert dynamic entry
     auto ctrl = MakeBuffer();
     std::vector<std::pair<std::string, std::string>> inserts = {{"x-bench", "v"}};
@@ -46,7 +48,7 @@ static void BM_Qpack_Decode_DynamicIndexed(benchmark::State& state) {
 
     for (auto _ : state) {
         auto hdr = MakeBuffer();
-        dec.WriteHeaderPrefix(hdr, /*ric*/ 1, /*base*/ 1);
+        enc.WriteHeaderPrefix(hdr, /*ric*/ 1, /*base*/ 1);
         QpackEncodePrefixedInteger(hdr, 6, 0x80, 0);
         std::vector<std::pair<std::string, std::string>> headers;
         bool ok = dec.Decode(hdr, headers);
@@ -56,13 +58,14 @@ static void BM_Qpack_Decode_DynamicIndexed(benchmark::State& state) {
 }
 
 static void BM_Qpack_Decode_Literal_NoIndex(benchmark::State& state) {
-    QpackEncoder dec;
+    QpackEncoder wire;  // builds the header block under test
+    QpackDecoder dec;   // P1-H4d
     const std::string name = "x-lit";
     const std::string value(static_cast<size_t>(state.range(0)), 'a');
 
     for (auto _ : state) {
         auto hdr = MakeBuffer();
-        dec.WriteHeaderPrefix(hdr, /*ric*/ 0, /*base*/ 0);
+        wire.WriteHeaderPrefix(hdr, /*ric*/ 0, /*base*/ 0);
         uint8_t literal = 0x20;
         hdr->Write(&literal, 1);
         QpackEncodeStringLiteral(name, hdr, false);

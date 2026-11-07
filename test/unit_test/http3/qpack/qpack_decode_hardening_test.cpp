@@ -15,8 +15,8 @@
 //     holding a 4 GiB string.
 //
 // The same "resize first, read second" pattern also existed in two more places
-// that did NOT go through the hardened helper — QpackEncoder::DecodeString()
-// (every literal header field's *value*) and QpackEncoder::DecodeLiteralNoName-
+// that did NOT go through the hardened helper — QpackDecoder::DecodeString()
+// (every literal header field's *value*) and QpackDecoder::DecodeLiteralNoName-
 // Ref() (its *name*). All three now funnel through QpackReadStringBody(), so
 // the bound is enforced in exactly one place; the tests at the bottom of this
 // file cover the encoder entry point as well.
@@ -33,6 +33,7 @@
 #include "common/buffer/standalone_buffer_chunk.h"
 
 #include "http3/qpack/qpack_constants.h"
+#include "http3/qpack/qpack_decoder.h"
 #include "http3/qpack/qpack_encoder.h"
 #include "http3/qpack/util.h"
 
@@ -248,14 +249,14 @@ TEST(QpackDecodeHardeningTest, ReadStringBodyAcceptsExactFit) {
     EXPECT_EQ(out, "hello");
 }
 
-// ===== QpackEncoder::Decode: the end-to-end header-block path =====
+// ===== QpackDecoder::Decode: the end-to-end header-block path =====
 //
 // Before the fix, a single HEADERS frame claiming a 4 GiB literal reached
 // std::string::resize() and threw std::bad_alloc out of the HTTP/3 stream
 // callback, terminating the process. It must now simply fail to decode.
 
 TEST(QpackDecodeHardeningTest, EncoderRejectsOversizedLiteralValue) {
-    QpackEncoder encoder;
+    QpackDecoder decoder;
 
     auto buf = MakeBuffer(256);
     // Header block prefix: Required Insert Count = 0, Delta Base = 0.
@@ -268,12 +269,12 @@ TEST(QpackDecodeHardeningTest, EncoderRejectsOversizedLiteralValue) {
     ASSERT_TRUE(QpackEncodePrefixedInteger(buf, QpackString::kLengthPrefix, 0x00, 0x100000000ULL));
 
     std::vector<std::pair<std::string, std::string>> headers;
-    EXPECT_FALSE(encoder.Decode(buf, headers));
+    EXPECT_FALSE(decoder.Decode(buf, headers));
     EXPECT_TRUE(headers.empty());
 }
 
 TEST(QpackDecodeHardeningTest, EncoderRejectsOversizedLiteralName) {
-    QpackEncoder encoder;
+    QpackDecoder decoder;
 
     auto buf = MakeBuffer(256);
     const uint8_t prefix[] = {0x00, 0x00};
@@ -287,13 +288,13 @@ TEST(QpackDecodeHardeningTest, EncoderRejectsOversizedLiteralName) {
     ASSERT_EQ(buf->Write(huge, sizeof(huge)), sizeof(huge));
 
     std::vector<std::pair<std::string, std::string>> headers;
-    EXPECT_FALSE(encoder.Decode(buf, headers));
+    EXPECT_FALSE(decoder.Decode(buf, headers));
     EXPECT_TRUE(headers.empty());
 }
 
 // A well-formed block must still decode — the bound must not reject valid input.
 TEST(QpackDecodeHardeningTest, EncoderAcceptsWellFormedLiteral) {
-    QpackEncoder encoder;
+    QpackDecoder decoder;
 
     auto buf = MakeBuffer(256);
     const uint8_t prefix[] = {0x00, 0x00};
@@ -308,7 +309,7 @@ TEST(QpackDecodeHardeningTest, EncoderAcceptsWellFormedLiteral) {
     ASSERT_EQ(buf->Write(value, sizeof(value)), sizeof(value));
 
     std::vector<std::pair<std::string, std::string>> headers;
-    ASSERT_TRUE(encoder.Decode(buf, headers));
+    ASSERT_TRUE(decoder.Decode(buf, headers));
     ASSERT_EQ(headers.size(), 1u);
     EXPECT_EQ(headers[0].first, "name");
     EXPECT_EQ(headers[0].second, "value");
@@ -318,15 +319,16 @@ TEST(QpackDecodeHardeningTest, EncoderAcceptsWellFormedLiteral) {
 
 // The fuzzer found that Encode -> Decode was not byte-faithful in two ways
 // (both fixed); these tests pin the fixes. A shared harness mirrors the real
-// connection wiring: two QpackEncoder instances with the encoder-instruction
-// and insert-count side channels bridged the way the QPACK streams do.
+// connection wiring: a QpackEncoder and a QpackDecoder with the
+// encoder-instruction and insert-count side channels bridged the way the QPACK
+// streams do.
 namespace roundtrip_fidelity {
 
 using FieldList = std::vector<std::pair<std::string, std::string>>;
 
 struct Pair {
     QpackEncoder enc;
-    QpackEncoder dec;
+    QpackDecoder dec;
     Pair(uint32_t cap) {
         enc.SetLocalMaxTableCapacity(cap);
         enc.SetPeerMaxTableCapacity(cap);
@@ -334,7 +336,7 @@ struct Pair {
         dec.SetMaxTableCapacity(cap);
         dec.SetDynamicTableEnabled(cap > 0);
         QpackEncoder* enc_p = &enc;
-        QpackEncoder* dec_p = &dec;
+        QpackDecoder* dec_p = &dec;
         enc.SetInstructionSender([enc_p, dec_p](const FieldList& inserts) {
             QpackEncoder scratch;
             auto instr = MakeBuffer(64 + inserts.size() * 600);
@@ -400,7 +402,7 @@ TEST(QpackRoundtripFidelityTest, MixedCaseNameIsNotLowercased) {
 namespace section_limit {
 
 TEST(QpackSectionLimitTest, DecodeAbortsMidSectionWhenLimitExceeded) {
-    QpackEncoder dec;
+    QpackDecoder dec;
     // Tight limit so a handful of static references blows it: each field
     // accounts for name + value + 32; ":authority" with an empty value
     // (static index 0) is exactly 10 + 0 + 32 = 42 bytes.
@@ -419,14 +421,14 @@ TEST(QpackSectionLimitTest, DecodeAbortsMidSectionWhenLimitExceeded) {
 
     std::vector<std::pair<std::string, std::string>> headers;
     EXPECT_FALSE(dec.Decode(buf, headers));
-    EXPECT_EQ(dec.GetLastDecodeStatus(), QpackEncoder::DecodeStatus::kSectionTooLarge);
+    EXPECT_EQ(dec.GetLastDecodeStatus(), QpackDecoder::DecodeStatus::kSectionTooLarge);
     // Bounded expansion: the abort happens partway, so only the fields that
     // fit under the limit were materialized (3 × 42 = 126 ≤ 128 < 168).
     EXPECT_LT(headers.size(), 6u);
 }
 
 TEST(QpackSectionLimitTest, DecodeSucceedsUnderLimit) {
-    QpackEncoder dec;
+    QpackDecoder dec;
     dec.SetFieldSectionSizeLimit(128);
 
     auto buf = MakeBuffer(64);
@@ -439,7 +441,7 @@ TEST(QpackSectionLimitTest, DecodeSucceedsUnderLimit) {
 
     std::vector<std::pair<std::string, std::string>> headers;
     EXPECT_TRUE(dec.Decode(buf, headers));
-    EXPECT_EQ(dec.GetLastDecodeStatus(), QpackEncoder::DecodeStatus::kOk);
+    EXPECT_EQ(dec.GetLastDecodeStatus(), QpackDecoder::DecodeStatus::kOk);
     EXPECT_EQ(headers.size(), 2u);
 }
 
@@ -447,7 +449,7 @@ TEST(QpackSectionLimitTest, BlockedStatusIsStillDistinguishable) {
     // A block whose RIC exceeds the inserted count must stay kBlocked (the
     // only retryable failure) so the stream layer keeps parking it instead
     // of failing the stream.
-    QpackEncoder dec;
+    QpackDecoder dec;
     dec.SetFieldSectionSizeLimit(1024);
 
     auto buf = MakeBuffer(64);
@@ -457,7 +459,7 @@ TEST(QpackSectionLimitTest, BlockedStatusIsStillDistinguishable) {
 
     std::vector<std::pair<std::string, std::string>> headers;
     EXPECT_FALSE(dec.Decode(buf, headers));
-    EXPECT_EQ(dec.GetLastDecodeStatus(), QpackEncoder::DecodeStatus::kBlocked);
+    EXPECT_EQ(dec.GetLastDecodeStatus(), QpackDecoder::DecodeStatus::kBlocked);
 }
 
 }  // namespace section_limit

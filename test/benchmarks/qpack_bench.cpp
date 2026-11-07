@@ -6,6 +6,7 @@
 
 #include "common/allocator/pool_block.h"
 #include "common/buffer/multi_block_buffer.h"
+#include "http3/qpack/qpack_decoder.h"
 #include "http3/qpack/qpack_encoder.h"
 #include "http3/qpack/util.h"
 
@@ -19,7 +20,7 @@ static std::shared_ptr<common::IBuffer> MakeBuffer(size_t cap = 4096) {
 
 static void BM_Qpack_Insert_And_IndexedDecode(benchmark::State& state) {
     QpackEncoder enc;
-    QpackEncoder dec;
+    QpackDecoder dec;  // P1-H4d: decode side is a QpackDecoder now
 
     // Warm up: send one insert instruction
     auto ctrl = MakeBuffer();
@@ -29,7 +30,7 @@ static void BM_Qpack_Insert_And_IndexedDecode(benchmark::State& state) {
 
     for (auto _ : state) {
         auto hdr = MakeBuffer();
-        dec.WriteHeaderPrefix(hdr, 1, 1);
+        enc.WriteHeaderPrefix(hdr, 1, 1);  // wire writer is the encoder
         QpackEncodePrefixedInteger(hdr, 6, 0x80, 0);
         std::vector<std::pair<std::string, std::string>> headers;
         bool ok = dec.Decode(hdr, headers);

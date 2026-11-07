@@ -14,7 +14,7 @@ namespace http3 {
 
 // Constructor for complete mode
 RequestStream::RequestStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
-    const std::shared_ptr<QpackEncoder>& qpack_decoder, const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
+    const std::shared_ptr<QpackDecoder>& qpack_decoder, const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
     const std::shared_ptr<IQuicBidirectionStream>& stream, std::shared_ptr<IAsyncClientHandler> async_handler,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
     const std::function<void(HttpFields&, uint64_t push_id)>& push_promise_handler):
@@ -25,7 +25,7 @@ RequestStream::RequestStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
     push_promise_handler_(push_promise_handler) {}
 
 RequestStream::RequestStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
-    const std::shared_ptr<QpackEncoder>& qpack_decoder, const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
+    const std::shared_ptr<QpackDecoder>& qpack_decoder, const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
     const std::shared_ptr<IQuicBidirectionStream>& stream, http_response_handler response_handler,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
     const std::function<void(HttpFields&, uint64_t push_id)>& push_promise_handler):
@@ -96,6 +96,29 @@ void RequestStream::HandleHeaders() {
         Metrics::CounterInc(common::MetricsStd::Http3Responses4xx);
     } else if (status_code >= 500 && status_code < 600) {
         Metrics::CounterInc(common::MetricsStd::Http3Responses5xx);
+    }
+
+    // P1-H6e (RFC 9110 §15.2 / RFC 9114 §4.3): 1xx responses are
+    // informational — the final response arrives in a LATER field section
+    // on the same stream. The pre-fix code treated them as final (a
+    // body-less 1xx even completed the request and tore the stream down).
+    // Hand them to the app (async OnHeaders) and keep waiting. 101 Switching
+    // Protocols is not valid in HTTP/3 (RFC 9114 §4.3) and errors the stream.
+    if (status_code >= 100 && status_code < 200) {
+        if (status_code == 101) {
+            LOG_ERROR("RequestStream::HandleHeaders: 101 Switching Protocols is invalid in HTTP/3");
+            error_handler_(GetStreamID(), Http3ErrorCode::kMessageError);
+            return;
+        }
+        if (async_handler_) {
+            async_handler_->OnHeaders(response_);
+        }
+        // Complete-mode clients have no informational callback (the
+        // response_handler_ contract is "final response only") — log and
+        // keep waiting for the final field section.
+        LOG_DEBUG("RequestStream::HandleHeaders: informational %d received, waiting for final response", status_code);
+        headers_.clear();
+        return;
     }
 
     bool has_content_length = false;
@@ -171,6 +194,18 @@ void RequestStream::HandleHeaders() {
 }
 
 void RequestStream::HandleData(const std::shared_ptr<common::IBuffer>& data, bool is_last) {
+    // P1-H6e: cap the response body. A malicious/buggy server can stream an
+    // unbounded body (or omit content-length and never FIN); complete mode
+    // would accumulate it all in memory. Exceeding the cap aborts with
+    // H3_EXCESSIVE_LOAD (mirrors the server-side request cap).
+    if (max_response_body_size_ > 0 &&
+        received_body_length_ + static_cast<uint64_t>(data->GetDataLength()) > max_response_body_size_) {
+        LOG_ERROR("RequestStream::HandleData: response body exceeds cap %llu (got %u more)",
+            (unsigned long long)max_response_body_size_, received_body_length_ + data->GetDataLength());
+        error_handler_(GetStreamID(), Http3ErrorCode::kExcessiveLoad);
+        return;
+    }
+
     // Validate data size
     if (body_length_ > 0 && received_body_length_ + data->GetDataLength() > body_length_) {
         LOG_ERROR("ReqRespBaseStream::HandleData: received more data than content-length, expected %u, got %zu",
