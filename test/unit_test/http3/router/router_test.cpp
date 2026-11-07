@@ -168,6 +168,113 @@ TEST(RouterTest, same_level_dynamic_params_match_deterministically) {
     EXPECT_NE(r3.params.find("id"), r3.params.end());
 }
 
+// P1-H8 (round 3): a node must be able to carry BOTH a handler and children.
+// Registering "/api/v1/users" first created "/api/v1" as a middle node; the
+// later registration of "/api/v1" used to have its handler silently dropped
+// because leaf-ness was decided at node creation time.
+TEST(RouterTest, shorter_prefix_upgrades_existing_middle_node) {
+    Router router;
+    http_handler null_handler = nullptr;
+    EXPECT_TRUE(router.AddRoute(HttpMethod::kGet, "/api/v1/users", RouteConfig(null_handler)));
+    EXPECT_TRUE(router.AddRoute(HttpMethod::kGet, "/api/v1", RouteConfig(null_handler)));
+
+    EXPECT_TRUE(router.Match(HttpMethod::kGet, "/api/v1").is_match);
+    EXPECT_TRUE(router.Match(HttpMethod::kGet, "/api/v1/users").is_match);
+}
+
+// P1-H8 (round 3): registering the exact same method+path twice used to
+// silently keep the first handler. It must now be rejected explicitly.
+TEST(RouterTest, duplicate_route_registration_is_rejected) {
+    Router router;
+    http_handler null_handler = nullptr;
+    EXPECT_TRUE(router.AddRoute(HttpMethod::kGet, "/dup", RouteConfig(null_handler)));
+    EXPECT_FALSE(router.AddRoute(HttpMethod::kGet, "/dup", RouteConfig(null_handler)));
+
+    // Same path under a different method is not a duplicate.
+    EXPECT_TRUE(router.AddRoute(HttpMethod::kPost, "/dup", RouteConfig(null_handler)));
+    // Deeper route under an existing leaf keeps working.
+    EXPECT_TRUE(router.AddRoute(HttpMethod::kGet, "/dup/child", RouteConfig(null_handler)));
+    // Duplicate check also holds for nested and param/wildcard leaves.
+    EXPECT_FALSE(router.AddRoute(HttpMethod::kGet, "/dup/child", RouteConfig(null_handler)));
+
+    EXPECT_TRUE(router.Match(HttpMethod::kGet, "/dup").is_match);
+    EXPECT_TRUE(router.Match(HttpMethod::kPost, "/dup").is_match);
+    EXPECT_TRUE(router.Match(HttpMethod::kGet, "/dup/child").is_match);
+}
+
+// P1-H8 (round 3): a route registered under kAny used to be unreachable —
+// Match() only looked up the tree of the request method.
+TEST(RouterTest, kany_tree_is_served_as_method_fallback) {
+    Router router;
+    http_handler null_handler = nullptr;
+    EXPECT_TRUE(router.AddRoute(HttpMethod::kAny, "/fallback", RouteConfig(null_handler)));
+
+    EXPECT_TRUE(router.Match(HttpMethod::kGet, "/fallback").is_match);
+    EXPECT_TRUE(router.Match(HttpMethod::kPost, "/fallback").is_match);
+    EXPECT_TRUE(router.Match(HttpMethod::kDelete, "/fallback").is_match);
+}
+
+// P1-H8 (round 3): the method-specific tree takes precedence over the kAny
+// tree; kAny only serves what the method tree cannot match.
+TEST(RouterTest, method_tree_takes_precedence_over_kany) {
+    Router router;
+    static std::string hit;
+    hit.clear();
+    http_handler get_handler = [](std::shared_ptr<IRequest>, std::shared_ptr<IResponse>) { hit = "get-tree"; };
+    http_handler any_handler = [](std::shared_ptr<IRequest>, std::shared_ptr<IResponse>) { hit = "kany-tree"; };
+
+    ASSERT_TRUE(router.AddRoute(HttpMethod::kGet, "/prio", RouteConfig(get_handler)));
+    ASSERT_TRUE(router.AddRoute(HttpMethod::kAny, "/prio", RouteConfig(any_handler)));
+    ASSERT_TRUE(router.AddRoute(HttpMethod::kAny, "/only-any", RouteConfig(any_handler)));
+
+    auto r1 = router.Match(HttpMethod::kGet, "/prio");
+    ASSERT_TRUE(r1.is_match);
+    ASSERT_TRUE(r1.config.GetCompleteHandler());
+    r1.config.GetCompleteHandler()(nullptr, nullptr);
+    EXPECT_EQ(hit, "get-tree");  // exact method tree wins for GET
+
+    auto r2 = router.Match(HttpMethod::kPost, "/prio");
+    ASSERT_TRUE(r2.is_match);
+    ASSERT_TRUE(r2.config.GetCompleteHandler());
+    r2.config.GetCompleteHandler()(nullptr, nullptr);
+    EXPECT_EQ(hit, "kany-tree");  // POST tree absent -> kAny serves
+
+    auto r3 = router.Match(HttpMethod::kGet, "/only-any");
+    ASSERT_TRUE(r3.is_match);  // GET tree has no /only-any -> kAny fallback
+
+    EXPECT_FALSE(router.Match(HttpMethod::kGet, "/nowhere").is_match);  // nothing anywhere
+}
+
+// P1-H8 (round 3): a failed method-tree match may have left parameter
+// bindings from partially matched dynamic subtrees; the kAny fallback must
+// not inherit them.
+TEST(RouterTest, kany_fallback_does_not_inherit_stale_params) {
+    Router router;
+    http_handler null_handler = nullptr;
+    ASSERT_TRUE(router.AddRoute(HttpMethod::kGet, "/users/:id/settings", RouteConfig(null_handler)));
+    ASSERT_TRUE(router.AddRoute(HttpMethod::kAny, "/users/*", RouteConfig(null_handler)));
+
+    // "/users/42" walks the GET tree: ":id" matches but has no handler at
+    // depth 1 ("settings" is at depth 2) -> subtree fails, wildcard in the
+    // GET tree is absent -> falls back to the kAny tree.
+    auto r = router.Match(HttpMethod::kGet, "/users/42");
+    ASSERT_TRUE(r.is_match);
+    EXPECT_TRUE(r.params.empty()) << "stale ':id' binding leaked into the kAny fallback result";
+}
+
+// P1-H8 (round 3): backtracking out of a failed dynamic subtree must clean
+// the bindings that subtree wrote (e.g. a wildcard sibling later matches).
+TEST(RouterTest, backtrack_cleans_params_from_failed_subtree) {
+    Router router;
+    http_handler null_handler = nullptr;
+    ASSERT_TRUE(router.AddRoute(HttpMethod::kGet, "/users/:id/posts/:pid", RouteConfig(null_handler)));
+    ASSERT_TRUE(router.AddRoute(HttpMethod::kGet, "/users/*", RouteConfig(null_handler)));
+
+    auto r = router.Match(HttpMethod::kGet, "/users/42/tags/zzz");
+    ASSERT_TRUE(r.is_match);  // wildcard catches it
+    EXPECT_TRUE(r.params.empty()) << "failed ':id' subtree leaked its binding to the wildcard match";
+}
+
 }  // namespace
 }  // namespace http3
 }  // namespace quicx

@@ -14,7 +14,14 @@ RouterNode::RouterNode(
     type_(type),
     section_(section),
     full_path_(full_path),
-    config_(config) {}
+    config_(config) {
+    // P1-H8: leaf types carry a handler at construction (the route that
+    // created them terminates here). Middle types start without one and can
+    // be upgraded later by SetRouteHandler when a shorter route registers
+    // under an existing prefix.
+    has_handler_ = (type == RouterNodeType::RNT_STATIC_PATH || type == RouterNodeType::RNT_DYNAMIC_PARAM ||
+                    type == RouterNodeType::RNT_WILDCARD);
+}
 
 bool RouterNode::AddRoute(const std::string& path, int path_offset, const RouteConfig& config) {
     std::string section = PathParse(path, path_offset);
@@ -23,6 +30,7 @@ bool RouterNode::AddRoute(const std::string& path, int path_offset, const RouteC
     }
 
     std::shared_ptr<IRouterNode> cur_node;
+    bool is_new_node = false;
 
     // find static path first
     auto iter = static_path_map_.find(section);
@@ -44,6 +52,7 @@ bool RouterNode::AddRoute(const std::string& path, int path_offset, const RouteC
         if (!cur_node) {
             return false;
         }
+        is_new_node = true;
 
         switch (cur_node->GetNodeType()) {
             case RouterNodeType::RNT_STATIC_PATH:
@@ -68,7 +77,12 @@ bool RouterNode::AddRoute(const std::string& path, int path_offset, const RouteC
     // path_offset only ever walks forward from 0, so the cast is safe; making it
     // explicit stops a negative value from wrapping into a huge unsigned.
     if (path_offset < 0 || static_cast<size_t>(path_offset) >= path.size()) {
-        return true;
+        // The route terminates at cur_node. A freshly created leaf already
+        // got its handler at construction; an existing node must be upgraded
+        // (middle node gaining a handler) or rejected (duplicate route).
+        // P1-H8: previously the handler was silently dropped here when the
+        // node already existed, e.g. register "/a/b" then "/a".
+        return is_new_node ? true : cur_node->SetRouteHandler(config);
     }
     return cur_node->AddRoute(path, path_offset, config);
 }

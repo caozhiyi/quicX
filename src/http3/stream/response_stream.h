@@ -26,8 +26,16 @@ class IHttpProcessor {
 public:
     virtual RouteConfig MatchRoute(
         HttpMethod method, const std::string& path, std::shared_ptr<IRequest> request = nullptr) = 0;
-    virtual void BeforeHandlerProcess(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response) = 0;
+    // P1-H8: before-middlewares can short-circuit the pipeline. Returns false
+    // when a middleware did so — the route handler and after-middlewares must
+    // be skipped and the middleware-produced response flushed by the stream.
+    virtual bool BeforeHandlerProcess(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response) = 0;
     virtual void AfterHandlerProcess(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response) = 0;
+    // P1-H6g: per-server-instance request body cap (bytes). ResponseStream
+    // pulls it at construction; the previous process-wide static made two
+    // Server objects with different configs silently share one limit.
+    // Default matches Http3ServerConfig::max_request_body_size_.
+    virtual uint64_t GetMaxRequestBodySize() const { return 16 * 1024 * 1024; }
 };
 
 /**
@@ -57,10 +65,6 @@ public:
     // because the server's job is done after sending the response
     bool ShouldSignalCompletionAfterSend() const override { return true; }
 
-    // Set the per-process request body limit (bytes). Wired from
-    // Http3ServerConfig::max_request_body_size_ by Server::Init.
-    static void SetMaxRequestBodySize(uint64_t size) { max_request_body_size_ = size; }
-
 private:
     virtual void HandleHeaders() override;
     virtual void HandleData(const std::shared_ptr<common::IBuffer>& data, bool is_last) override;
@@ -76,11 +80,11 @@ private:
     void SendPayloadTooLarge();
 
 private:
-    // Per-process upper bound (bytes) for request bodies buffered in complete
-    // mode; defends against unbounded buffering when no handler consumes the
-    // body (e.g. unmatched routes). Configurable via
-    // Http3ServerConfig::max_request_body_size_ / SetMaxRequestBodySize().
-    static uint64_t max_request_body_size_;
+    // P1-H6g: per-instance upper bound (bytes) for request bodies buffered in
+    // complete mode; defends against unbounded buffering when no handler
+    // consumes the body (e.g. unmatched routes). Pulled from the owning
+    // server (IHttpProcessor::GetMaxRequestBodySize) at construction.
+    uint64_t max_request_body_size_ = 16 * 1024 * 1024;
 
     // P1-H6d (RFC 9114 §4.1 / RFC 9110 §6.5): message phase for field
     // sections. The FIRST field section builds the request and routes; any

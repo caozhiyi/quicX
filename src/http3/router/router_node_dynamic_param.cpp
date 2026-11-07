@@ -16,7 +16,7 @@ bool RouterNodeDynamicParam::Match(
     // check match done
     if (path_offset < 0 || static_cast<size_t>(path_offset) >= path.length()) {
         // match done, current node is the last node
-        if (type_ == RouterNodeType::RNT_DYNAMIC_PARAM) {
+        if (HasRouteHandler()) {  // P1-H8: see router_node_static_path.cpp
             result.config = config_;
             result.is_match = true;
             // parse param, /param -> param
@@ -40,6 +40,10 @@ bool RouterNodeDynamicParam::Match(
         result.params[param_name_] = cur_section.substr(1, cur_section.size() - 1);
         return true;
     }
+    // P1-H8: undo the parameter bindings a failed subtree may have written
+    // into result.params, so backtracking branches (including the kAny-tree
+    // fallback in Router::Match) never observe stale entries.
+    result.params.erase(param_name_);
     return false;
 }
 

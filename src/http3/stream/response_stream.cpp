@@ -18,9 +18,6 @@
 namespace quicx {
 namespace http3 {
 
-// Default request body cap: 16 MiB (see Http3ServerConfig::max_request_body_size_).
-uint64_t ResponseStream::max_request_body_size_ = 16 * 1024 * 1024;
-
 ResponseStream::ResponseStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
     const std::shared_ptr<QpackDecoder>& qpack_decoder, const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
     const std::shared_ptr<IQuicBidirectionStream>& stream, std::weak_ptr<IHttpProcessor> http_processor,
@@ -33,7 +30,13 @@ ResponseStream::ResponseStream(const std::shared_ptr<QpackEncoder>& qpack_encode
     is_response_sent_(false),
     http_processor_(http_processor),
     push_handler_(push_handler),
-    settings_received_cb_(settings_received_cb) {}
+    settings_received_cb_(settings_received_cb) {
+    // P1-H6g: pull the per-server body cap at construction so each Server
+    // instance keeps its own limit (was a process-wide static).
+    if (auto proc = http_processor_.lock()) {
+        max_request_body_size_ = proc->GetMaxRequestBodySize();
+    }
+}
 
 ResponseStream::~ResponseStream() {
     // Do NOT call Close() here - it should have been called by the base class after sending response
@@ -498,12 +501,29 @@ void ResponseStream::HandleHttp(
     Metrics::GaugeInc(common::MetricsStd::Http3RequestsActive);
 
     auto proc = http_processor_.lock();
+    // P1-H8: before-middlewares can short-circuit the pipeline. When one
+    // returns false: skip the remaining middlewares, the route handler and
+    // the after-middlewares. Complete-mode callers (HandleHeaders /
+    // HandleFinWithoutData) pre-set is_response_sent_ and flush the response
+    // themselves after HandleHttp returns, so the auto-flush below only
+    // fires on paths where nobody else would send (e.g. async mode), which
+    // keeps the stream from hanging until idle timeout.
+    bool proceed = true;
     if (proc) {
-        proc->BeforeHandlerProcess(request_, response_);
+        proceed = proc->BeforeHandlerProcess(request_, response_);
     }
-    handler(request_, response_);
-    if (proc) {
-        proc->AfterHandlerProcess(request_, response_);
+
+    if (proceed) {
+        handler(request_, response_);
+        if (proc) {
+            proc->AfterHandlerProcess(request_, response_);
+        }
+
+    } else if (!is_response_sent_) {
+        // The short-circuiting middleware already wrote a response (e.g. a
+        // 401); flush it now so the stream does not stall.
+        is_response_sent_ = true;
+        HandleResponse();
     }
 
     // Metrics: Request completed

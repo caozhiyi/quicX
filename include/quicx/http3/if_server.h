@@ -147,11 +147,33 @@ public:
     /**
      * @brief Register a middleware for a specific method and position
      *
-     * @param method The HTTP method
+     * @param method The HTTP method filter. kAny matches all implemented
+     *               methods (kUnknown / extension methods are excluded, same
+     *               semantics as route matching).
      * @param mp The middleware position
-     * @param handler The middleware handler
+     * @param handler The middleware handler (legacy void form; never short-circuits)
      */
-    virtual void AddMiddleware(HttpMethod method, MiddlewarePosition mp, const http_handler& handler) = 0;
+    virtual void AddMiddleware(HttpMethod method, MiddlewarePosition mp, const http_handler& handler) {
+        AddMiddleware(method, mp, middleware_handler([handler](std::shared_ptr<IRequest> request,
+                                                            std::shared_ptr<IResponse> response) -> bool {
+            handler(request, response);
+            return true;  // void middlewares always continue the pipeline
+        }));
+    }
+
+    /**
+     * @brief Register a middleware that can short-circuit the pipeline
+     *
+     * A before-middleware returning false skips the remaining middlewares,
+     * the route handler and the after-middlewares. The response written by
+     * the short-circuiting middleware is flushed by the stream. Return values
+     * of after-middlewares are ignored (nothing left to skip).
+     *
+     * @param method The HTTP method filter (kAny matches all implemented methods)
+     * @param mp The middleware position
+     * @param handler The middleware handler returning false to short-circuit
+     */
+    virtual void AddMiddleware(HttpMethod method, MiddlewarePosition mp, const middleware_handler& handler) = 0;
 
     /**
      * @brief Set the error handler

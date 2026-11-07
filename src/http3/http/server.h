@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "http3/connection/connection_server.h"
+#include "http3/http/middleware_chain.h"
 #include "http3/router/router.h"
 #include "http3/stream/response_stream.h"
 
@@ -39,8 +40,10 @@ public:
     virtual void AddHandler(
         HttpMethod method, const std::string& path, std::shared_ptr<IAsyncServerHandler> handler) override;
 
-    // Register a middleware for a specific method and position
-    virtual void AddMiddleware(HttpMethod method, MiddlewarePosition mp, const http_handler& handler) override;
+    // Register a middleware that can short-circuit the pipeline (P1-H8).
+    // The legacy http_handler overload is inherited from IServer (default
+    // implementation wraps it into a never-short-circuiting middleware_handler).
+    virtual void AddMiddleware(HttpMethod method, MiddlewarePosition mp, const middleware_handler& handler) override;
 
     // Set the error handler
     virtual void SetErrorHandler(const error_handler& error_handler) override { error_handler_ = error_handler; }
@@ -53,9 +56,14 @@ private:
     virtual RouteConfig MatchRoute(
         HttpMethod method, const std::string& path, std::shared_ptr<IRequest> request = nullptr) override;
     // Before handler process
-    virtual void BeforeHandlerProcess(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response) override;
+    // P1-H8: before-middlewares can short-circuit the pipeline. Returns false
+    // when a middleware did so — the route handler and after-middlewares must
+    // be skipped and the middleware-produced response flushed.
+    virtual bool BeforeHandlerProcess(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response) override;
     // After handler process
     virtual void AfterHandlerProcess(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response) override;
+    // P1-H6g: per-instance request body cap (from Http3ServerConfig).
+    virtual uint64_t GetMaxRequestBodySize() const override { return config_.max_request_body_size_; }
 
     // Not found handler
     static void OnNotFound(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response);
@@ -79,8 +87,9 @@ private:
     // std::weak_ptr, which breaks the reference cycle the old design patched
     // around.
 
-    std::vector<http_handler> before_middlewares_;
-    std::vector<http_handler> after_middlewares_;
+    // P1-H8: method-aware middleware pipeline with short-circuit support
+    // (replaces the flat before_/after_ vectors that ignored the method filter).
+    MiddlewareChain middlewares_;
     error_handler error_handler_;
 
     Http3Settings settings_;
@@ -90,4 +99,5 @@ private:
 }  // namespace http3
 }  // namespace quicx
 
-#endif  // HTTP3_HTTP_SERVER
+#endif  // HTTP3_HTTP_SERVER
+

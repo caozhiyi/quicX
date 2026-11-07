@@ -81,7 +81,7 @@ public:
                 HttpMethod method, const std::string& path, std::shared_ptr<IRequest> /*request*/ = nullptr) override {
                 return server_->MatchHandler(method, path);
             }
-            void BeforeHandlerProcess(std::shared_ptr<IRequest> /*req*/, std::shared_ptr<IResponse> /*resp*/) override {}
+            bool BeforeHandlerProcess(std::shared_ptr<IRequest> /*req*/, std::shared_ptr<IResponse> /*resp*/) override { return true; }
             void AfterHandlerProcess(std::shared_ptr<IRequest> /*req*/, std::shared_ptr<IResponse> /*resp*/) override {}
 
         private:

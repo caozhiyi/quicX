@@ -28,10 +28,38 @@ public:
     const std::string& GetFullPath() { return full_path_; }
     virtual RouterNodeType GetNodeType() { return type_; }
 
+    /**
+     * @brief Attach a route handler to this node
+     *
+     * P1-H8: handler presence is decoupled from the node type so a node can
+     * carry BOTH a handler and children (register "/a/b" then "/a": the
+     * second registration upgrades the "/a" middle node with a handler).
+     *
+     * @param config Route configuration (handler + mode)
+     * @return True if attached; false if this node already has a handler
+     *         (duplicate route registration — the existing one is kept).
+     */
+    virtual bool SetRouteHandler(const RouteConfig& config) {
+        if (has_handler_) {
+            return false;  // duplicate route: keep the first registration
+        }
+        config_ = config;
+        has_handler_ = true;
+        return true;
+    }
+
     // Add route with configuration
     virtual bool AddRoute(const std::string& path, int path_offset, const RouteConfig& config);
 
     virtual bool Match(const std::string& path, int path_offset, const std::string& section, MatchResult& result);
+
+    /**
+     * @brief Whether this node terminates a registered route (has a handler)
+     *
+     * Replaces the old "node type decides handler presence" rule: middle
+     * nodes upgraded via SetRouteHandler also report true.
+     */
+    virtual bool HasRouteHandler() const { return has_handler_; }
 
     /**
      * @brief Factory method to create appropriate RouterNode subclass
@@ -50,6 +78,13 @@ protected:
     std::string full_path_;  // full path, like "/user/:info", "/blog/list"
 
     RouteConfig config_;  // Route configuration (handler + mode)
+
+    // P1-H8: whether this node terminates a registered route. Initialized by
+    // the constructor from the leaf-ness encoded in type_ (leaf types are
+    // RNT_STATIC_PATH / RNT_DYNAMIC_PARAM / RNT_WILDCARD); a middle node can
+    // later be upgraded via SetRouteHandler when a shorter route is
+    // registered under an existing prefix.
+    bool has_handler_ = false;
 
     std::shared_ptr<IRouterNode> wildcard_node_;                                       // wildcard node
     // #7 (code review round 2): ordered map so Match()'s dynamic-param
