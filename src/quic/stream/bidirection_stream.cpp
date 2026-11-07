@@ -137,6 +137,13 @@ IStream::TrySendResult BidirectionStream::TrySendData(IFrameVisitor* visitor, En
     if (recv_result == TrySendResult::kFailed) {
         return recv_result;
     }
+    // Packet full while sending a recv-side control frame (MAX_STREAM_DATA,
+    // STOP_SENDING): the frame is still queued. Falling through would let the
+    // send side return kSuccess, which removes the stream from the active list
+    // and strands that frame. Stay active and retry in the next packet.
+    if (recv_result == TrySendResult::kBreak) {
+        return recv_result;
+    }
 
     // Then send stream data
     return SendStream::TrySendData(visitor, level);

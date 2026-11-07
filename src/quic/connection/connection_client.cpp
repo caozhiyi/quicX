@@ -36,6 +36,11 @@ ClientConnection::ClientConnection(std::shared_ptr<TLSCtx> ctx, std::shared_ptr<
 
     connection_crypto_.SetCryptoStream(crypto_stream);
 
+    // P0-C10 / X3: hand the CRYPTO stream the connection's slow-path
+    // retransmit scheduler. Without this the handshake-flight arithmetic
+    // cadence (the per-packet timer's replacement) silently never runs.
+    crypto_stream->SetRetransmitScheduler(send_manager_.GetSendControl().GetRetransmitScheduler());
+
     // Set HANDSHAKE_DONE frame handler callback
     frame_processor_->SetHandshakeDoneCallback([this](auto a) { return HandleHandshakeDoneFrame(a); });
 }

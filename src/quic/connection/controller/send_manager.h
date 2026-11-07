@@ -51,20 +51,30 @@ public:
     void EnqueueFrame(std::shared_ptr<IFrame> frame);
 
     /**
-     * @brief Attach the generic loss-response to a value frame: on kLost,
-     *        re-queue the SAME frame object for the next send round.
+     * @brief Attach the generic loss-response to a value frame: on kLost or
+     *        kProbe, re-queue the SAME frame object for the next send round
+     *        (at most once while it is still waiting in the queue).
      *
      * Only for frames whose re-emission is idempotent (MAX_DATA /
-     * MAX_STREAM_DATA / MAX_STREAMS: re-sending a window that is merely
-     * current-or-stale is harmless). This cuts the BLOCKED-probe round trip
-     * the RFC 9000 fallback needs when such a frame is lost and also covers
-     * the double-loss case (frame + the peer's BLOCKED probe both lost).
+     * MAX_STREAM_DATA / MAX_STREAMS and the informational *_BLOCKED frames:
+     * re-sending a window that is merely current-or-stale is harmless). This
+     * cuts the BLOCKED-probe round trip the RFC 9000 fallback needs when such
+     * a frame is lost and also covers the double-loss case (frame + the
+     * peer's BLOCKED probe both lost).
      *
      * NOT for frames that must carry fresh state — those producers own their
      * own handler instead (see ConnectionIDCoordinator's NCI/RETIRE resends,
      * the hand-written original of this pattern).
      */
     void AttachRequeueOnLoss(const std::shared_ptr<IFrame>& frame);
+
+    /// Put a frame back at the FRONT of the queue (a build that dequeued it
+    /// failed before the frame reached a tracked packet). No-op if it is
+    /// already queued.
+    void RequeueFront(std::shared_ptr<IFrame> frame);
+
+    /// Whether this exact frame object is currently waiting in the send queue.
+    bool IsFrameQueued(const std::shared_ptr<IFrame>& frame) const;
 
     /**
      * @brief Whether any queued frame is a probing frame.

@@ -31,14 +31,14 @@ struct SentPacketEvent {
 struct AckEvent {
     uint64_t pn = 0;
     uint64_t bytes_acked = 0;
-    uint64_t ack_time = 0;
-    uint64_t ack_delay = 0;
+    uint64_t ack_time = 0;   // us (steady_clock) — real ACK arrival time
+    uint64_t ack_delay = 0;  // us, already << exponent and max_ack_delay-clamped
     bool ecn_ce = false;
     // RFC 9002 §7.3.2: send time of the acknowledged packet (us); used by
     // recovery-exit checks to compare against recovery_start_time_. Defaults
     // to 0 for legacy callers (which prevents early/spurious recovery exit).
     uint64_t acked_packet_send_time = 0;
-};
+};;
 
 struct LossEvent {
     uint64_t pn = 0;
@@ -67,7 +67,18 @@ public:
     virtual void OnPacketSent(const SentPacketEvent& ev) = 0;
     virtual void OnPacketAcked(const AckEvent& ev) = 0;
     virtual void OnPacketLost(const LossEvent& ev) = 0;
-    virtual void OnRoundTripSample(uint64_t latest_rtt, uint64_t ack_delay = 0) = 0;
+    /**
+     * @brief P1-P4: per-ACK RTT sample in microseconds (all four params).
+     *
+     * |latest_rtt_us| is the raw sample of this ACK; |min_rtt_us| /
+     * |smoothed_rtt_us| come from the host RttCalculator (RFC 9002 §5.3 EWMA
+     * already applied). Algorithms pick what they need and MUST NOT smooth
+     * again — double smoothing made every controller lag one extra RTT
+     * behind real RTT changes. |ack_delay_us| is the peer-reported (already
+     * clamped) delay of this sample.
+     */
+    virtual void OnRoundTripSample(
+        uint64_t latest_rtt_us, uint64_t min_rtt_us, uint64_t smoothed_rtt_us, uint64_t ack_delay_us) = 0;
 
     /**
      * @brief Account for packets discarded with a packet number space

@@ -5,6 +5,7 @@
 #include "common/metrics/metrics_std.h"
 #include "common/qlog/qlog.h"
 
+#include "quic/config.h"
 #include "quic/congestion_control/normal_pacer.h"
 #include "quic/congestion_control/reno_congestion_control.h"
 
@@ -137,12 +138,14 @@ void RenoCongestionControl::OnPersistentCongestion() {
     UpdatePacingRate();
 }
 
-void RenoCongestionControl::OnRoundTripSample(uint64_t latest_rtt, uint64_t ack_delay) {
-    (void)ack_delay;
-    if (srtt_us_ == 0) {
-        srtt_us_ = latest_rtt;
-    }
-    srtt_us_ = (7 * srtt_us_ + latest_rtt) / 8;
+void RenoCongestionControl::OnRoundTripSample(
+    uint64_t latest_rtt_us, uint64_t min_rtt_us, uint64_t smoothed_rtt_us, uint64_t ack_delay_us) {
+    (void)latest_rtt_us;
+    (void)min_rtt_us;
+    (void)ack_delay_us;
+    // P1-P4: host RttCalculator already ran the RFC 9002 5.3 EWMA - no
+    // second smoothing here.
+    srtt_us_ = std::max<uint64_t>(smoothed_rtt_us, 1);
 }
 
 ICongestionControl::SendState RenoCongestionControl::CanSend(uint64_t now, uint64_t& can_send_bytes) const {
@@ -156,12 +159,15 @@ ICongestionControl::SendState RenoCongestionControl::CanSend(uint64_t now, uint6
 }
 
 uint64_t RenoCongestionControl::GetPacingRateBytesPerSec() const {
-    if (srtt_us_ == 0) {
-        // No RTT sample yet: use min_cwnd as a coarse rate.
-        return cfg_.min_cwnd_bytes;
+    // P1-CC5: no RTT sample yet — pace at cwnd / initial RTT instead of the
+    // old min_cwnd bytes/sec (~2.9 KB/s), which throttled the first RTT of
+    // every connection by orders of magnitude below the initial window.
+    uint64_t rtt_us = srtt_us_;
+    if (rtt_us == 0) {
+        rtt_us = static_cast<uint64_t>(kInitRttDefaultMs) * 1000;
     }
     // rate_bytes_per_sec = cwnd_bytes / RTT_seconds = cwnd_bytes * 1e6 / rtt_us
-    return (cwnd_bytes_ * 1000000ull) / srtt_us_;
+    return (cwnd_bytes_ * 1000000ull) / rtt_us;
 }
 
 uint64_t RenoCongestionControl::NextSendTime(uint64_t now) const {

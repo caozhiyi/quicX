@@ -186,15 +186,17 @@ void BBRv3CongestionControl::OnPacketLost(const LossEvent& ev) {
     UpdatePacingRate();
 }
 
-void BBRv3CongestionControl::OnRoundTripSample(uint64_t latest_rtt, uint64_t ack_delay) {
-    (void)ack_delay;
-    // Guarantee minimum 1us to prevent zero-RTT stall on loopback (ms clock granularity)
-    if (latest_rtt == 0) latest_rtt = 1;
-    if (srtt_us_ == 0) srtt_us_ = latest_rtt;
-    srtt_us_ = (7 * srtt_us_ + latest_rtt) / 8;
-    if (srtt_us_ == 0) srtt_us_ = 1;
-    if (min_rtt_us_ == 0 || latest_rtt < min_rtt_us_) {
-        min_rtt_us_ = latest_rtt;
+void BBRv3CongestionControl::OnRoundTripSample(
+    uint64_t latest_rtt_us, uint64_t min_rtt_us, uint64_t smoothed_rtt_us, uint64_t ack_delay_us) {
+    (void)ack_delay_us;
+    if (latest_rtt_us == 0) latest_rtt_us = 1;  // loopback: sub-tick sample
+    // P1-P4: host RttCalculator already ran the RFC 9002 5.3 EWMA - take its
+    // outputs instead of smoothing a second time (the old double EWMA made
+    // SRTT lag one extra RTT behind real RTT changes).
+    srtt_us_ = std::max<uint64_t>(smoothed_rtt_us, 1);
+    uint64_t min_candidate = (min_rtt_us > 0) ? min_rtt_us : latest_rtt_us;
+    if (min_rtt_us_ == 0 || min_candidate < min_rtt_us_) {
+        min_rtt_us_ = min_candidate;
         // min_rtt_stamp_us_ is updated in OnPacketAcked where ack_time is available
     }
 }

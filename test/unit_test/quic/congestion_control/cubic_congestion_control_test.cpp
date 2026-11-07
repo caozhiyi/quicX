@@ -34,13 +34,43 @@ TEST(CubicCongestionControlTest, SlowStartIncreasesCwndOnAck) {
     cfg.initial_cwnd_bytes = 10 * cfg.mss_bytes;
     cc.Configure(cfg);
 
-    // Send and ACK 2k bytes
-    cc.OnPacketSent(SentPacketEvent{1, 2000, 100, false});
-    EXPECT_EQ(cc.GetBytesInFlight(), 2000u);
+    // Fill the initial window (P1-CC4: an ACK for a packet that left with
+    // more than half the window unused is app-limited and must not grow
+    // the cwnd — so the sender has to be cwnd-limited for growth).
+    for (uint64_t pn = 1; pn <= 5; ++pn) {
+        cc.OnPacketSent(SentPacketEvent{pn, 2000, 100, false});
+    }
+    EXPECT_EQ(cc.GetBytesInFlight(), 10000u);
 
-    cc.OnPacketAcked(AckEvent{1, 2000, 200, 0, false});
-    EXPECT_EQ(cc.GetBytesInFlight(), 0u);
+    // ACK a packet that was NOT app-limited: packets 1-2 left with less than
+    // half the window in flight (2KB/4KB out of 10KB); packet 3 onward did not.
+    cc.OnPacketAcked(AckEvent{3, 2000, 200, 0, false, /*send_time_us=*/100});
+    EXPECT_EQ(cc.GetBytesInFlight(), 8000u);
     // Slow start: cwnd += acked
+    EXPECT_EQ(cc.GetCongestionWindow(), cfg.initial_cwnd_bytes + 2000);
+}
+
+// P1-CC4: packets sent while the application leaves more than half the
+// window unused are app-limited; acknowledging them must not grow cwnd.
+TEST(CubicCongestionControlTest, AppLimitedAckDoesNotGrowCwnd) {
+    CubicCongestionControl cc;
+    CcConfigV2 cfg;
+    cfg.mss_bytes = 1000;
+    cfg.initial_cwnd_bytes = 10 * cfg.mss_bytes;
+    cc.Configure(cfg);
+
+    // A single 2KB packet out of a 10KB window: app-limited by construction
+    // (even after sending, less than half the window is in flight).
+    cc.OnPacketSent(SentPacketEvent{1, 2000, 100, false});
+    cc.OnPacketAcked(AckEvent{1, 2000, 200, 0, false, 100});
+    EXPECT_EQ(cc.GetCongestionWindow(), cfg.initial_cwnd_bytes) << "app-limited ACK must not grow cwnd";
+
+    // Once packets genuinely fill the window, growth resumes (ACK a packet
+    // that was sent with the window on its way to being full).
+    for (uint64_t pn = 2; pn <= 6; ++pn) {
+        cc.OnPacketSent(SentPacketEvent{pn, 2000, 100, false});
+    }
+    cc.OnPacketAcked(AckEvent{6, 2000, 300, 0, false, 100});
     EXPECT_EQ(cc.GetCongestionWindow(), cfg.initial_cwnd_bytes + 2000);
 }
 
@@ -102,7 +132,7 @@ TEST(CubicCongestionControlTest, CanSendAndPacingRateBasics) {
     EXPECT_EQ(can_send, cfg.initial_cwnd_bytes);
 
     // Set SRTT and verify pacing rate formula cwnd/srtt * 1.25 (CUBIC uses 1.25x gain)
-    cc.OnRoundTripSample(100000, 0);  // 100ms
+    cc.OnRoundTripSample(100000, 100000, 100000, 0);  // 100ms
     // bytes/sec = cwnd_bytes * 1.25 / rtt_seconds = cwnd_bytes * 1e6 * 5 / (rtt_us * 4)
     const uint64_t expected_bytes_per_sec = (cfg.initial_cwnd_bytes * 1000000ull * 5) / (100000ull * 4);
     EXPECT_EQ(cc.GetPacingRateBytesPerSec(), expected_bytes_per_sec);
@@ -257,4 +287,102 @@ TEST(CubicCongestionControlTest, FastConvergenceEcnPathMatchesLossPath) {
     ecn2.ecn_ce = true;
     cc.OnPacketAcked(ecn2);
     EXPECT_NEAR(cc.GetWMaxPkts(), 0.85 * cwnd_pkts_before_ecn2, 0.05);
+}
+
+// P1-CC4 (RFC 9406 §4.2): the delay-increase signal (current round min RTT
+// ≥ last round min + clamp(last/8, [4ms, 16ms])) exits slow start into CSS,
+// and a transient RTT spike reverts to full slow start.
+TEST(CubicCongestionControlTest, HyStartDelayIncreaseEntersCssAndReverts) {
+    CubicCongestionControl cc;
+    CcConfigV2 cfg;
+    cfg.mss_bytes = 1000;
+    cfg.initial_cwnd_bytes = 20 * cfg.mss_bytes;  // above kHyStartLowWindow
+    cc.Configure(cfg);
+
+    // One round: 8 packets sent, then ACKed at a fixed RTT (sample count
+    // reaches kHyStartMinSamples within the round).
+    auto round = [&](uint64_t base_pn, uint64_t rtt_us) {
+        for (uint64_t i = 0; i < 8; ++i) {
+            cc.OnPacketSent(SentPacketEvent{base_pn + i, 2000, 100, false});
+        }
+        for (uint64_t i = 0; i < 8; ++i) {
+            cc.OnRoundTripSample(rtt_us, rtt_us, rtt_us, 0);
+            cc.OnPacketAcked(AckEvent{base_pn + i, 2000, 200, 0, false, 100});
+        }
+    };
+
+    round(1, 10000);   // round 1 baseline (10ms); no last-round min yet
+    round(9, 10000);   // round 2: level RTT, no signal
+    round(17, 15000);  // round 3: 15ms >= 10ms + clamp(10ms/8→4ms) → CSS
+    round(25, 10500);  // CSS round: RTT back below the 15ms baseline → revert
+    EXPECT_TRUE(cc.InSlowStart()) << "transient RTT spike must revert to slow start";
+}
+
+// P1-CC4 (RFC 9406 §4.2): CSS runs for at most CSS_ROUNDS (5) rounds; if the
+// RTT inflation persists the whole time, slow start commits to congestion
+// avoidance with ssthresh at the current cwnd.
+TEST(CubicCongestionControlTest, HyStartCssExpiresToCongestionAvoidance) {
+    CubicCongestionControl cc;
+    CcConfigV2 cfg;
+    cfg.mss_bytes = 1000;
+    cfg.initial_cwnd_bytes = 20 * cfg.mss_bytes;
+    cc.Configure(cfg);
+
+    auto round = [&](uint64_t base_pn, uint64_t rtt_us) {
+        for (uint64_t i = 0; i < 8; ++i) {
+            cc.OnPacketSent(SentPacketEvent{base_pn + i, 2000, 100, false});
+        }
+        for (uint64_t i = 0; i < 8; ++i) {
+            cc.OnRoundTripSample(rtt_us, rtt_us, rtt_us, 0);
+            cc.OnPacketAcked(AckEvent{base_pn + i, 2000, 200, 0, false, 100});
+        }
+    };
+
+    round(1, 10000);
+    round(9, 10000);
+    round(17, 15000);  // inflated round (signal fires on the next window close)
+    // The inflating round closes at round(25)'s first ACK → CSS entry;
+    // five inflated window closes later it commits to congestion avoidance
+    // (no revert: 15ms is not < the 15ms baseline).
+    round(25, 15000);
+    round(33, 15000);
+    round(41, 15000);
+    round(49, 15000);
+    round(57, 15000);
+    EXPECT_FALSE(cc.InSlowStart()) << "persisted RTT inflation must commit to congestion avoidance";
+}
+
+// P1-CC4 (RFC 9406 §4.2): round delimiters are packet-number based; the
+// delay-increase check runs when the inflated round's window end is ACKed.
+TEST(CubicCongestionControlTest, HyStartCssRoundByRound) {
+    CubicCongestionControl cc;
+    CcConfigV2 cfg;
+    cfg.mss_bytes = 1000;
+    cfg.initial_cwnd_bytes = 20 * cfg.mss_bytes;
+    cc.Configure(cfg);
+
+    auto round = [&](uint64_t base_pn, uint64_t rtt_us) {
+        for (uint64_t i = 0; i < 8; ++i) {
+            cc.OnPacketSent(SentPacketEvent{base_pn + i, 2000, 100, false});
+        }
+        for (uint64_t i = 0; i < 8; ++i) {
+            cc.OnRoundTripSample(rtt_us, rtt_us, rtt_us, 0);
+            cc.OnPacketAcked(AckEvent{base_pn + i, 2000, 200, 0, false, 100});
+        }
+    };
+
+    round(1, 10000);
+    round(9, 10000);
+    round(17, 15000);
+    // The inflated round's samples are only evaluated when its window end is
+    // ACKed — i.e. at round(25)'s first ACK.
+    EXPECT_FALSE(cc.InCss()) << "CSS cannot fire before the round closes";
+    round(25, 15000);
+    EXPECT_TRUE(cc.InCss()) << "round(25)'s window close must enter CSS";
+    round(33, 15000);
+    round(41, 15000);
+    round(49, 15000);
+    EXPECT_TRUE(cc.InCss()) << "css_rounds=" << cc.GetCssRounds();
+    round(57, 15000);
+    EXPECT_FALSE(cc.InSlowStart()) << "css_rounds=" << cc.GetCssRounds();
 }

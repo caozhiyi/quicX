@@ -27,6 +27,7 @@ SendStream::SendStream(std::weak_ptr<common::IEventLoop> loop, uint64_t init_dat
     send_data_offset_(0),
     acked_offset_(0),
     fin_sent_(false),
+    fin_acked_(false),
     peer_data_limit_(init_data_limit),
     blocked_at_limit_(0),  // Initialize to 0 - means STREAM_DATA_BLOCKED not sent yet
     send_buffer_(std::make_shared<common::MultiBlockBuffer>(GlobalResource::Instance().GetThreadLocalBlockPool())) {
@@ -76,11 +77,18 @@ void SendStream::Reset(uint32_t error) {
         return;
     }
 
+    // RFC 9000 §3.1: once RESET_STREAM is sent, STREAM data is abandoned —
+    // lost ranges must not be re-emitted.
+    retx_queue_.clear();
+
     auto frame = std::make_shared<ResetStreamFrame>();
     frame->SetStreamID(stream_id_);
     frame->SetFinalSize(send_data_offset_);
     frame->SetAppErrorCode(error);
     LOG_DEBUG("stream send reset stream. stream id:%llu, error:%u", stream_id_, error);
+    // RESET_STREAM is how the peer learns the final size and the abort: it
+    // must survive a lost packet (RFC 9000 3.1: retransmitted until acked).
+    TrackControlFrame(frame);
     frames_list_.emplace_back(frame);
     ToSend();
 
@@ -210,6 +218,50 @@ uint32_t SendStream::OnFrame(std::shared_ptr<IFrame> frame) {
 IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor, EncryptionLevel level) {
     IStream::TrySendData(nullptr, level);
 
+    // Stream-level control frames (RESET_STREAM, and the STREAM_DATA_BLOCKED /
+    // RESET_STREAM copies TrackControlFrame re-queues) go out BEFORE any
+    // flow-control gate. They carry no stream payload, so the peer's
+    // MAX_STREAM_DATA has nothing to do with them -- and a stream that is
+    // flow-control blocked is exactly the one an application is most likely to
+    // abandon with Reset(). With the old order the RESET_STREAM sat behind the
+    // `peer_data_limit_ <= send_data_offset_` return and the reliable-delivery
+    // work for it was moot.
+    //
+    // Packet full is NOT a failure: StreamManager treats kFailed as a permanent
+    // error and drops the stream from the active list, which would strand the
+    // frame in frames_list_ with nobody left to wake the stream. Return kBreak
+    // (same as RecvStream::TrySendData) so the stream stays active and the
+    // frame leaves with the next packet.
+    for (auto iter = frames_list_.begin(); iter != frames_list_.end();) {
+        if (visitor->HandleFrame(*iter)) {
+            iter = frames_list_.erase(iter);
+            continue;
+        }
+        if (visitor->GetLastError() == FrameEncodeError::kInsufficientSpace) {
+            LOG_DEBUG("stream send: packet full while sending control frame, retry. stream id:%llu", stream_id_);
+            return TrySendResult::kBreak;
+        }
+        LOG_DEBUG("stream send data failed. stream id:%d, frame type:%d", stream_id_, (*iter)->GetType());
+        return TrySendResult::kFailed;
+    }
+
+    // P0-C10 / D2: re-emit lost / probed ranges. They sit below
+    // send_data_offset_ (already admitted by both flow controllers), so they
+    // must bypass the peer-limit gate below, and they must stay sendable in
+    // kDataSent (FIN already out, not yet acknowledged), which the
+    // CheckCanSendFrame(kStream) gate further down forbids.
+    if (!retx_queue_.empty()) {
+        const StreamState st = send_machine_->GetStatus();
+        if (st == StreamState::kResetSent || st == StreamState::kResetRecvd || st == StreamState::kDataRecvd) {
+            retx_queue_.clear();
+        } else {
+            auto retx_result = DrainRetransmit(visitor);
+            if (retx_result != TrySendResult::kSuccess) {
+                return retx_result;
+            }
+        }
+    }
+
     // check peer limit (guard against unsigned underflow when send_data_offset_ > peer_data_limit_)
     if (peer_data_limit_ > send_data_offset_ && peer_data_limit_ - send_data_offset_ < kStreamDataBlockedThreshold) {
         // Only send STREAM_DATA_BLOCKED once per limit value
@@ -224,6 +276,12 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor, Encryptio
             // Metrics: Stream blocked by flow control
             Metrics::CounterInc(common::MetricsStd::QuicStreamDataBlocked);
 
+            // blocked_at_limit_ de-duplicates per limit, so a lost frame is
+            // never minted again: give it an owner. Re-send only while the
+            // limit it reported is still the current one.
+            const uint64_t reported_limit = peer_data_limit_;
+            TrackControlFrame(frame, [this, reported_limit]() { return peer_data_limit_ == reported_limit; });
+
             if (!visitor->HandleFrame(frame)) {
                 LOG_DEBUG("stream send data blocked failed. stream id:%d, frame type:%d", stream_id_, frame->GetType());
                 return TrySendResult::kFailed;
@@ -237,16 +295,6 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor, Encryptio
         LOG_DEBUG("stream send data flow control blocked. stream id:%llu, peer data limit:%llu, send data offset:%llu",
             stream_id_, peer_data_limit_, send_data_offset_);
         return TrySendResult::kFlowControlBlocked;  // Keep in active list, waiting for MAX_STREAM_DATA
-    }
-
-    for (auto iter = frames_list_.begin(); iter != frames_list_.end();) {
-        if (visitor->HandleFrame(*iter)) {
-            iter = frames_list_.erase(iter);
-
-        } else {
-            LOG_DEBUG("stream send data failed. stream id:%d, frame type:%d", stream_id_, (*iter)->GetType());
-            return TrySendResult::kFailed;
-        }
     }
 
     if (!send_machine_->CheckCanSendFrame(FrameType::kStream)) {
@@ -387,6 +435,9 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor, Encryptio
                     auto blocked_frame = std::make_shared<StreamDataBlockedFrame>();
                     blocked_frame->SetStreamID(stream_id_);
                     blocked_frame->SetMaximumData(peer_data_limit_);
+                    const uint64_t reported_limit = peer_data_limit_;
+                    TrackControlFrame(
+                        blocked_frame, [this, reported_limit]() { return peer_data_limit_ == reported_limit; });
                     visitor->HandleFrame(blocked_frame);
                     blocked_at_limit_ = peer_data_limit_;
                     LOG_DEBUG("stream send: sent STREAM_DATA_BLOCKED frame. stream id:%d, limit:%llu", stream_id_,
@@ -405,6 +456,8 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor, Encryptio
         LOG_DEBUG("stream send data: no data to send. stream id:%d", stream_id_);
         return TrySendResult::kSuccess;
     }
+
+    AttachLossHandler(frame);
 
     // Try to send the frame first, before updating state machine
     if (!visitor->HandleFrame(frame)) {
@@ -551,6 +604,20 @@ void SendStream::OnDataAcked(uint64_t offset_start, uint64_t length, bool has_fi
     //    AllAckDone to fire on the ACK rather than the original send.
     if (has_fin) {
         fin_sent_ = true;
+        fin_acked_ = true;
+    }
+
+    // 3b. D2: drop queued retransmissions the ACK just made redundant (late
+    //     ACK of a packet already declared lost). Only whole segments inside
+    //     the contiguous prefix are pruned here; partial overlaps are trimmed
+    //     lazily at emission time (DrainRetransmit).
+    for (auto it = retx_queue_.begin(); it != retx_queue_.end() && it->first <= acked_offset_;) {
+        const bool fin_pending = it->second.fin && !fin_acked_;
+        if (it->second.end <= acked_offset_ && !fin_pending) {
+            it = retx_queue_.erase(it);
+        } else {
+            ++it;
+        }
     }
 
     // 4. Stream completion: every sent byte must be inside acked_ranges_ AND
@@ -562,8 +629,12 @@ void SendStream::OnDataAcked(uint64_t offset_start, uint64_t length, bool has_fi
 
 void SendStream::CheckAllDataAcked() {
     // All bytes [0, send_data_offset_) must be covered by the contiguous
-    // ACKed prefix, AND the FIN we wrote on the wire must have been ACKed.
-    if (fin_sent_ && acked_offset_ >= send_data_offset_) {
+    // ACKed prefix, AND the FIN must have been ACKed. With the whole-packet
+    // retransmission channel retired, "FIN written to the wire" (fin_sent_)
+    // is no longer enough: a lost FIN-only frame must stay retransmittable,
+    // so the stream may only reach Data Recvd once a FIN-carrying frame is
+    // actually acknowledged.
+    if (fin_sent_ && fin_acked_ && acked_offset_ >= send_data_offset_) {
         LOG_DEBUG(
             "SendStream::CheckAllDataAcked: all data acked for stream %d, transitioning to Data Recvd state "
             "(acked=%llu, sent=%llu, ranges=%zu)",
@@ -576,6 +647,218 @@ void SendStream::CheckAllDataAcked() {
             LOG_DEBUG("SendStream: stream %d reached Data Recvd state", stream_id_);
         }
     }
+}
+
+// ==================== P0-C10 / D2: frame-level STREAM retransmission ====================
+
+namespace {
+
+// Zero-copy sub-slice [skip, skip + len) of `s`; empty span when len == 0.
+common::SharedBufferSpan SliceSpan(const common::SharedBufferSpan& s, uint64_t skip, uint64_t len) {
+    if (!s.Valid() || len == 0) {
+        return common::SharedBufferSpan();
+    }
+    return common::SharedBufferSpan(s.GetChunk(), s.GetStart() + skip, static_cast<uint32_t>(len));
+}
+
+}  // namespace
+
+void SendStream::AttachLossHandler(const std::shared_ptr<StreamFrame>& frame) {
+    // The handler lives inside the frame and is only ever invoked through
+    // frame->NotifyDelivery(), so a raw pointer to the frame is always valid
+    // while the handler runs (and avoids a frame<->handler ownership cycle).
+    std::weak_ptr<IStream> weak_self = weak_from_this();
+    StreamFrame* raw = frame.get();
+    frame->SetDeliveryHandler([weak_self, raw](FrameDeliveryState state) {
+        if (state == FrameDeliveryState::kAcked) {
+            return;  // ACKs reach OnDataAcked through StreamDataInfo
+        }
+        auto self = std::dynamic_pointer_cast<SendStream>(weak_self.lock());
+        if (self) {
+            self->OnFrameLost(raw->GetOffset(), raw->GetData(), raw->IsFin());
+        }
+    });
+}
+
+std::vector<std::pair<uint64_t, uint64_t>> SendStream::UncoveredGaps(uint64_t start, uint64_t end) const {
+    std::vector<std::pair<uint64_t, uint64_t>> covered;
+    auto collect = [&](const auto& m, auto end_of) {
+        auto it = m.upper_bound(start);
+        if (it != m.begin()) {
+            --it;  // the predecessor may straddle `start`
+        }
+        for (; it != m.end() && it->first < end; ++it) {
+            const uint64_t s = it->first;
+            const uint64_t e = end_of(it->second);
+            if (e > s && e > start) {
+                covered.emplace_back(s, e);
+            }
+        }
+    };
+    collect(acked_ranges_, [](uint64_t v) { return v; });
+    collect(retx_queue_, [](const RetxSegment& r) { return r.end; });
+    std::sort(covered.begin(), covered.end());
+
+    std::vector<std::pair<uint64_t, uint64_t>> gaps;
+    uint64_t cur = start;
+    for (const auto& c : covered) {
+        if (c.first >= end || cur >= end) {
+            break;
+        }
+        if (c.first > cur) {
+            gaps.emplace_back(cur, c.first);
+        }
+        if (c.second > cur) {
+            cur = c.second;
+        }
+    }
+    if (cur < end) {
+        gaps.emplace_back(cur, end);
+    }
+    return gaps;
+}
+
+void SendStream::OnFrameLost(uint64_t offset, const common::SharedBufferSpan& data, bool fin) {
+    const StreamState st = send_machine_->GetStatus();
+    if (st == StreamState::kResetSent || st == StreamState::kResetRecvd || st == StreamState::kDataRecvd) {
+        return;  // abandoned (RESET_STREAM) or fully acknowledged: nothing to retransmit
+    }
+
+    const uint64_t len = data.Valid() ? data.GetLength() : 0;
+    const uint64_t end = offset + len;
+    const bool want_fin = fin && !fin_acked_;
+
+    // Re-queue only the parts of [offset, end) that are neither ACKed nor
+    // already queued. A fully-covered range yields no gaps, which makes this
+    // idempotent under repeated kProbe (and a late kLost after a late ACK).
+    auto gaps = UncoveredGaps(offset, end);
+    for (const auto& gap : gaps) {
+        const bool gap_fin = want_fin && gap.second == end;
+        retx_queue_.emplace(
+            gap.first, RetxSegment{gap.second, SliceSpan(data, gap.first - offset, gap.second - gap.first), gap_fin});
+    }
+
+    // FIN not carried by a fresh gap (tail already ACKed or already queued, or a
+    // FIN-only frame): make sure some queued entry will still deliver it.
+    if (want_fin && !(len > 0 && !gaps.empty() && gaps.back().second == end)) {
+        auto it = retx_queue_.upper_bound(end);
+        bool attached = false;
+        if (it != retx_queue_.begin()) {
+            auto prev = std::prev(it);
+            if (prev->second.end == end) {
+                prev->second.fin = true;  // also covers an existing FIN-only entry keyed at `end`
+                attached = true;
+            }
+        }
+        if (!attached) {
+            retx_queue_.emplace(end, RetxSegment{end, common::SharedBufferSpan(), true});
+        }
+    }
+
+    if (retx_queue_.empty()) {
+        return;
+    }
+    LOG_DEBUG("SendStream::OnFrameLost: stream=%llu range=[%llu,%llu) fin=%d gaps=%zu queued_segments=%zu",
+        (unsigned long long)stream_id_, (unsigned long long)offset, (unsigned long long)end, fin ? 1 : 0, gaps.size(),
+        retx_queue_.size());
+    ToSend();
+}
+
+IStream::TrySendResult SendStream::DrainRetransmit(IFrameVisitor* visitor) {
+    // Same worst-case STREAM header budget as the new-data path.
+    constexpr uint32_t kStreamHeaderReserve = 24;
+
+    while (!retx_queue_.empty()) {
+        auto it = retx_queue_.begin();
+        const uint64_t start = it->first;
+        RetxSegment& seg = it->second;
+
+        // A FIN acknowledged since queueing makes the FIN flag redundant; a
+        // segment left with neither bytes nor FIN is dead.
+        if (fin_acked_) {
+            seg.fin = false;
+        }
+        if (seg.end <= start && !seg.fin) {
+            retx_queue_.erase(it);
+            continue;
+        }
+
+        // Trim a front already covered by a (late) ACK.
+        uint64_t new_start = start;
+        auto acked = acked_ranges_.upper_bound(start);
+        if (acked != acked_ranges_.begin()) {
+            auto prev = std::prev(acked);
+            if (prev->second > start) {
+                new_start = std::min<uint64_t>(prev->second, seg.end);
+            }
+        }
+        if (new_start > start) {
+            RetxSegment trimmed{seg.end, SliceSpan(seg.data, new_start - start, seg.end - new_start), seg.fin};
+            retx_queue_.erase(it);
+            retx_queue_.emplace(new_start, std::move(trimmed));
+            continue;
+        }
+
+        const uint64_t remaining = seg.end - start;
+
+        // An ACK that arrived AFTER this segment was queued can land in its
+        // middle (out-of-order delivery): the queue-time gap computation could
+        // not know. Stop this emission at the next acknowledged range instead
+        // of re-sending bytes the peer already has; the tail beyond it is
+        // trimmed by the front-trim above on the next iteration. (Front-only
+        // trimming left a redundant-byte window of up to one segment.)
+        uint64_t sendable = remaining;
+        auto next_acked = acked_ranges_.upper_bound(start);
+        if (next_acked != acked_ranges_.end() && next_acked->first < seg.end) {
+            sendable = next_acked->first - start;
+        }
+
+        const uint32_t pkt_left = visitor->GetPacketLeftSize();
+        const uint32_t cap = pkt_left > kStreamHeaderReserve ? pkt_left - kStreamHeaderReserve : 0;
+        if (cap == 0) {
+            return TrySendResult::kBreak;  // packet full; stay active for the next one
+        }
+        const uint32_t send_size = static_cast<uint32_t>(std::min<uint64_t>(sendable, cap));
+        // FIN rides only on the segment's true tail, never on a piece cut short
+        // by an acknowledged range.
+        const bool send_fin = seg.fin && send_size == remaining;
+
+        auto frame = std::make_shared<StreamFrame>();
+        frame->SetStreamID(stream_id_);
+        frame->SetOffset(start);
+        if (send_size > 0) {
+            frame->SetData(SliceSpan(seg.data, 0, send_size));
+        }
+        if (send_fin) {
+            frame->SetFin();
+        }
+        AttachLossHandler(frame);
+
+        if (!visitor->HandleFrame(frame)) {
+            if (visitor->GetLastError() == FrameEncodeError::kInsufficientSpace) {
+                return TrySendResult::kBreak;
+            }
+            LOG_ERROR("SendStream::DrainRetransmit: encode failed. stream id:%llu, offset:%llu, size:%u",
+                (unsigned long long)stream_id_, (unsigned long long)start, send_size);
+            return TrySendResult::kFailed;
+        }
+
+        // Consume what was just emitted. No state-machine transition (the
+        // original send already made it), no AddStreamDataSize (connection
+        // flow control was charged on first transmission), no sended_cb_
+        // (the application was told when the bytes first left).
+        if (send_size == remaining) {
+            retx_queue_.erase(it);
+        } else {
+            RetxSegment rest{seg.end, SliceSpan(seg.data, send_size, remaining - send_size), seg.fin};
+            retx_queue_.erase(it);
+            retx_queue_.emplace(start + send_size, std::move(rest));
+        }
+        LOG_DEBUG("SendStream::DrainRetransmit: stream=%llu re-sent [%llu,%llu) fin=%d queued_segments=%zu",
+            (unsigned long long)stream_id_, (unsigned long long)start, (unsigned long long)(start + send_size),
+            send_fin ? 1 : 0, retx_queue_.size());
+    }
+    return TrySendResult::kSuccess;
 }
 
 }  // namespace quic

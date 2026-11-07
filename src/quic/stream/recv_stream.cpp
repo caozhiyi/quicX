@@ -76,6 +76,10 @@ void RecvStream::Reset(uint32_t error) {
         stop_frame->SetStreamID(stream_id_);
         stop_frame->SetAppErrorCode(error);
 
+        // STOP_SENDING must be retransmitted until the peer reacts (RFC 9000
+        // 3.5); local_stop_sending_ de-duplicates, so a lost one is never
+        // minted again without an owner.
+        TrackControlFrame(stop_frame);
         frames_list_.emplace_back(stop_frame);
 
         // Only set the discard flag; the peer's real RESET_STREAM terminates
@@ -562,6 +566,12 @@ void RecvStream::MaybeSendWindowUpdate() {
     auto max_frame = std::make_shared<MaxStreamDataFrame>();
     max_frame->SetStreamID(stream_id_);
     max_frame->SetMaximumData(local_data_limit_);
+    // A lost window update stalls the sender until its BLOCKED probe comes
+    // back (and the producer de-duplicates by limit). Re-send the SAME value
+    // only while it is still the current limit: a later, larger update
+    // supersedes it.
+    const uint64_t advertised = local_data_limit_;
+    TrackControlFrame(max_frame, [this, advertised]() { return local_data_limit_ == advertised; });
     frames_list_.emplace_back(max_frame);
 
     ToSend();

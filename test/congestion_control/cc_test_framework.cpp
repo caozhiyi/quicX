@@ -260,7 +260,9 @@ void CCTestFramework::ProcessAcks() {
         }
 
         uint64_t rtt = current_time_us_ - it->second.sent_time;
-        cc_->OnRoundTripSample(rtt, 0);
+        // P1-P4: latest/min/smoothed all carry the raw sample in the
+        // simulator (steady-state simplification; no host EWMA here).
+        cc_->OnRoundTripSample(rtt, rtt, rtt, 0);
 
         AckEvent ack_ev;
         ack_ev.pn = packet.packet_number;

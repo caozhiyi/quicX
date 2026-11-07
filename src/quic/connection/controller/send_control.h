@@ -15,6 +15,7 @@
 #include "quic/config.h"
 #include "quic/congestion_control/congestion_control_factory.h"
 #include "quic/congestion_control/if_congestion_control.h"
+#include "quic/connection/controller/retransmit_scheduler.h"
 #include "quic/connection/controller/rtt_calculator.h"
 #include "quic/connection/transport_param.h"
 #include "quic/packet/if_packet.h"
@@ -85,7 +86,12 @@ public:
     void Bind(std::weak_ptr<void> self) {
         conn_self_ = self;
         life_token_ = self;
+        retransmit_scheduler_->SetLifeToken(self);
     }
+
+    // P0-C10 / X3 slow-path scheduler (arithmetic-cadence retransmit of
+    // handshake CRYPTO). Owners (CryptoStream) hold it weakly.
+    std::weak_ptr<RetransmitScheduler> GetRetransmitScheduler() { return retransmit_scheduler_; }
 
     uint32_t GetRtt() { return rtt_calculator_.GetSmoothedRtt(); }
     uint32_t GetPTO(uint32_t max_ack_delay) { return rtt_calculator_.GetPTOInterval(max_ack_delay); }
@@ -135,8 +141,8 @@ public:
     // CC-configuration tests).
     CongestionControlType GetCcTypeForTest() const { return active_cc_type_; }
     // Test instrumentation: how many entries a packet number space still
-    // tracks. Used to prove the retransmit path does not leave stale entries
-    // behind (see RemoveStaleUnackedEntry).
+    // tracks. Used to prove loss declaration / ACK / discard leave no stale
+    // entries behind.
     size_t GetUnackedPacketCountForTest(PacketNumberSpace ns) const { return unacked_packets_[ns].size(); }
     void OnPacketSend(uint64_t now, const std::shared_ptr<IPacket>& packet, uint32_t pkt_len);
     void OnPacketSend(uint64_t now, const std::shared_ptr<IPacket>& packet, uint32_t pkt_len,
@@ -150,63 +156,7 @@ public:
 
     void OnPacketAck(uint64_t now, PacketNumberSpace ns, const std::shared_ptr<IFrame>& ack_frame);
     void CanSend(uint64_t now, uint64_t& can_send_bytes);
-    bool NeedReSend() { return !lost_packets_.empty(); }
 
-    // A lost packet plus the stream-data records originally attached to it.
-    // The retransmit path (BaseConnection::TrySend) needs the stream_data
-    // when re-registering the packet under its new PN, otherwise the
-    // re-encoded packet's eventual ACK would not propagate back to
-    // SendStream and the stream's selective-ACK bookkeeping would be left
-    // with permanent gaps — exactly the failure mode that left aioquic
-    // transfer interop hanging on 5MB downloads.
-    struct LostPacketEntry {
-        std::shared_ptr<IPacket> packet;
-        std::vector<StreamDataInfo> stream_data;
-        // True when queued by OnLossDetectionTimeout's PTO probe (RFC 9002
-        // §6.2.2), false when queued by DetectLostPackets (a real loss event).
-        // A PTO probe deliberately does NOT FireFrameDelivery(kLost) — so for
-        // pure-CRYPTO handshake packets (e.g. the ClientHello) the frame-level
-        // re-queue never happened and TrySendRetransmit's pure-CRYPTO drop
-        // would discard the ONLY copy of the probe payload, leaving the PING
-        // fallback as the sole output. The longrtt regression (2026-10-27
-        // interop: "Expected at least 2 ClientHellos. Got: 1", client mode
-        // 0/16): at 750ms delay the initial PTO (~1s) fires before the
-        // server's flight (1.5s RTT) arrives, every probe went out as
-        // PING-only and the ClientHello was never retransmitted. Real-loss
-        // entries keep the drop: their frames were already re-queued
-        // frame-level and re-encoding would double-send the bytes.
-        bool pto_probe = false;
-    };
-    std::list<LostPacketEntry>& GetLostPacket() { return lost_packets_; }
-
-    // Drop the unacked entry registered under |stale_pn|, if it still belongs to
-    // |packet|.
-    //
-    // The retransmit path reuses ONE IPacket object and renumbers it in place
-    // (BaseConnection::TrySendRetransmit). Whatever entry was registered under
-    // the old PN must go, otherwise it is orphaned: once the object carries a
-    // new PN, the entry's key no longer matches packet->GetPacketNumber(), so
-    // neither the per-packet timer's find() nor OnPacketAck's range walk can
-    // address it again, yet it keeps occupying the table with its timer armed.
-    //
-    // Three consequences, all observed while debugging handshakeloss:
-    //   1. OnLossDetectionTimeout() probes unacked_packets_[ns].begin() only. The stale
-    //      entry always sorts first (smallest key) and is permanently
-    //      is_lost, so after the very first PTO the timer lands on it forever
-    //      and silently stops finding anything to retransmit.
-    //   2. OnPacketAck's `pkt_num--` range walk can descend into the stale key
-    //      and fire OnPacketAcked / stream_data_ack_cb_ a second time for bytes
-    //      that were already accounted for as lost.
-    //   3. The table grows by one dead entry per retransmission until the
-    //      packet number space is discarded.
-    //
-    // MUST be called BEFORE the object is renumbered: afterwards the stale key
-    // is no longer derivable from the object (its PN has moved on), and the
-    // only way to find the entry would be an O(unacked) scan by pointer.
-    // Passing |packet| purely as a guard: if the entry's object is not this one
-    // we leave it alone rather than delete a live entry that merely shares the
-    // packet number.
-    void RemoveStaleUnackedEntry(PacketNumberSpace ns, uint64_t stale_pn, const std::shared_ptr<IPacket>& packet);
     // Next send time in the microsecond domain — both the |now| argument and
     // the return value. Sourced from the CC algorithm (pacing-aware for BBR).
     uint64_t GetNextSendTime(uint64_t now) { return congestion_control_->NextSendTime(now); }
@@ -252,14 +202,14 @@ public:
 
     // RFC 9002 §6.2.4 (post-handshake PTO probe):
     // Called when the PTO timer fires AFTER the handshake is complete, in
-    // addition to (not instead of) retransmitting the oldest unacked packet.
-    // The connection layer should respond by emitting an ack-eliciting packet
-    // (typically a PING) so the peer is forced to send an ACK that advances
-    // packet-threshold loss detection. Without this, a flow-controlled sender
-    // whose only outstanding bytes are retransmissions of already-retransmitted
-    // packets has no way to coax the peer into an ACK and the connection
-    // stalls until idle-timeout (Bug-19 / FC-locked PTO probe gap, see
-    // docs/diagnosis/transfer_5mb_stall.md).
+    // addition to (not instead of) the kProbe re-queue of the oldest unacked
+    // data. The connection layer should respond by emitting an ack-eliciting
+    // packet (typically a PING) so the peer is forced to send an ACK that
+    // advances packet-threshold loss detection. Without this, a flow-
+    // controlled sender whose only outstanding bytes are retransmissions of
+    // already-retransmitted data has no way to coax the peer into an ACK and
+    // the connection stalls until idle-timeout (Bug-19 / FC-locked PTO probe
+    // gap, see docs/diagnosis/transfer_5mb_stall.md).
     using ApplicationProbeCallback = std::function<void()>;
     void SetApplicationProbeCallback(ApplicationProbeCallback callback) { application_probe_cb_ = callback; }
 
@@ -268,37 +218,49 @@ public:
         handshake_complete_ = true;
         pto_probe_pending_ = false;  // probes are pre-handshake only
     }
-    // Whether the TLS handshake is confirmed (RFC 9001 4.9.1). Read by the
-    // connection layer's retransmit path to stop re-sending Initial /
-    // Handshake packets whose ACK can never arrive anymore.
+    // Whether the TLS handshake is confirmed (RFC 9001 4.9.1): Initial /
+    // Handshake packets can no longer be ACKed, so they are neither tracked
+    // nor probed.
     bool IsHandshakeComplete() const {
         return handshake_complete_;
     }
 
-    // RFC 9002 §6.2.4 completion guarantee: every PTO cycle MUST put at least
-    // one ack-eliciting packet on the wire. The immediate probe in OnLossDetectionTimeout
-    // only fires when nothing at all is queued for retransmission. When a
-    // retransmission IS queued, it may still produce zero bytes: pre-handshake
-    // pure-CRYPTO packets are dropped by TrySendRetransmit (frame-level
-    // recovery owns them) and their CRYPTO segments may already be acked via a
-    // LATER packet's frame delivery — the earlier packets then survive as
-    // zombie unacked entries that every PTO re-queues and re-drops. OnLossDetectionTimeout
-    // arms this flag in that case; the send round consumes it only if it ends
-    // with zero packets emitted, injecting a PING probe then. Any successful
+    // RFC 9002 6.2.4 completion guarantee: every PTO cycle MUST put at least
+    // one ack-eliciting packet on the wire. The immediate probe in
+    // OnLossDetectionTimeout only fires when there is no live in-flight packet
+    // to probe. When a packet WAS probed (kProbe), the re-queue may still
+    // produce zero bytes: its CRYPTO segments may already be acked via a LATER
+    // packet's frame delivery, so the earlier packet survives as a zombie
+    // unacked entry whose probe re-queues nothing. OnLossDetectionTimeout arms
+    // this flag in that case; the send round consumes it only if it ends with
+    // zero packets emitted, injecting a PING probe then. Any successful
     // ACK-ELICITING send clears the flag (TrackPacketInCongestionControl):
-    // the cycle's purpose — elicit an ACK — is then already served.
+    // the cycle's purpose, eliciting an ACK, is then already served.
     //
     // Observed deadlock (L1 handshakeloss, quicx-client vs xquic-server): CH
-    // retransmitted 3x, the 3rd copy ACKed → all Initial CRYPTO acked at frame
-    // level, pn 1/2 zombies re-queued and dropped every PTO, zero packets out;
-    // the server, amplification-limited (§8.1), waited for client bytes to
-    // recharge its budget — both sides silent until the idle timeout.
+    // retransmitted 3x, the 3rd copy ACKed, all Initial CRYPTO acked at frame
+    // level, pn 1/2 zombies probed to no effect every PTO, zero packets out;
+    // the server, amplification-limited (8.1), waited for client bytes to
+    // recharge its budget; both sides silent until the idle timeout.
     bool ConsumePendingPtoProbe() {
         if (!pto_probe_pending_ || handshake_complete_) {
             return false;
         }
         pto_probe_pending_ = false;
         return true;
+    }
+
+    // P0-C6 (RFC 9000 §10.1): true iff at least one ack-eliciting packet was
+    // sent since the last consume. "An endpoint is said to be idle if it has
+    // not received and processed any packets AND it has not sent any
+    // ack-eliciting packets for longer than the idle timeout" — the
+    // connection layer consumes this after each send round to restart the
+    // idle timer. Pure ACK/PADDING sends (which prove nothing about liveness
+    // of the reverse path) never set the flag.
+    bool ConsumeAckElicitingSendFlag() {
+        bool v = ack_eliciting_send_flag_;
+        ack_eliciting_send_flag_ = false;
+        return v;
     }
 
     // When the peer has sent undecryptable 1-RTT packets, its Finished was
@@ -359,7 +321,6 @@ private:
     void DetectLostPackets(uint64_t now, PacketNumberSpace ns, uint64_t largest_acked);
 
     enum class EcnState { kUnknown, kValidated, kFailed };
-    std::list<LostPacketEntry> lost_packets_;
 
     // RFC 9002 §7.6.2: persistent congestion requires that NO packet sent
     // strictly between the oldest and newest lost packets was acknowledged.
@@ -384,29 +345,20 @@ private:
     // then collapses the CC's congestion window to the minimum.
     void MaybeDeclarePersistentCongestion(const std::vector<uint64_t>& lost_send_times);
 
-    // Callback body for the per-packet retransmit timer (Initial/Handshake
-    // spaces only — see TrackPacketForRetransmission). Declares the packet
-    // lost and feeds lost_packets_; PTO backoff is NOT touched here.
-    std::function<void()> MakeRetransmitTimeoutHandler(
-        const std::shared_ptr<IPacket>& packet, uint32_t pkt_len, PacketNumberSpace ns);
-
-    // One entry per tracked ack-eliciting packet. On top of the single
-    // loss_detection_timer_ (RFC 9002 Appendix A), Initial/Handshake-space
-    // entries additionally carry a PER-PACKET retransmit timer armed at the
-    // base PTO interval (see TrackPacketForRetransmission): under sustained
-    // loss the connection-level PTO backs off exponentially (§6.2.1 storm
-    // protection), which is correct for App space (ACK/PTO-driven recovery)
-    // but starves handshake flight recovery — the 2026-10-29 handshakeloss
-    // bisect: with the per-packet timer removed, the 90-byte ServerHello
-    // retransmission cadence went 750ms→4.5s→… and the connection died on
-    // packet-loss luck; the baseline's arithmetic 750ms cadence (each
-    // retransmission re-arms the base interval) carried the handshake
-    // through the same loss pattern (baseline 3/3 runs clean vs 39/32/11).
-    // The handle is move-only on purpose: losing it cancels.
+    // One entry per tracked ack-eliciting packet. P0-C10: there is no
+    // per-packet retransmit timer any more. Recovery cadence under sustained
+    // loss comes from two sources: the single RFC 9002 loss detection timer
+    // (loss_detection_timer_) and the single X3 RetransmitScheduler slot per
+    // CRYPTO level. Both operate at frame level (owners re-queue data); a
+    // packet is never re-encoded.
     struct PacketTimerInfo {
         uint64_t send_time_;
+        // P1-P4: same send event, steady_clock microsecond snapshot — feeds
+        // the CC AckEvent.acked_packet_send_time and the us-domain RttCalculator
+        // (sub-ms RTT resolution); send_time_ above keeps feeding the ms
+        // PTO / loss-detection domain untouched.
+        uint64_t send_time_us_ = 0;
         uint32_t pkt_len_;
-        common::Timer timer_;
         std::vector<StreamDataInfo> stream_data;  // Stream data contained in this packet
         std::shared_ptr<IPacket> packet;          // Store packet for retransmission
         bool is_lost = false;
@@ -418,11 +370,6 @@ private:
         PacketTimerInfo(uint64_t t, uint32_t len, const std::vector<StreamDataInfo>& data):
             send_time_(t),
             pkt_len_(len),
-            stream_data(data) {}
-        PacketTimerInfo(uint64_t t, uint32_t len, common::Timer&& timer, const std::vector<StreamDataInfo>& data):
-            send_time_(t),
-            pkt_len_(len),
-            timer_(std::move(timer)),
             stream_data(data) {}
     };
     // Ordered by packet number (P0-C4): PNs are allocated monotonically, so
@@ -520,6 +467,14 @@ private:
     //     per §6.2. A PTO expiry is NOT a loss event (§6.2: probes make the
     //     peer ack; they never shrink the cwnd).
     common::Timer loss_detection_timer_;
+
+    // P0-C10 / X3: the single slow-path timer over all retransmit owners (see
+    // RetransmitScheduler). Never declares loss, never touches cwnd (INV4).
+    // Created in the constructor. Its interval provider reads rtt_calculator_
+    // and the handshake flag through `this`; it is only invoked from the event
+    // loop while this object is alive (the scheduler's timer is cancelled in
+    // its destructor and by ClearRetransmissionData()).
+    std::shared_ptr<RetransmitScheduler> retransmit_scheduler_;
     enum class LossDetectionMode { kTimeThreshold, kPto };
     LossDetectionMode loss_detection_mode_ = LossDetectionMode::kPto;
     PacketNumberSpace loss_detection_ns_ = PacketNumberSpace::kApplicationNumberSpace;
@@ -552,6 +507,9 @@ private:
     // the earliest across spaces.
     uint64_t loss_time_[PacketNumberSpace::kNumberSpaceCount] = {0};
     uint64_t last_ack_eliciting_sent_time_ = 0;  // Track when we last sent ack-eliciting data
+    // P0-C6 / RFC 9000 §10.1: set in OnPacketSend for every ack-eliciting
+    // packet, consumed by ConsumeAckElicitingSendFlag() from the send round.
+    bool ack_eliciting_send_flag_ = false;
 
     // Timer callback: dispatches by loss_detection_mode_ (see above).
     void OnLossDetectionTimeout();
@@ -601,8 +559,8 @@ private:
     // frame-level delivery and remove the entry from unacked_packets_.
     // |ecn_ce| is only true on the largest-acked path (ECN validation
     // result); |stream_log| preserves the per-path LOG_DEBUG noise.
-    AckOneResult AckOnePacket(
-        PacketNumberSpace ns, uint64_t pkt_num, uint64_t now, uint64_t ack_delay, bool ecn_ce, StreamAckLogLevel stream_log);
+    AckOneResult AckOnePacket(PacketNumberSpace ns, uint64_t pkt_num, uint64_t now, uint64_t now_us, uint64_t ack_delay,
+        bool ecn_ce, StreamAckLogLevel stream_log);
 
     // Emit the qlog packets_acked event (ACK ranges + scaled ack delay).
     // No-op without a qlog trace.
@@ -617,9 +575,12 @@ private:
     // RTT estimate update from the largest-acked packet, plus the RTT /
     // ack-delay / ack-range-count metrics gauges. |ack_range_count| is the
     // frame's range count (1 + additional ranges), passed in so this stays
-    // independent of the AckFrame type.
+    // independent of the AckFrame type. The ms triple (send_time, now,
+    // scaled_ack_delay) feeds the legacy PTO domain; the us triple
+    // (send_time_us, now_us, ack_delay_us) feeds the CC-facing us domain
+    // (P1-P4) — both run the same RFC 9002 §5.3 EWMA independently.
     void UpdateRttOnAck(uint64_t pkt_num, uint64_t send_time, uint64_t now, uint64_t scaled_ack_delay,
-        size_t ack_range_count);
+        uint64_t send_time_us, uint64_t now_us, uint64_t ack_delay_us, size_t ack_range_count);
 
     // RFC 9000 §13.4 ECN validation on an AckEcnFrame: counters must be
     // non-decreasing. Returns whether this ACK reports CE (congestion).

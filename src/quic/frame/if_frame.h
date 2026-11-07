@@ -22,7 +22,17 @@ namespace quic {
  */
 enum class FrameDeliveryState {
     kAcked,  ///< the packet carrying this frame was acknowledged
-    kLost,   ///< the packet carrying this frame was declared lost (or PTO-probed away)
+    kLost,   ///< the packet carrying this frame was declared lost by ACK-driven loss detection
+    /**
+     * The frame's packet is still outstanding but the recovery machinery
+     * wants an ack-eliciting packet on the wire (RFC 9002 §6.2.4 PTO probe, or
+     * the retransmit scheduler's arithmetic-cadence fallback). NOT a loss
+     * event: no congestion reaction, and unlike kLost it is never latched —
+     * probes legitimately repeat. Owners re-queue the unacknowledged bytes /
+     * state exactly as for kLost (duplicates are harmless by design); owners
+     * with nothing worth probing ignore it.
+     */
+    kProbe,
 };
 
 /**
@@ -116,6 +126,13 @@ public:
         }
         delivery_handler_(state);
     }
+
+    // For owners that re-queue THIS frame object (rather than building a
+    // fresh instance): the re-sent copy is a new loss generation and needs its
+    // own kLost budget, otherwise a second loss is swallowed by the latch.
+    // (The retired whole-packet retransmission used to mask this: it re-sent
+    // the packet regardless of what the latch said.)
+    void RearmLossNotification() { lost_notified_ = false; }
     ///@}
 
 protected:

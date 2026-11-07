@@ -34,7 +34,7 @@ TEST(BBRv3CongestionControlTest, LossAdjustsInflightHi) {
     cc.Configure(cfg);
 
     // initial ack to seed bw
-    cc.OnRoundTripSample(100000, 0);
+    cc.OnRoundTripSample(100000, 100000, 100000, 0);
     cc.OnPacketAcked(AckEvent{1, 2000, 200, 0, false});
     uint64_t cwnd_before = cc.GetCongestionWindow();
 
@@ -66,7 +66,7 @@ TEST(BBRv3CongestionControlTest, ProbeRttAndProbeBwCycle) {
     cc.Configure(cfg);
 
     // Set min_rtt to 10ms (10000us) for realistic sampling
-    cc.OnRoundTripSample(10000, 0);
+    cc.OnRoundTripSample(10000, 10000, 10000, 0);
 
     // Send enough ACKs over sufficient time to establish bandwidth
     // Need elapsed >= srtt_us to trigger bandwidth update
@@ -99,7 +99,7 @@ TEST(BBRv3CongestionControlTest, ProbeBwFullEightSegmentCycle) {
     cfg.initial_cwnd_bytes = 20ull * cfg.mss_bytes;
     cc.Configure(cfg);
 
-    cc.OnRoundTripSample(10000ull, 0ull);
+    cc.OnRoundTripSample(10000ull, 10000ull, 10000ull, 0ull);
 
     // Establish bandwidth by sending packets over sufficient time
     uint64_t base_time = 10000;

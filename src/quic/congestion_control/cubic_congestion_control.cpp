@@ -67,6 +67,8 @@ void CubicCongestionControl::Configure(const CcConfigV2& cfg) {
     recovery_start_time_us_ = 0;
 
     // Initialize HyStart
+    hystart_last_sent_pn_ = 0;
+    app_limited_until_pn_ = 0;
     ResetHyStart();
 
     if (!pacer_) pacer_.reset(new NormalPacer());
@@ -74,80 +76,26 @@ void CubicCongestionControl::Configure(const CcConfigV2& cfg) {
 
 void CubicCongestionControl::OnPacketSent(const SentPacketEvent& ev) {
     bytes_in_flight_ += ev.bytes;
+    // P1-CC4: app-limited freeze — if even after this packet less than half
+    // the window is in flight, the application (not the path) is the limit;
+    // its ACKs must not grow the cwnd.
+    if (bytes_in_flight_ < cwnd_bytes_ / 2) {
+        app_limited_until_pn_ = std::max(app_limited_until_pn_, ev.pn);
+    }
+    // HyStart++ round delimiters (RFC 9406 §4.2): track the highest sent PN
+    // so a round can close once its window end is ACKed.
+    hystart_last_sent_pn_ = std::max(hystart_last_sent_pn_, ev.pn);
     if (pacer_) pacer_->OnPacketSent(ev.sent_time, static_cast<size_t>(ev.bytes));  // us: matches the pacer contract
 }
 
 void CubicCongestionControl::OnPacketAcked(const AckEvent& ev) {
     bytes_in_flight_ = (bytes_in_flight_ > ev.bytes_acked) ? bytes_in_flight_ - ev.bytes_acked : 0;
 
-    // ECN-CE: treat as early congestion signal, exit slow start and reduce cwnd
-    if (ev.ecn_ce) {
-        if (in_slow_start_) {
-            common::CongestionStateUpdatedData qlog_data;
-            qlog_data.old_state = "slow_start";
-            qlog_data.new_state = "congestion_avoidance";
-            QLOG_CONGESTION_STATE_UPDATED(qlog_trace_, qlog_data);
-            in_slow_start_ = false;
-        }
-        if (!in_recovery_) {
-            // Fast Convergence: check if cwnd decreased since last congestion event
-            double curr_w_max_pkts = BytesToPkts(cwnd_bytes_, cfg_.mss_bytes);
-            if (curr_w_max_pkts < w_max_pkts_) {
-                // Fast convergence: W_max = cwnd * (1 + β_cubic)/2
-                w_max_pkts_ = curr_w_max_pkts * (1.0 + kBetaCubic) / 2.0;
-            } else {
-                w_max_pkts_ = curr_w_max_pkts;
-            }
-
-            // Reduce cwnd multiplicatively (similar to loss path)
-            uint64_t new_cwnd = static_cast<uint64_t>(cwnd_bytes_ * kBetaCubic);
-            cwnd_bytes_ = std::max<uint64_t>(new_cwnd, cfg_.min_cwnd_bytes);
-            ssthresh_bytes_ = cwnd_bytes_;
-            {
-                common::CongestionStateUpdatedData qlog_ecn_data;
-                qlog_ecn_data.old_state = in_slow_start_ ? "slow_start" : "congestion_avoidance";
-                qlog_ecn_data.new_state = "recovery";
-                QLOG_CONGESTION_STATE_UPDATED(qlog_trace_, qlog_ecn_data);
-            }
-            in_recovery_ = true;
-            recovery_start_time_us_ = ev.ack_time;
-            epoch_start_us_ = 0;  // force cubic epoch reset
-
-            // Reset HyStart on congestion signal
-            ResetHyStart();
-        }
-        if (pacer_) pacer_->OnPacingRateUpdated(GetPacingRateBytesPerSec());
-        return;
-    }
-
-    // Slow start phase with HyStart
-    if (in_slow_start_) {
-        cwnd_bytes_ += ev.bytes_acked;
-
-        // Check traditional ssthresh exit
-        if (cwnd_bytes_ >= ssthresh_bytes_) {
-            common::CongestionStateUpdatedData qlog_data;
-            qlog_data.old_state = "slow_start";
-            qlog_data.new_state = "congestion_avoidance";
-            QLOG_CONGESTION_STATE_UPDATED(qlog_trace_, qlog_data);
-            in_slow_start_ = false;
-            ResetEpoch(ev.ack_time);
-        }
-        // Check HyStart early exit (using srtt_us_ as latest RTT proxy)
-        else if (hystart_enabled_ && srtt_us_ > 0 && CheckHyStartExit(srtt_us_, ev.ack_time)) {
-            // Exit slow start early via HyStart
-            common::CongestionStateUpdatedData qlog_data;
-            qlog_data.old_state = "slow_start";
-            qlog_data.new_state = "congestion_avoidance";
-            QLOG_CONGESTION_STATE_UPDATED(qlog_trace_, qlog_data);
-            ssthresh_bytes_ = cwnd_bytes_;
-            in_slow_start_ = false;
-            hystart_found_exit_ = true;
-            ResetEpoch(ev.ack_time);
-        }
-
-        if (pacer_) pacer_->OnPacingRateUpdated(GetPacingRateBytesPerSec());
-        return;
+    // P1-CC4: congestion events funnel through ONE entry point — the ECN-CE
+    // and loss branches used to be line-for-line duplicates of the RFC 9438
+    // §4.5 multiplicative decrease and had already drifted apart.
+    if (ev.ecn_ce && !in_recovery_) {
+        EnterRecovery(ev.ack_time);
     }
 
     if (in_recovery_) {
@@ -167,7 +115,46 @@ void CubicCongestionControl::OnPacketAcked(const AckEvent& ev) {
         }
     }
 
-    IncreaseOnAck(ev.bytes_acked, ev.ack_time);
+    // P1-CC4: app-limited freeze — an ACK for a packet that left with more
+    // than half the cwnd unused carries no path-capacity information.
+    const bool app_limited_packet = (app_limited_until_pn_ != 0 && ev.pn <= app_limited_until_pn_);
+
+    if (in_slow_start_ || in_css_) {
+        // HyStart++ round bookkeeping runs on every ACK regardless of the
+        // freeze: RTT samples are path information, not capacity votes.
+        HyStartOnAck();
+        // RFC 9406 §4.2: the round ends when its window-end packet is ACKed.
+        if (ev.pn >= hystart_window_end_pn_) {
+            HyStartOnRoundEnd();
+        }
+
+        if (!app_limited_packet) {
+            if (in_css_) {
+                // CSS (RFC 9406 §4.2): keep growing, but at 1/4 rate.
+                cwnd_bytes_ += std::max<uint64_t>(ev.bytes_acked / kCssGrowthDivisor, 1);
+            } else {
+                cwnd_bytes_ += ev.bytes_acked;
+            }
+            cwnd_bytes_ = std::min<uint64_t>(cwnd_bytes_, cfg_.max_cwnd_bytes);
+        }
+
+        // Traditional ssthresh exit (full slow start only).
+        if (in_slow_start_ && !in_css_ && cwnd_bytes_ >= ssthresh_bytes_) {
+            common::CongestionStateUpdatedData qlog_data;
+            qlog_data.old_state = "slow_start";
+            qlog_data.new_state = "congestion_avoidance";
+            QLOG_CONGESTION_STATE_UPDATED(qlog_trace_, qlog_data);
+            in_slow_start_ = false;
+            ResetEpoch(ev.ack_time);
+        }
+
+        if (pacer_) pacer_->OnPacingRateUpdated(GetPacingRateBytesPerSec());
+        return;
+    }
+
+    if (!app_limited_packet) {
+        IncreaseOnAck(ev.bytes_acked, ev.ack_time);
+    }
     if (pacer_) pacer_->OnPacingRateUpdated(GetPacingRateBytesPerSec());
 }
 
@@ -180,6 +167,11 @@ void CubicCongestionControl::OnPacketLost(const LossEvent& ev) {
         return;
     }
 
+    // P1-CC4: same multiplicative-decrease entry as the ECN-CE path.
+    EnterRecovery(ev.lost_time);
+}
+
+void CubicCongestionControl::EnterRecovery(uint64_t now) {
     // Fast Convergence: if cwnd decreased since last loss, further reduce W_max
     // RFC 9438 §4.7 "Fast convergence": when consecutive congestion
     // events show cwnd shrinking (network getting more contended), pull
@@ -212,10 +204,15 @@ void CubicCongestionControl::OnPacketLost(const LossEvent& ev) {
     }
     in_recovery_ = true;
     in_slow_start_ = false;
-    recovery_start_time_us_ = ev.lost_time;
+    // RFC 9406 §4.2: any loss or ECN event inside CSS commits straight to
+    // congestion avoidance (the RTT inflation was real after all).
+    in_css_ = false;
+    css_rounds_ = 0;
+    css_baseline_min_rtt_us_ = UINT64_MAX;
+    recovery_start_time_us_ = now;
     epoch_start_us_ = 0;  // force reset on next ACK
 
-    // Reset HyStart on loss
+    // Reset HyStart on congestion signal
     ResetHyStart();
 
     if (pacer_) pacer_->OnPacingRateUpdated(GetPacingRateBytesPerSec());
@@ -248,11 +245,15 @@ void CubicCongestionControl::OnPersistentCongestion() {
     if (pacer_) pacer_->OnPacingRateUpdated(GetPacingRateBytesPerSec());
 }
 
-void CubicCongestionControl::OnRoundTripSample(uint64_t latest_rtt, uint64_t ack_delay) {
-    (void)ack_delay;
-    if (srtt_us_ == 0) srtt_us_ = latest_rtt;
-    srtt_us_ = (7 * srtt_us_ + latest_rtt) / 8;
-    // Note: HyStart logic is handled in OnPacketAcked where ack_time is available
+void CubicCongestionControl::OnRoundTripSample(
+    uint64_t latest_rtt_us, uint64_t min_rtt_us, uint64_t smoothed_rtt_us, uint64_t ack_delay_us) {
+    (void)min_rtt_us;
+    (void)ack_delay_us;
+    // P1-P4: host RttCalculator already ran the RFC 9002 5.3 EWMA - no
+    // second smoothing. The raw latest sample is kept for HyStart's
+    // per-round min-RTT tracking (CheckHyStartExit).
+    latest_rtt_us_ = std::max<uint64_t>(latest_rtt_us, 1);
+    srtt_us_ = std::max<uint64_t>(smoothed_rtt_us, 1);
 }
 
 ICongestionControl::SendState CubicCongestionControl::CanSend(uint64_t now, uint64_t& can_send_bytes) const {
@@ -338,80 +339,96 @@ void CubicCongestionControl::IncreaseOnAck(uint64_t bytes_acked, uint64_t now) {
 }
 
 void CubicCongestionControl::ResetHyStart() {
-    hystart_min_rtt_us_ = UINT64_MAX;
-    hystart_rtt_sample_count_ = 0;
-    hystart_current_round_min_rtt_us_ = UINT64_MAX;
+    // +1: windowEnd is SND.NXT (RFC 9406 §4.2) — the round closes when the
+    // NEXT send position is ACKed, so the closing ACK's sample belongs to
+    // the round that is ending, not to an empty new one.
+    hystart_window_end_pn_ = hystart_last_sent_pn_ + 1;
+    hystart_curr_round_min_rtt_us_ = UINT64_MAX;
     hystart_last_round_min_rtt_us_ = UINT64_MAX;
-    hystart_round_start_us_ = 0;
-    hystart_last_ack_time_us_ = 0;
-    hystart_found_exit_ = false;
+    hystart_rtt_sample_count_ = 0;
+    in_css_ = false;
+    css_rounds_ = 0;
+    css_baseline_min_rtt_us_ = UINT64_MAX;
 }
 
-bool CubicCongestionControl::CheckHyStartExit(uint64_t latest_rtt, uint64_t now) {
-    // RFC 9406 (HyStart++): exit slow-start *before* the first loss by
-    // looking for two signals — (1) per-round min-RTT inflated by more
-    // than kHyStartRttThreshUs above the global min (queue is starting
-    // to build), or (2) ACKs spaced too widely apart (delivery rate
-    // already plateaued). This lets CUBIC avoid the classic Reno "first
-    // loss = halve cwnd from way above ssthresh" overshoot — particularly
-    // costly on long-fat paths. ssthresh is set to current cwnd at the
-    // exit so congestion-avoidance starts smoothly.
-    if (hystart_found_exit_) {
-        return false;
+void CubicCongestionControl::HyStartOnAck() {
+    // Below kHyStartLowWindow packets the RTT signals are noise.
+    if (BytesToPkts(cwnd_bytes_, cfg_.mss_bytes) < kHyStartLowWindow) {
+        return;
+    }
+    if (latest_rtt_us_ == 0) {
+        return;  // no RTT sample attached to this ACK yet (P1-P4)
     }
 
-    // Only apply HyStart when cwnd is above a low threshold
-    double cwnd_pkts = BytesToPkts(cwnd_bytes_, cfg_.mss_bytes);
-    if (cwnd_pkts < kHyStartLowWindow) {
-        return false;
-    }
-
-    // Initialize round on first call
-    if (hystart_round_start_us_ == 0) {
-        hystart_round_start_us_ = now;
-        hystart_current_round_min_rtt_us_ = latest_rtt;
-        return false;
-    }
-
-    // Update current round min RTT
-    if (latest_rtt < hystart_current_round_min_rtt_us_) {
-        hystart_current_round_min_rtt_us_ = latest_rtt;
-    }
-
-    // Update global min RTT
-    if (latest_rtt < hystart_min_rtt_us_) {
-        hystart_min_rtt_us_ = latest_rtt;
-    }
-
+    // RFC 9406 §4.2: track the current round's minimum RTT.
+    hystart_curr_round_min_rtt_us_ = std::min(hystart_curr_round_min_rtt_us_, latest_rtt_us_);
     ++hystart_rtt_sample_count_;
 
-    // Check 1: RTT increase detection
-    // If current round's min RTT increased significantly from baseline, exit
-    if (hystart_rtt_sample_count_ >= kHyStartMinSamples) {
-        if (hystart_current_round_min_rtt_us_ > hystart_min_rtt_us_ + kHyStartRttThreshUs) {
-            return true;  // Exit slow start due to RTT increase
+    if (in_css_) {
+        // RFC 9406 §4.2 CSS: if the RTT inflation that triggered the exit
+        // turns out to be transient (this round's min came back below the
+        // exit baseline), the exit was spurious — resume full slow start.
+        if (hystart_curr_round_min_rtt_us_ < css_baseline_min_rtt_us_) {
+            css_baseline_min_rtt_us_ = UINT64_MAX;
+            in_css_ = false;
+            css_rounds_ = 0;
+        }
+        return;
+    }
+
+    if (!in_slow_start_ || !hystart_enabled_) {
+        return;
+    }
+
+    // RFC 9406 §4.2 delay increase: exit slow start (into CSS) once the
+    // current round's min RTT exceeds the LAST round's min by
+    // RttThresh = clamp(lastRoundMinRTT / 8, [4ms, 16ms]).
+    if (hystart_rtt_sample_count_ >= kHyStartMinSamples && hystart_curr_round_min_rtt_us_ != UINT64_MAX
+        && hystart_last_round_min_rtt_us_ != UINT64_MAX) {
+        uint64_t rtt_thresh =
+            std::max<uint64_t>(kHyStartRttThreshUs,
+                std::min<uint64_t>(hystart_last_round_min_rtt_us_ / kHyStartRttDivisor, kHyStartMaxRttThreshUs));
+        if (hystart_curr_round_min_rtt_us_ >= hystart_last_round_min_rtt_us_ + rtt_thresh) {
+            // Enter CSS instead of jumping to congestion avoidance: under
+            // crosstraffic the spike is often noise, and a hard exit here
+            // is exactly the throughput cliff HyStart++ was redesigned to
+            // avoid.
+            css_baseline_min_rtt_us_ = hystart_curr_round_min_rtt_us_;
+            in_css_ = true;
+            css_rounds_ = 0;
+            {
+                common::CongestionStateUpdatedData qlog_data;
+                qlog_data.old_state = "slow_start";
+                qlog_data.new_state = "congestion_avoidance";
+                QLOG_CONGESTION_STATE_UPDATED(qlog_trace_, qlog_data);
+            }
         }
     }
+}
 
-    // Check 2: ACK train detection
-    // If ACKs arrive too far apart, network may be congested
-    if (hystart_last_ack_time_us_ > 0) {
-        uint64_t ack_delta = (now > hystart_last_ack_time_us_) ? (now - hystart_last_ack_time_us_) : 0;
-        if (ack_delta > kHyStartAckDeltaUs) {
-            return true;  // Exit slow start due to ACK spacing
+void CubicCongestionControl::HyStartOnRoundEnd() {
+    // RFC 9406 §4.2: rotate the per-round minima.
+    hystart_last_round_min_rtt_us_ = hystart_curr_round_min_rtt_us_;
+    hystart_curr_round_min_rtt_us_ = UINT64_MAX;
+    hystart_rtt_sample_count_ = 0;
+    hystart_window_end_pn_ = hystart_last_sent_pn_ + 1;  // SND.NXT
+
+    if (in_css_ && ++css_rounds_ >= kCssRounds) {
+        // CSS expired: the RTT inflation persisted for CSS_ROUNDS rounds —
+        // commit to congestion avoidance with ssthresh at the current cwnd.
+        ssthresh_bytes_ = cwnd_bytes_;
+        in_css_ = false;
+        in_slow_start_ = false;
+        css_baseline_min_rtt_us_ = UINT64_MAX;
+        css_rounds_ = 0;
+        epoch_start_us_ = 0;  // force CUBIC epoch reset on next ACK
+        {
+            common::CongestionStateUpdatedData qlog_data;
+            qlog_data.old_state = "slow_start";
+            qlog_data.new_state = "congestion_avoidance";
+            QLOG_CONGESTION_STATE_UPDATED(qlog_trace_, qlog_data);
         }
     }
-    hystart_last_ack_time_us_ = now;
-
-    // Start new round if enough RTT samples collected
-    if (hystart_rtt_sample_count_ >= kHyStartMinSamples * 2) {
-        hystart_last_round_min_rtt_us_ = hystart_current_round_min_rtt_us_;
-        hystart_current_round_min_rtt_us_ = UINT64_MAX;
-        hystart_round_start_us_ = now;
-        hystart_rtt_sample_count_ = 0;
-    }
-
-    return false;
 }
 
 void CubicCongestionControl::SetQlogTrace(std::shared_ptr<common::QlogTrace> trace) {

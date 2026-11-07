@@ -374,7 +374,10 @@ TEST(CubicOptimizationTest, HyStartEarlyExitFromSlowStart) {
     scenario.network_condition.packet_loss_rate = 0.001;              // Very low loss
     scenario.network_condition.bandwidth_bps = 10 * 1000 * 1000 / 8;  // 10 Mbps
     scenario.network_condition.queue_size_bytes = 500000;             // Large buffer -> bloat
-    scenario.test_duration_us = 3000000;                              // 3 seconds
+    // P1-CC4 (RFC 9406): the delay-increase signal + CSS need a few more
+    // rounds than the old (inverted) ACK-train trigger did; the 5s sibling
+    // scenario measures the exit at ~3.04s, so run 4s and bound at 3.5s.
+    scenario.test_duration_us = 4000000;                              // 4 seconds
 
     CCTestFramework test(CCAlgorithmFactory::CUBIC(), scenario);
     test.Run();
@@ -393,7 +396,7 @@ TEST(CubicOptimizationTest, HyStartEarlyExitFromSlowStart) {
 
     // HyStart should exit before hitting major losses
     // In buffer bloat scenario without HyStart, we'd see more recoveries
-    EXPECT_LT(metrics.slow_start_duration_us, 2000000UL);  // Should exit within 2s
+    EXPECT_LT(metrics.slow_start_duration_us, 3500000UL);  // RFC 9406 delay-increase + CSS bound
     EXPECT_GT(metrics.total_bytes_acked, 0UL);
 }
 
@@ -521,7 +524,7 @@ TEST(CubicOptimizationTest, HyStartVsTraditionalSlowStart) {
     // 2. Maintain lower average RTT (less bufferbloat)
     // 3. Still achieve good throughput
 
-    EXPECT_LT(cubic_metrics.slow_start_duration_us, 3000000UL);
+    EXPECT_LT(cubic_metrics.slow_start_duration_us, 3500000UL);  // P1-CC4: RFC 9406 bound (measured 3.04s)
     EXPECT_GT(cubic_metrics.throughput_mbps, 0.5);
 }
 

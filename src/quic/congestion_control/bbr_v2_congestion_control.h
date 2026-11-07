@@ -22,7 +22,8 @@ public:
     void OnPacketSent(const SentPacketEvent& ev) override;
     void OnPacketAcked(const AckEvent& ev) override;
     void OnPacketLost(const LossEvent& ev) override;
-    void OnRoundTripSample(uint64_t latest_rtt, uint64_t ack_delay = 0) override;
+    void OnRoundTripSample(
+        uint64_t latest_rtt_us, uint64_t min_rtt_us, uint64_t smoothed_rtt_us, uint64_t ack_delay_us) override;
 
     SendState CanSend(uint64_t now, uint64_t& can_send_bytes) const override;
 

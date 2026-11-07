@@ -322,39 +322,22 @@ private:
 
     // Internal helper methods for the send path
 
-    // Retransmit-side branch: re-encode the next lost packet (with a fresh
-    // packet number, current key phase, current cryptographer) and hand it to
-    // the emitter. Caller MUST have already verified
-    // SendControl::NeedReSend() returns true.
-    // Returns true if the worker should re-enter the send path immediately
-    // (more lost packets queued, or transient drop), false otherwise.
-    // RFC 9000 §13.3 / RFC 9001 §6.5.
-    bool TrySendRetransmit();
-
     // Send ACK packet immediately. Simplified interface for immediate ACK
     // sending, used for cross-level ACKs or when immediate ACK is required.
     // No external callers — internal to the receive/PTO paths.
+    // Return frames that GetPendingFrames dequeued but that never made it into
+    // a tracked packet (build failure / no buffer) to the front of the send
+    // queue. See the definition for the exact policy.
+    void RequeueUnsentFrames(const std::vector<std::shared_ptr<IFrame>>& frames);
+
     bool SendImmediateAck(PacketNumberSpace ns);
 
     // Send a single-frame probe packet (e.g. PATH_CHALLENGE for path
     // validation) immediately, bypassing the send queue and the
     // end-of-round batch flush. Used when the packet must be the first one
     // a new path sees, so it cannot wait behind queued frames (1-RTT, the
-    // path-probe wiring in the constructor), and by the retransmit path to
-    // emit an RFC 9002 §6.2.4 PTO probe at the lost packet's level when the
-    // §8.1 budget cannot cover a full-size retransmission.
+    // path-probe wiring in the constructor).
     bool SendImmediateProbe(const std::shared_ptr<IFrame>& frame, EncryptionLevel level = kApplication);
-
-    // RFC 9000 §14.1: a *standalone* retransmitted Initial packet must still
-    // form a >=1200 B datagram. The original send may have been coalesced
-    // (Initial + Handshake in one datagram), so the Initial packet object
-    // itself can be far below the floor — and peers that enforce §14.1 on
-    // server Initial datagrams (picoquic) silently drop a short
-    // retransmission. This probe-encodes |lost_pkt| and, if it falls short,
-    // bakes tail PADDING (0x00 bytes) into the payload span so the next
-    // Encode() reaches the floor. Idempotent: a packet already at/above the
-    // floor measures as such and is left untouched.
-    void PadInitialToDatagramFloor(const std::shared_ptr<IPacket>& lost_pkt);
 
     // Normal-send branch: pick encryption level via the encryption scheduler,
     // gather pending frames + queued ACKs + stream data, build outbound packets
@@ -670,20 +653,6 @@ protected:
 
     // Qlog trace for this connection
     std::shared_ptr<common::QlogTrace> qlog_trace_;
-
-    // Set when a 1-RTT packet arrives that we cannot decrypt.
-    //
-    // RFC 9000 §4.1.2: a peer may only start sending 1-RTT once it considers the
-    // handshake confirmed, which means it has already sent its Finished. So for
-    // a server whose TLS handshake has *not* completed (the peer's Finished
-    // never arrived), an undecryptable 1-RTT packet is a strong hint about the
-    // peer's state: it is past the handshake and is now sending application
-    // data we have no read key for.
-    //
-    // Concretely it also implies the peer received all of our handshake bytes,
-    // Initial included -- so retransmitting Initial that the peer has already
-    // consumed is wasted work. See TrySendRetransmit().
-    bool peer_sent_undecryptable_1rtt_{false};
 
     // qlog draft-03: per-connection monotonic datagram id counters. Each
     // ingress/egress UDP datagram is stamped so that coalesced QUIC packets

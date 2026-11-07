@@ -3,19 +3,21 @@
 
 #include <cstdint>
 #include <deque>
+#include <vector>
 #include <map>
 
 #include "common/buffer/buffer_chunk.h"
 #include "common/buffer/multi_block_buffer.h"
 
 #include "quic/config.h"
+#include "quic/connection/controller/retransmit_scheduler.h"
 #include "quic/crypto/tls/type.h"
 #include "quic/stream/if_stream.h"
 
 namespace quicx {
 namespace quic {
 
-class CryptoStream: public IStream {
+class CryptoStream: public IStream, public IRetransmitOwner {
 public:
     CryptoStream(std::weak_ptr<common::IEventLoop> loop, std::function<void(std::shared_ptr<IStream>)> active_send_cb,
         std::function<void(uint64_t stream_id)> stream_close_cb,
@@ -55,6 +57,20 @@ public:
     // probes for the whole connection, crosstraffic interop failure against
     // 8 servers).
     void MarkHandshakeConfirmed();
+
+    // P0-C10 / X3: attach the connection's slow-path retransmit scheduler.
+    // Each Initial/Handshake level is one scheduler slot: armed when bytes of
+    // that level first go on the wire with nothing outstanding, removed when
+    // everything is acknowledged or the level's keys are gone. Held weakly —
+    // the scheduler is owned by SendControl, whose lifetime is not ordered
+    // against this stream's.
+    void SetRetransmitScheduler(std::weak_ptr<RetransmitScheduler> scheduler);
+
+    // IRetransmitOwner: the slot's base-PTO deadline expired. Requeues (as
+    // kProbe — not a loss) every range of the level that is still neither
+    // ACKed nor already queued. The slot is Application-agnostic: slot ==
+    // encryption level.
+    void OnRetransmitDeadline(uint32_t slot, uint64_t now_ms) override;
 
     virtual void Close();
 
@@ -171,6 +187,44 @@ private:
     std::deque<OutgoingSegment> outgoing_[kNumEncryptionLevels];
     // Contiguous acked prefix per level.
     uint64_t acked_offset_[kNumEncryptionLevels];
+    // Acked ranges BEYOND the contiguous prefix (disjoint, [start, end)). The
+    // prefix alone cannot say that a later packet of the flight was already
+    // acknowledged, so a slow-path or loss requeue of [prefix, emitted) would
+    // resend delivered bytes — which under the server's §8.1 anti-amplification
+    // budget is not just waste but starvation of the bytes that were lost.
+    std::map<uint64_t, uint64_t> acked_ranges_[kNumEncryptionLevels];
+    // Highest CRYPTO offset (exclusive) ever put on the wire per level.
+    // [acked prefix, emitted_offset_) is the outstanding window.
+    uint64_t emitted_offset_[kNumEncryptionLevels];
+    void RecordAcked(uint8_t level, uint64_t start, uint64_t end);
+    // Remove the level's scheduler slot when nothing is outstanding / usable.
+    void DisarmSlot(uint8_t level);
+
+    // When each range was LAST put on the wire (first send AND every
+    // retransmission), time-ordered, stamped with the scheduler's clock. The
+    // slow path needs this because "outstanding" alone cannot tell a byte that
+    // has been out for three PTOs from one sent a moment ago: without it, a
+    // probe fired for the oldest data also re-sent younger bytes (redundant,
+    // and under the server's 8.1 budget it starves bytes that were really
+    // lost), and the deadline stayed at the first send's time after the oldest
+    // bytes had been acknowledged. Bounded: only handshake levels log, entries
+    // are dropped once acknowledged, and the log is capped.
+    struct SentRange {
+        uint64_t start;
+        uint64_t end;
+        uint64_t sent_ms;
+    };
+    std::deque<SentRange> sent_log_[kNumEncryptionLevels];
+    static constexpr size_t kMaxSentLogEntries = 256;
+    void LogSent(uint8_t level, uint64_t start, uint64_t end, uint64_t now_ms);
+    // Outstanding (unacknowledged) ranges, each stamped with the time its bytes
+    // were last sent: newer log entries shadow older ones for the same bytes.
+    std::vector<SentRange> LiveRanges(uint8_t level) const;
+    // Re-point the level's slot at (oldest live last-send + base PTO) after the
+    // outstanding set changed. Only moves the deadline into the future.
+    void RefreshSlotDeadline(uint8_t level);
+
+    std::weak_ptr<RetransmitScheduler> retransmit_scheduler_;
     // Set by MarkInitialConsumedByPeer(); Initial-level kLost is ignored after.
     bool initial_consumed_by_peer_{false};
     // Set by MarkHandshakeConfirmed(); Handshake-level kLost is ignored and
