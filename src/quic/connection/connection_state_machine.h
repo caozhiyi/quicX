@@ -34,6 +34,13 @@ public:
     void OnClose();                         // Local close
     void OnConnectionCloseFrameReceived();  // Peer close
     void OnCloseTimeout();                  // Timeout for closing/draining
+    // Idle-timeout discard. RFC 9000 §10.1: the connection is torn down
+    // SILENTLY — no CONNECTION_CLOSE frame, no closing/draining wait. When
+    // the idle timer fires the peer has failed both restart conditions
+    // (no processed packets, no ack-eliciting sends) for the whole
+    // negotiated window, so there is no one left to notify. Already-
+    // terminating states keep their own shutdown path.
+    void OnSilentClose();
 
     // State checks
     bool AllowSend() const;

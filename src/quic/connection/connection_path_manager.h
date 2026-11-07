@@ -326,15 +326,13 @@ private:
     // Queue of pending candidate addresses for path validation
     std::vector<::quicx::common::Address> pending_candidate_addrs_;
 
-    // P0-S10: dedupe state for PATH_CHALLENGE responses (see
-    // OnPathChallenge) and the bounded enqueue helper for candidate
-    // addresses. The queue used to be unbounded: each distinct peer source
-    // address observed while a probe was in flight added one entry, so a
-    // NAT-rebinding peer (or a broken/malicious one flapping between
-    // addresses) grew the queue without limit.
+    // P0-S10: bounded enqueue helper for candidate addresses. The queue used
+    // to be unbounded: each distinct peer source address observed while a
+    // probe was in flight added one entry, so a NAT-rebinding peer (or a
+    // broken/malicious one flapping between addresses) grew the queue without
+    // limit. (PATH_CHALLENGE answers carry no dedupe state: RFC 9000 8.2.2
+    // requires one PATH_RESPONSE per PATH_CHALLENGE, see OnPathChallenge.)
     static constexpr size_t kMaxPendingCandidateAddrs = 8;
-    uint8_t last_challenge_data_[8]{0};
-    bool last_challenge_valid_{false};
     void EnqueueCandidateAddr(const ::quicx::common::Address& addr) {
         if (pending_candidate_addrs_.size() >= kMaxPendingCandidateAddrs) {
             // Bounded FIFO: drop the OLDEST candidate. A still-relevant peer

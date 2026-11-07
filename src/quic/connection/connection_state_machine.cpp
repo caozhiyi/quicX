@@ -44,6 +44,19 @@ void ConnectionStateMachine::OnCloseTimeout() {
     }
 }
 
+void ConnectionStateMachine::OnSilentClose() {
+    // RFC 9000 §10.1 idle timeout: discard connection state directly,
+    // without entering closing/draining and without sending any packet.
+    // A closing/draining connection already has its own timeout armed and
+    // keeps its existing shutdown semantics.
+    if (state_ == ConnectionStateType::kStateConnecting || state_ == ConnectionStateType::kStateConnected) {
+        if (state_ == ConnectionStateType::kStateConnecting) {
+            Metrics::CounterInc(common::MetricsStd::QuicHandshakeFail);
+        }
+        SetState(ConnectionStateType::kStateClosed);
+    }
+}
+
 bool ConnectionStateMachine::AllowSend() const {
     return state_ == ConnectionStateType::kStateConnecting || state_ == ConnectionStateType::kStateConnected;
 }

@@ -221,15 +221,16 @@ void PathManager::OnPathResponse(const uint8_t* data) {
 }
 
 void PathManager::OnPathChallenge(const uint8_t* data, std::shared_ptr<IFrame>& response_frame) {
-    // One response per DISTINCT challenge (RFC 9000 §8.2.2): an exact repeat
-    // gets nothing, so suppress it.
-    static constexpr size_t kPathChallengeDataLength = 8;
-    if (last_challenge_valid_ && memcmp(last_challenge_data_, data, kPathChallengeDataLength) == 0) {
-        LOG_DEBUG("PathManager: duplicate PATH_CHALLENGE, suppressing response");
-        return;
-    }
-    memcpy(last_challenge_data_, data, kPathChallengeDataLength);
-    last_challenge_valid_ = true;
+    // RFC 9000 §13.3: PATH_RESPONSE is not retransmitted as-is — a lost
+    // response is recovered by the PEER re-sending PATH_CHALLENGE and us
+    // answering it again. P0-C10: that makes answering EVERY challenge
+    // mandatory. This used to suppress an exact-repeat challenge ("one
+    // response per distinct challenge") and leaned on whole-packet
+    // retransmission to cover a lost response; with that channel retired the
+    // suppression would turn one lost PATH_RESPONSE into a failed validation.
+    // Amplification is bounded: PATH_RESPONSE is 9 B, and the challenge rate
+    // is the peer's (it needs a datagram per challenge); the §8.1 send budget
+    // still applies to the answer.
 
     auto response = std::make_shared<PathResponseFrame>();
     response->SetData((uint8_t*)data);

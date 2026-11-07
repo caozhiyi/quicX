@@ -45,10 +45,18 @@ uint32_t TimerCoordinator::GetIdleTimeoutMs() const {
         // existing timeout; it must never switch one on.
         return 0;
     }
+
+    // P0-C6 (RFC 9000 §10.1): floor the negotiated value at 3x PTO so a
+    // connection is never torn down faster than a lost flight can be
+    // retransmitted and answered. PTO shrinks as RTT samples arrive, so on
+    // a healthy path this converges back to (near) the negotiated value.
+    uint32_t pto_ms = send_manager_.GetPTO(static_cast<uint32_t>(transport_param_.GetPeerMaxAckDelayMs()));
+    uint32_t effective = EffectiveIdleTimeoutMs(negotiated, pto_ms);
+
     if (handshake_confirm_grace_ && !handshake_confirmed_) {
-        return std::max(negotiated, kHandshakeConfirmGraceMs);
+        return std::max(effective, kHandshakeConfirmGraceMs);
     }
-    return negotiated;
+    return effective;
 }
 
 void TimerCoordinator::StartIdleTimer(IdleTimeoutCallback callback) {
