@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "http3/http/response.h"
+#include "http3/qpack/qpack_decoder.h"
 #include "http3/qpack/qpack_encoder.h"
 #include "http3/stream/push_receiver_stream.h"
 #include "http3/stream/push_sender_stream.h"
@@ -15,8 +16,8 @@ namespace {
 
 class MockClientConnection {
 public:
-    MockClientConnection(const std::shared_ptr<QpackEncoder>& qpack_encoder, std::shared_ptr<IQuicRecvStream> stream):
-        qpack_encoder_(qpack_encoder),
+    MockClientConnection(const std::shared_ptr<QpackDecoder>& qpack_decoder, std::shared_ptr<IQuicRecvStream> stream):
+        qpack_decoder_(qpack_decoder),
         error_code_(0) {
         // Start with UnidentifiedStream to read stream type
         unidentified_stream_ = std::make_shared<UnidentifiedStream>(stream,
@@ -32,7 +33,7 @@ public:
         EXPECT_EQ(stream_type, static_cast<uint64_t>(StreamType::kPush));
 
         // Create the actual push receiver stream
-        receiver_stream_ = std::make_shared<PushReceiverStream>(qpack_encoder_, stream,
+        receiver_stream_ = std::make_shared<PushReceiverStream>(qpack_decoder_, stream,
             std::bind(&MockClientConnection::ErrorHandle, this, std::placeholders::_1, std::placeholders::_2),
             std::bind(&MockClientConnection::ResponseHandler, this, std::placeholders::_1, std::placeholders::_2));
 
@@ -53,7 +54,7 @@ public:
     uint32_t GetErrorCode() { return error_code_; }
 
 private:
-    std::shared_ptr<QpackEncoder> qpack_encoder_;
+    std::shared_ptr<QpackDecoder> qpack_decoder_;
     uint32_t error_code_;
     std::shared_ptr<IResponse> response_;
 
@@ -88,6 +89,7 @@ class PushStreamTest: public testing::Test {
 protected:
     void SetUp() override {
         qpack_encoder_ = std::make_shared<QpackEncoder>();
+        qpack_decoder_ = std::make_shared<QpackDecoder>();
 
         mock_stream_1_ = std::make_shared<quic::MockQuicStream>();
         mock_stream_2_ = std::make_shared<quic::MockQuicStream>();
@@ -95,11 +97,12 @@ protected:
         mock_stream_2_->SetPeer(mock_stream_1_);
         mock_stream_1_->SetPeer(mock_stream_2_);
 
-        client_connection_ = std::make_shared<MockClientConnection>(qpack_encoder_, mock_stream_1_);
+        client_connection_ = std::make_shared<MockClientConnection>(qpack_decoder_, mock_stream_1_);
         server_connection_ = std::make_shared<MockServerConnection>(qpack_encoder_, mock_stream_2_);
     }
 
     std::shared_ptr<QpackEncoder> qpack_encoder_;
+    std::shared_ptr<QpackDecoder> qpack_decoder_;
     std::shared_ptr<quic::MockQuicStream> mock_stream_1_;
     std::shared_ptr<quic::MockQuicStream> mock_stream_2_;
     std::shared_ptr<MockClientConnection> client_connection_;

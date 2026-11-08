@@ -16,6 +16,36 @@ void IStream::ToClose() {
     }
 }
 
+void IStream::TrackControlFrame(const std::shared_ptr<IFrame>& frame, std::function<bool()> should_resend) {
+    // weak_from_this: the frame lives in the unacked table long after the
+    // stream may be gone; the handler must neither keep it alive nor touch it.
+    // The frame is captured weakly too (the handler lives ON the frame).
+    std::weak_ptr<IStream> weak_stream = weak_from_this();
+    std::weak_ptr<IFrame> weak_frame = frame;
+    frame->SetDeliveryHandler([weak_stream, weak_frame, should_resend = std::move(should_resend)](
+                                  FrameDeliveryState state) {
+        if (state == FrameDeliveryState::kAcked) {
+            return;
+        }
+        auto stream = weak_stream.lock();
+        auto f = weak_frame.lock();
+        if (!stream || !f) {
+            return;
+        }
+        if (should_resend && !should_resend()) {
+            return;
+        }
+        for (const auto& queued : stream->frames_list_) {
+            if (queued == f) {
+                return;  // already waiting; one copy is enough
+            }
+        }
+        f->RearmLossNotification();
+        stream->frames_list_.emplace_back(f);
+        stream->ToSend();
+    });
+}
+
 void IStream::ToSend() {
     // Always (re)arm the active-send flag and notify the connection's send
     // scheduler. We deliberately do not early-return when is_active_send_ is

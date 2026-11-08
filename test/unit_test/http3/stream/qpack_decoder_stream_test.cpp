@@ -2,7 +2,11 @@
 
 #include <gtest/gtest.h>
 
+#include "common/buffer/single_block_buffer.h"
+#include "common/buffer/standalone_buffer_chunk.h"
+
 #include "http3/qpack/blocked_registry.h"
+#include "http3/qpack/qpack_decoder.h"
 #include "http3/stream/qpack_decoder_receiver_stream.h"
 #include "http3/stream/qpack_decoder_sender_stream.h"
 #include "http3/stream/type.h"
@@ -75,6 +79,7 @@ public:
     uint32_t GetErrorCode() { return error_code_; }
     uint32_t GetRetryCount() { return retry_count_; }
     std::shared_ptr<QpackBlockedRegistry> GetBlockedRegistry() { return blocked_registry_; }
+    std::shared_ptr<QpackEncoder> GetLocalEncoder() { return local_encoder_; }
 
 private:
     uint32_t error_code_;
@@ -110,9 +115,14 @@ TEST(QpackDecoderStreamTest, SectionAckTest) {
     EXPECT_TRUE(sender->SendSectionAck(header_block_id));
     EXPECT_EQ(sender->GetErrorCode(), 0);
 
-    // After receiving Section Ack, it should be unblocked (retry callback called and removed)
-    EXPECT_EQ(receiver->GetBlockedRegistry()->GetBlockedCount(), 0);
-    EXPECT_EQ(receiver->GetRetryCount(), 1);  // Retry callback was called
+    // RFC 9204 4.4.1: a Section Acknowledgment comes from the PEER's decoder
+    // and concerns header blocks produced by OUR encoder. Our decoder's blocked
+    // sections (waiting for OUR table to grow via the encoder stream) are
+    // unrelated, so the registry must be left exactly as it was -- the same
+    // rule Insert Count Increment already follows. It used to retry-and-erase
+    // the entry, which on a bidirectional stream could drop a response section.
+    EXPECT_EQ(receiver->GetBlockedRegistry()->GetBlockedCount(), 1);
+    EXPECT_EQ(receiver->GetRetryCount(), 0);
 }
 
 // Test sending and receiving Stream Cancellation frame
@@ -131,7 +141,7 @@ TEST(QpackDecoderStreamTest, StreamCancelTest) {
     uint64_t section_number = 20;
     uint64_t header_block_id = (stream_id << 32) | section_number;
 
-    // Add to blocked registry first (callback won't be called for Remove)
+    // A blocked decoder section of OURS on stream 7
     EXPECT_TRUE(receiver->GetBlockedRegistry()->Add(
         header_block_id, std::bind(&MockReceiverConnection::RetryCallback, receiver.get())));
     EXPECT_EQ(receiver->GetBlockedRegistry()->GetBlockedCount(), 1);
@@ -139,9 +149,108 @@ TEST(QpackDecoderStreamTest, StreamCancelTest) {
     EXPECT_TRUE(sender->SendStreamCancel(header_block_id));
     EXPECT_EQ(sender->GetErrorCode(), 0);
 
-    // After receiving Stream Cancellation, it should be removed (without calling callback)
-    EXPECT_EQ(receiver->GetBlockedRegistry()->GetBlockedCount(), 0);
-    EXPECT_EQ(receiver->GetRetryCount(), 0);  // Retry callback NOT called for cancellation
+    // RFC 9204 4.4.2: the peer's decoder abandoned ITS view of the stream, which
+    // says nothing about our decoder's section on the same stream id. The
+    // registry must keep it.
+    EXPECT_EQ(receiver->GetBlockedRegistry()->GetBlockedCount(), 1);
+    EXPECT_EQ(receiver->GetRetryCount(), 0);
+}
+
+// Puts |enc| in the state "one header block on |stream_id| is outstanding": two
+// acknowledged entries, then a block that references one of them.
+static void MakeOutstandingSection(QpackEncoder& enc, uint64_t stream_id) {
+    using Fields = std::vector<std::pair<std::string, std::string>>;
+    auto buf = [] {
+        return std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(2048));
+    };
+    enc.SetLocalMaxTableCapacity(100);
+    enc.SetPeerMaxTableCapacity(100);
+    enc.SetDynamicTableEnabled(true);
+    enc.SetInstructionSender([](const Fields&) {});
+    Fields a = {{"x-a", "aaaa"}};
+    Fields b = {{"x-b", "bbbb"}};
+    ASSERT_TRUE(enc.Encode(a, buf()));
+    ASSERT_TRUE(enc.Encode(b, buf()));
+    enc.OnPeerInsertCountIncrement(2);
+    ASSERT_TRUE(enc.Encode(a, buf(), stream_id));
+    ASSERT_EQ(enc.GetOutstandingSectionCount(), 1u);
+}
+
+// WIRING: feedback arriving on the decoder stream is for OUR ENCODER's blocks.
+// QpackEncoder::OnPeerSectionAck has its own tests; this one proves the
+// receiver stream actually delivers the frame to it (it used to hand it to the
+// decoder's blocked registry, so the encoder never heard a single ack).
+TEST(QpackDecoderStreamTest, SectionAckReachesTheLocalEncoder) {
+    auto mock_send_stream = std::make_shared<quic::MockQuicStream>();
+    auto mock_recv_stream = std::make_shared<quic::MockQuicStream>();
+    mock_recv_stream->SetPeer(mock_send_stream);
+    mock_send_stream->SetPeer(mock_recv_stream);
+
+    auto sender = std::make_shared<MockSenderConnection>(mock_send_stream);
+    auto receiver = std::make_shared<MockReceiverConnection>(mock_recv_stream);
+    MakeOutstandingSection(*receiver->GetLocalEncoder(), /*stream_id=*/5);
+
+    EXPECT_TRUE(sender->SendSectionAck(5ULL << 32));  // packed key: (stream_id << 32) | section
+    EXPECT_EQ(receiver->GetLocalEncoder()->GetOutstandingSectionCount(), 0u);
+    EXPECT_EQ(receiver->GetErrorCode(), 0u);
+}
+
+TEST(QpackDecoderStreamTest, StreamCancellationReachesTheLocalEncoder) {
+    auto mock_send_stream = std::make_shared<quic::MockQuicStream>();
+    auto mock_recv_stream = std::make_shared<quic::MockQuicStream>();
+    mock_recv_stream->SetPeer(mock_send_stream);
+    mock_send_stream->SetPeer(mock_recv_stream);
+
+    auto sender = std::make_shared<MockSenderConnection>(mock_send_stream);
+    auto receiver = std::make_shared<MockReceiverConnection>(mock_recv_stream);
+    MakeOutstandingSection(*receiver->GetLocalEncoder(), /*stream_id=*/5);
+
+    EXPECT_TRUE(sender->SendStreamCancel(5ULL << 32));
+    EXPECT_EQ(receiver->GetLocalEncoder()->GetOutstandingSectionCount(), 0u);
+}
+
+// END-TO-END on the wire: the decoder-side CancelStreamFeedback(stream_id) must
+// reach the peer's encoder naming THAT stream. The sender stream takes a packed
+// header-block key ((stream_id << 32) | section) and puts only its high half on
+// the wire; CancelStreamFeedback used to hand it the bare stream id, so every
+// Stream Cancellation went out for stream 0 no matter which stream was abandoned.
+TEST(QpackDecoderStreamTest, CancelStreamFeedbackNamesTheRealStreamOnTheWire) {
+    auto mock_send_stream = std::make_shared<quic::MockQuicStream>();
+    auto mock_recv_stream = std::make_shared<quic::MockQuicStream>();
+    mock_recv_stream->SetPeer(mock_send_stream);
+    mock_send_stream->SetPeer(mock_recv_stream);
+
+    auto sender = std::make_shared<MockSenderConnection>(mock_send_stream);
+    auto receiver = std::make_shared<MockReceiverConnection>(mock_recv_stream);
+    MakeOutstandingSection(*receiver->GetLocalEncoder(), /*stream_id=*/13);
+
+    // The local DECODER of the other endpoint, wired like IConnection wires it.
+    QpackDecoder peer_decoder;
+    peer_decoder.SetDecoderFeedbackSender([&sender](uint8_t type, uint64_t value) {
+        if (type == static_cast<uint8_t>(QpackDecoderInstrType::kStreamCancellation)) {
+            sender->SendStreamCancel(value);
+        }
+    });
+    peer_decoder.CancelStreamFeedback(13);
+
+    EXPECT_EQ(receiver->GetLocalEncoder()->GetOutstandingSectionCount(), 0u)
+        << "the cancellation must name stream 13, not stream 0";
+}
+
+TEST(QpackDecoderStreamTest, FeedbackForAnotherStreamLeavesTheSectionOutstanding) {
+    auto mock_send_stream = std::make_shared<quic::MockQuicStream>();
+    auto mock_recv_stream = std::make_shared<quic::MockQuicStream>();
+    mock_recv_stream->SetPeer(mock_send_stream);
+    mock_send_stream->SetPeer(mock_recv_stream);
+
+    auto sender = std::make_shared<MockSenderConnection>(mock_send_stream);
+    auto receiver = std::make_shared<MockReceiverConnection>(mock_recv_stream);
+    MakeOutstandingSection(*receiver->GetLocalEncoder(), /*stream_id=*/5);
+
+    EXPECT_TRUE(sender->SendSectionAck(9ULL << 32));     // no outstanding section on stream 9
+    EXPECT_TRUE(sender->SendStreamCancel(13ULL << 32));  // nor on 13
+    EXPECT_EQ(receiver->GetLocalEncoder()->GetOutstandingSectionCount(), 1u);
+    EXPECT_EQ(receiver->GetErrorCode(), 0u) << "an unmatched ack is logged and ignored, not a connection error";
 }
 
 // Test sending and receiving Insert Count Increment frame.
@@ -218,26 +327,21 @@ TEST(QpackDecoderStreamTest, MultipleFramesTest) {
     EXPECT_EQ(receiver->GetBlockedRegistry()->GetBlockedCount(), 4);
     EXPECT_EQ(receiver->GetRetryCount(), 0);
 
-    // Each Section Ack acks the earliest outstanding section for the given
-    // stream id (RFC 9204 §4.4.1) — so it removes exactly one entry and
-    // invokes exactly one callback.
+    // Section Ack / Stream Cancellation are feedback for OUR encoder's blocks
+    // (RFC 9204 4.4.1 / 4.4.2); none of them may touch our decoder's blocked
+    // registry, in any order and in any mix.
     EXPECT_TRUE(sender->SendSectionAck(header_block_id_1));
-    EXPECT_EQ(receiver->GetBlockedRegistry()->GetBlockedCount(), 3);
-    EXPECT_EQ(receiver->GetRetryCount(), 1);
+    EXPECT_EQ(receiver->GetBlockedRegistry()->GetBlockedCount(), 4);
+    EXPECT_EQ(receiver->GetRetryCount(), 0);
 
-    // Stream Cancellation removes one entry without calling its callback
-    // (RFC 9204 §4.4.2).
     EXPECT_TRUE(sender->SendStreamCancel(header_block_id_2));
-    EXPECT_EQ(receiver->GetBlockedRegistry()->GetBlockedCount(), 2);
-    EXPECT_EQ(receiver->GetRetryCount(), 1);
+    EXPECT_EQ(receiver->GetBlockedRegistry()->GetBlockedCount(), 4);
+    EXPECT_EQ(receiver->GetRetryCount(), 0);
 
     EXPECT_TRUE(sender->SendSectionAck(header_block_id_3));
-    EXPECT_EQ(receiver->GetBlockedRegistry()->GetBlockedCount(), 1);
-    EXPECT_EQ(receiver->GetRetryCount(), 2);
-
     EXPECT_TRUE(sender->SendSectionAck(header_block_id_4));
-    EXPECT_EQ(receiver->GetBlockedRegistry()->GetBlockedCount(), 0);
-    EXPECT_EQ(receiver->GetRetryCount(), 3);
+    EXPECT_EQ(receiver->GetBlockedRegistry()->GetBlockedCount(), 4);
+    EXPECT_EQ(receiver->GetRetryCount(), 0);
 
     EXPECT_EQ(sender->GetErrorCode(), 0);
     EXPECT_EQ(receiver->GetErrorCode(), 0);
@@ -265,8 +369,8 @@ TEST(QpackDecoderStreamTest, LargeValuesTest) {
 
     EXPECT_TRUE(sender->SendSectionAck(header_block_id));
     EXPECT_EQ(sender->GetErrorCode(), 0);
-    EXPECT_EQ(receiver->GetBlockedRegistry()->GetBlockedCount(), 0);
-    EXPECT_EQ(receiver->GetRetryCount(), 1);
+    EXPECT_EQ(receiver->GetBlockedRegistry()->GetBlockedCount(), 1);  // untouched, see SectionAckTest
+    EXPECT_EQ(receiver->GetRetryCount(), 0);
 
     // Test with large delta
     uint64_t large_delta = 100000;

@@ -59,12 +59,12 @@ TEST(SendControlTest, AckElicitingPacketsTriggerCallbacks) {
     std::vector<StreamDataInfo> data10 = {StreamDataInfo(4, /*offset=*/100, /*len=*/50, /*fin=*/true)};
     send_control.OnPacketSend(0, pkt10, 1300, data10);
 
-    // 3 arms: one retransmit timer per packet, plus the shared PTO timer. The
-    // second packet does NOT arm a fourth timer -- it rearms the existing PTO
-    // node in place, which is the whole point of the handle-based API. All three
-    // are still pending.
-    EXPECT_EQ(timer->ArmCount(), 3u);
-    EXPECT_EQ(timer->PendingCount(), 3u);
+    // P0-C10: exactly ONE timer is armed for the whole connection -- the shared
+    // loss detection timer (the per-packet retransmit timers are retired). The
+    // second packet does NOT arm another one -- it rearms the existing node in
+    // place, which is the whole point of the handle-based API.
+    EXPECT_EQ(timer->ArmCount(), 1u);
+    EXPECT_EQ(timer->PendingCount(), 1u);
 
     auto ack = std::make_shared<AckFrame>();
     ack->SetLargestAck(10);
@@ -333,96 +333,40 @@ TEST(SendControlG2Test, S4_SpuriousAckForErasedLostPnIsNoOp) {
     EXPECT_EQ(sc.GetCcBytesInFlightForTest(), 0u) << "Final in_flight must be 0.";
 }
 
-// G2-S6 [SUSPECTED BUG]: retransmission reuses the SAME IPacket object.
+// G2-S6 (P0-C10 migration): a lost packet must leave NO entry behind.
 //
-// BaseConnection::TrySendRetransmit does:
-//     entry = lost_packets_.front(); lost_packets_.pop_front();
-//     RemoveStaleUnackedEntry(ns, orig_pn, lost_pkt);   // BEFORE renumbering
-//     lost_pkt->SetPacketNumber(new_pn);      // <-- mutates the object in place
-//     send_control.OnPacketSend(now, lost_pkt, size, entry.stream_data);
-//
-// Without the RemoveStaleUnackedEntry() call the entry keyed by the OLD pn
-// survives. It is then unreachable forever: the per-packet timer looks up
-// find(packet->GetPacketNumber()) and OnPacketAck walks pn downward from
-// largest_ack, so neither can ever address a key that no longer matches the
-// object's packet number -- the stale key is no longer derivable from the
-// object itself, which is why the removal has to happen before renumbering.
-// Three consequences:
-//
-//   P1: OnPTOTimer() probes unacked_packets_[ns].begin() only. The stale entry
-//       is always the smallest key (hence first) and is permanently is_lost, so
-//       after the very first PTO the timer lands on it forever and silently
-//       stops finding anything to retransmit.
-//   P2: OnPacketAck's `pkt_num--` range walk can descend into the stale key and
-//       fire OnPacketAcked + stream_data_ack_cb_ a second time for bytes that
-//       were already accounted as lost.
-//   P3: the table grows by one dead entry per retransmission until the space is
-//       discarded.
-//
-// This test pins P1/P3: after a retransmission exactly one entry may remain.
-TEST(SendControlG2Test, S6_RetransmitReusingPacketObjectDropsStaleUnackedEntry) {
+// The whole-packet retransmission path used to reuse and renumber the lost
+// IPacket, which made a stale unacked entry (keyed by the old PN) easy to
+// orphan. That path is retired: loss declaration now erases the entry and
+// notifies the packet's frames, and the owners re-queue their data into a
+// FRESH packet. What must still hold is the invariant the old test existed for:
+// the unacked table never accumulates dead entries across loss rounds, so the
+// PTO probe selection always lands on a live in-flight packet.
+TEST(SendControlG2Test, S6_LossDeclarationLeavesNoStaleUnackedEntry) {
     auto timer = std::make_shared<common::TestTimerScheduler>();
     SendControl sc(timer);
-    // Handshake space: RFC 9002 §5.3 loss declaration is ACK-driven, so an
-    // APPLICATION-space retransmit-timeout expiry now does nothing (recovery
-    // flows through PTO probes + DetectLostPackets; see
-    // MakeRetransmitTimeoutHandler). The crypto spaces intentionally keep the
-    // timer-driven re-queue (RFC 9000 §8.2.1 handshake recovery), and the
-    // stale-entry cleanup this test verifies is space-independent — build the
-    // scenario where the timer path still runs.
-    const PacketNumberSpace ns = PacketNumberSpace::kHandshakeNumberSpace;
+    const PacketNumberSpace ns = PacketNumberSpace::kApplicationNumberSpace;
 
-    // SendControl::Bind() installs the owner guard that TimerCore checks before
-    // running a callback. Without it every timer we arm is skipped as
-    // "owner expired" and PTO never fires -- which is why no earlier test in
-    // this file exercised a real timer expiry.
-    auto owner = std::make_shared<int>(0);
-    sc.Bind(owner);
+    for (uint64_t pn = 1; pn <= 4; ++pn) {
+        sc.OnPacketSend(100 + pn, MakePacket(pn, FrameTypeBit::kStreamBit), kMss);
+    }
+    ASSERT_EQ(sc.GetUnackedPacketCountForTest(ns), 4u);
 
-    // Handshake-space packet so OnPacketSend maps it to the Handshake number
-    // space (ns is derived from the packet's crypto level, and MakePacket
-    // builds Rtt1Packet = application level).
-    auto pkt = std::make_shared<HandshakePacket>();
-    pkt->SetPacketNumber(0);
-    pkt->GetHeader()->SetPacketNumberLength(PacketNumber::GetPacketNumberLength(0));
-    pkt->AddFrameTypeBit(FrameTypeBit::kStreamBit);
-    sc.OnPacketSend(100, pkt, kMss);
-    ASSERT_EQ(sc.GetUnackedPacketCountForTest(ns), 1u);
+    // ACK 2..4: pn=1 is declared lost by the packet threshold.
+    AckContiguous(sc, 2, 4, 200);
+    EXPECT_EQ(sc.GetUnackedPacketCountForTest(ns), 0u)
+        << "the lost entry must be erased at declaration, not linger as a zombie";
 
-    // Let the retransmit timer expire: in the Handshake space the packet is
-    // declared lost and queued for retransmission.
-    timer->Advance(5000);
-    ASSERT_EQ(sc.GetLostPacket().size(), 1u);
-    ASSERT_EQ(sc.GetLostPacket().front().packet, pkt)
-        << "The queued retransmission must be the very object we registered.";
+    // Owners re-send the data in a brand-new packet; one entry, flat table.
+    sc.OnPacketSend(300, MakePacket(5, FrameTypeBit::kStreamBit), kMss);
+    EXPECT_EQ(sc.GetUnackedPacketCountForTest(ns), 1u);
 
-    // Connection layer retransmits: same object, brand-new packet number.
-    auto entry = sc.GetLostPacket().front();
-    sc.GetLostPacket().pop_front();
-    // Order matters: drop the old entry BEFORE renumbering, while the stale key
-    // is still the object's current packet number (O(1) lookup).
-    const uint64_t orig_pn = entry.packet->GetPacketNumber();
-    sc.RemoveStaleUnackedEntry(ns, orig_pn, entry.packet);
-    entry.packet->SetPacketNumber(1);
-    sc.OnPacketSend(200, entry.packet, kMss, entry.stream_data);
-
-    EXPECT_EQ(sc.GetUnackedPacketCountForTest(ns), 1u)
-        << "Unacked table must not retain the entry keyed by the pre-retransmit PN. "
-           "OnPTOTimer() probes begin() only, so a surviving stale entry (always the "
-           "smallest key, and permanently is_lost) would blind PTO after its first "
-           "expiry -- see SendControl::RemoveStaleUnackedEntry().";
-
-    // A second round: the table must stay flat, not accumulate one dead entry
-    // per retransmission.
-    timer->Advance(20000);
-    ASSERT_EQ(sc.GetLostPacket().size(), 1u);
-    auto entry2 = sc.GetLostPacket().front();
-    sc.GetLostPacket().pop_front();
-    sc.RemoveStaleUnackedEntry(ns, entry2.packet->GetPacketNumber(), entry2.packet);
-    entry2.packet->SetPacketNumber(2);
-    sc.OnPacketSend(300, entry2.packet, kMss, entry2.stream_data);
-
-    EXPECT_EQ(sc.GetUnackedPacketCountForTest(ns), 1u) << "Repeated retransmissions must not grow the unacked table.";
+    // A second loss round must not accumulate dead entries either.
+    for (uint64_t pn = 6; pn <= 8; ++pn) {
+        sc.OnPacketSend(300 + pn, MakePacket(pn, FrameTypeBit::kStreamBit), kMss);
+    }
+    AckContiguous(sc, 6, 8, 400);  // pn=5 is lost by the packet threshold
+    EXPECT_EQ(sc.GetUnackedPacketCountForTest(ns), 0u) << "repeated loss rounds must not grow the unacked table";
 }
 
 }  // namespace g2
@@ -489,16 +433,13 @@ TEST(FrameDeliveryTest, ThresholdLossFiresLostAndRetransmitStaysTracked) {
     ASSERT_EQ(fired.size(), 1u);
     EXPECT_EQ(fired[0], FrameDeliveryState::kLost);
 
-    // The production retransmit path reuses the IPacket and renumbers it in
-    // place. The frame keeps its handler, so the retransmitted copy is still
-    // tracked: its ACK fires kAcked on the same handler.
-    ASSERT_EQ(sc.GetLostPacket().size(), 1u);
-    auto entry = sc.GetLostPacket().front();
-    sc.GetLostPacket().pop_front();
-    sc.RemoveStaleUnackedEntry(
-        PacketNumberSpace::kApplicationNumberSpace, entry.packet->GetPacketNumber(), entry.packet);
-    entry.packet->SetPacketNumber(5);
-    sc.OnPacketSend(200, entry.packet, 1200, entry.stream_data);
+    // P0-C10: the lost packet is never re-encoded. The owner re-queues the data
+    // into a FRESH packet that carries a fresh frame instance (with its own
+    // handler / loss budget); that copy's ACK reaches the owner as kAcked.
+    EXPECT_EQ(sc.GetUnackedPacketCountForTest(PacketNumberSpace::kApplicationNumberSpace), 0u)
+        << "declared-lost entry must be erased";
+    std::vector<FrameDeliveryState> fired2;
+    sc.OnPacketSend(200, MakeTrackedPacket(5, MakeTrackedFrame(&fired2)), 1200);
 
     auto ack2 = std::make_shared<AckFrame>();
     ack2->SetLargestAck(5);
@@ -506,8 +447,9 @@ TEST(FrameDeliveryTest, ThresholdLossFiresLostAndRetransmitStaysTracked) {
     ack2->SetFirstAckRange(0);
     sc.OnPacketAck(210, PacketNumberSpace::kApplicationNumberSpace, ack2);
 
-    ASSERT_EQ(fired.size(), 2u);
-    EXPECT_EQ(fired[1], FrameDeliveryState::kAcked);
+    ASSERT_EQ(fired2.size(), 1u);
+    EXPECT_EQ(fired2[0], FrameDeliveryState::kAcked);
+    EXPECT_EQ(fired.size(), 1u) << "the original frame's budget is spent; the new copy has its own";
 }
 
 TEST(FrameDeliveryTest, UntrackedFramesAreIgnoredAndHandlersMayRefire) {
@@ -697,7 +639,8 @@ TEST(SendTimeThresholdTest, TimeThresholdDeclaresLossBeforePacketThreshold) {
     SendControl sc(timer);
     const PacketNumberSpace ns = PacketNumberSpace::kApplicationNumberSpace;
 
-    sc.OnPacketSend(common::MonotonicTimeMsec(), MakePacket(1, FrameTypeBit::kStreamBit), 1200);
+    std::vector<FrameDeliveryState> lost1;
+    sc.OnPacketSend(common::MonotonicTimeMsec(), frame_delivery::MakeTrackedPacket(1, frame_delivery::MakeTrackedFrame(&lost1)), 1200);
     // Real wait: send_time_ is the monotonic clock, and the gap must exceed
     // 9/8 * SRTT (~112ms after the ACK below updates SRTT to ~100ms).
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
@@ -712,9 +655,10 @@ TEST(SendTimeThresholdTest, TimeThresholdDeclaresLossBeforePacketThreshold) {
     // loss_delay = 9/8 * 100 ~= 112ms < the 500ms send-time gap.
     sc.OnPacketAck(t_pn2 + 100, ns, ack);
 
-    // pn=1 must be queued for retransmission via the time threshold.
-    ASSERT_EQ(sc.GetLostPacket().size(), 1u);
-    EXPECT_EQ(sc.GetLostPacket().front().packet->GetPacketNumber(), 1u)
+    // pn=1 must be declared lost via the time threshold: its tracked frame
+    // gets kLost and the entry leaves the unacked table.
+    ASSERT_EQ(lost1.size(), 1u);
+    EXPECT_EQ(lost1[0], FrameDeliveryState::kLost)
         << "pn=1 must be declared lost by the RFC 9002 §6.1.2 time threshold: it was "
            "sent 500ms before the largest-acked packet while loss_delay is ~112ms, "
            "and the packet threshold (3) is not met. If this fails, the time-threshold "
@@ -737,9 +681,10 @@ TEST(SendTimeThresholdTest, SmallSendGapIsNotLostByTimeThreshold) {
     ack->SetAckDelay(0);
     ack->SetFirstAckRange(0);
     // RTT sample ~100ms => loss_delay ~112ms, far above the sub-ms send gap.
+    // (pn=1 stays in flight: unacked count 1 below.)
     sc.OnPacketAck(t0 + 100, ns, ack);
 
-    EXPECT_EQ(sc.GetLostPacket().size(), 0u)
+    EXPECT_EQ(sc.GetUnackedPacketCountForTest(ns), 1u)
         << "A sub-ms send gap must not trip the time threshold once SRTT is ~100ms; "
            "spurious loss declarations would burn cwnd.";
 }
@@ -757,10 +702,16 @@ TEST(SendTimeThresholdTest, NowBranchCoversAnchorUnavailableRounds) {
     SendControl sc(timer);
     const PacketNumberSpace ns = PacketNumberSpace::kApplicationNumberSpace;
 
-    // Four back-to-back packets; send times all within ~1ms of t0.
+    // Four back-to-back packets; send times all within ~1ms of t0. pn=2 carries
+    // a tracked frame so its loss is observable at frame level.
+    std::vector<FrameDeliveryState> lost2;
     uint64_t t0 = common::MonotonicTimeMsec();
     for (uint64_t pn = 1; pn <= 4; ++pn) {
-        sc.OnPacketSend(t0, MakePacket(pn, FrameTypeBit::kStreamBit), 1200);
+        if (pn == 2) {
+            sc.OnPacketSend(t0, frame_delivery::MakeTrackedPacket(2, frame_delivery::MakeTrackedFrame(&lost2)), 1200);
+        } else {
+            sc.OnPacketSend(t0, MakePacket(pn, FrameTypeBit::kStreamBit), 1200);
+        }
     }
 
     // ACK {4, 3, 1} (gap leaves pn=2 unacked). Sets SRTT ~100ms (loss_delay
@@ -773,7 +724,7 @@ TEST(SendTimeThresholdTest, NowBranchCoversAnchorUnavailableRounds) {
     ack1->SetFirstAckRange(1);                  // ack 4, 3
     ack1->AddAckRange(/*gap=*/0, /*range=*/0);  // skip pn=2, ack pn=1
     sc.OnPacketAck(t0 + 100, ns, ack1);
-    ASSERT_EQ(sc.GetLostPacket().size(), 0u) << "100ms age must stay under the ~112ms loss_delay";
+    ASSERT_TRUE(lost2.empty()) << "100ms age must stay under the ~112ms loss_delay";
 
     // Out-of-order ACK with largest=3 (<= last processed 4): the anchor is
     // disabled for this round (pn mismatch -> largest_acked_send_time == 0),
@@ -785,8 +736,8 @@ TEST(SendTimeThresholdTest, NowBranchCoversAnchorUnavailableRounds) {
     ack2->SetFirstAckRange(0);
     sc.OnPacketAck(t0 + 400, ns, ack2);
 
-    ASSERT_EQ(sc.GetLostPacket().size(), 1u);
-    EXPECT_EQ(sc.GetLostPacket().front().packet->GetPacketNumber(), 2u)
+    ASSERT_EQ(lost2.size(), 1u);
+    EXPECT_EQ(lost2[0], FrameDeliveryState::kLost)
         << "The RFC 9002 §6.1.2 now-branch must declare stale packets lost even when "
            "the largest-acked anchor is unavailable (out-of-order ACK round).";
 }
@@ -984,14 +935,15 @@ TEST(CcConfigTest, OverrideRejectedAfterFirstSend) {
 
 }  // namespace cc_config
 
-// G2-S13 [PER-PACKET RETRANSMIT TIMER]: Initial/Handshake-space packets arm
-// an independent retransmit timer at the BASE PTO interval (not the backed-off
-// connection-level PTO). This is the handshake-recovery workhorse the
-// 2026-10-29 bisect found essential: the connection-level PTO backs off
-// exponentially (storm protection) and alone cannot carry a lost ServerHello
-// through sustained 30% loss, while the per-packet cadence re-arms at the
-// same interval on every retransmission (arithmetic, ~750ms).
-TEST(SendControlG2Test, S13_PerPacketTimerDrivesHandshakeRetransmit) {
+// G2-S13 (P0-C10 migration) [ARITHMETIC HANDSHAKE CADENCE]: the per-packet
+// retransmit timer is retired; its job (the 2026-10-29 bisect's handshake-
+// recovery workhorse: re-arm at the BASE PTO on every retransmission instead of
+// the connection-level PTO's exponential backoff) is now the X3
+// RetransmitScheduler slot of the owning CRYPTO level. SendControl itself must
+//   (a) arm NO per-packet timer any more: one PTO timer, nothing else; and
+//   (b) expose the scheduler, whose interval is the BASE PTO and which survives
+//       a PTO backoff unchanged.
+TEST(SendControlG2Test, S13_NoPerPacketTimerAndSchedulerUsesBasePto) {
     auto timer = std::make_shared<common::TestTimerScheduler>();
     SendControl sc(timer);
     auto owner = std::make_shared<int>(42);
@@ -1002,21 +954,113 @@ TEST(SendControlG2Test, S13_PerPacketTimerDrivesHandshakeRetransmit) {
     pkt->SetPacketNumber(1);
     pkt->GetHeader()->SetPacketNumberLength(PacketNumber::GetPacketNumberLength(1));
     pkt->AddFrameTypeBit(FrameTypeBit::kCryptoBit);
-    uint64_t now = common::MonotonicTimeMsec();
-    sc.OnPacketSend(now, pkt, 1200);
+    sc.OnPacketSend(common::MonotonicTimeMsec(), pkt, 1200);
 
-    // Per-packet retransmit timer + connection-level PTO timer, both armed.
-    EXPECT_EQ(timer->PendingCount(), 2u);
+    EXPECT_EQ(timer->PendingCount(), 1u)
+        << "only the RFC 9002 loss detection timer may be armed: no per-packet timer";
 
-    // Advance ~800ms in real-time-synced steps: the per-packet timer fires
-    // (initial RTT 250ms -> base PTO ~750ms), the handler declares the
-    // packet lost and queues it for retransmission.
-    for (int i = 0; i < 85; ++i) {
+    // The scheduler is reachable and idle until an owner registers a slot.
+    auto sched = sc.GetRetransmitScheduler().lock();
+    ASSERT_NE(sched, nullptr);
+    EXPECT_EQ(sched->Size(), 0u);
+
+    struct Probe: public IRetransmitOwner {
+        void OnRetransmitDeadline(uint32_t, uint64_t now) override { fired_at.push_back(now); }
+        std::vector<uint64_t> fired_at;
+    } probe;
+    sched->Arm(&probe, 0);
+    ASSERT_EQ(sched->Size(), 1u);
+    const uint64_t armed_at = common::MonotonicTimeMsec();
+    const uint64_t first_deadline = sched->NextDeadlineMs();
+
+    // Interval is the BASE PTO of the current RTT estimate, within timer slack.
+    const uint64_t base_pto = sc.GetPTO(0);
+    EXPECT_GE(first_deadline, armed_at + base_pto - 5);
+    EXPECT_LE(first_deadline, armed_at + base_pto + 5);
+
+    // Backing off the connection-level PTO must NOT stretch the scheduler's
+    // cadence (INV2: arithmetic, not exponential).
+    sc.GetRttCalculator().OnPTOExpired();
+    sc.GetRttCalculator().OnPTOExpired();
+    ASSERT_GT(sc.GetRttCalculator().GetPTOWithBackoff(0), base_pto);
+    sched->Restart(&probe, 0);
+    const uint64_t after_backoff = sched->NextDeadlineMs();
+    EXPECT_LE(after_backoff, common::MonotonicTimeMsec() + base_pto + 5)
+        << "scheduler interval must stay at the BASE PTO regardless of PTO backoff";
+    sched->RemoveOwner(&probe);
+}
+
+// G2-S14 (P0-C10): a PTO expiry is a PROBE, not a loss. It must notify the
+// oldest in-flight packet's frames with kProbe (so owners re-queue data), must
+// not set the kLost latch, must not touch the congestion window, and must keep
+// the packet tracked (it may still be ACKed).
+TEST(SendControlG2Test, S14_PtoExpiryFiresProbeNotLostAndKeepsPacketTracked) {
+    auto timer = std::make_shared<common::TestTimerScheduler>();
+    SendControl sc(timer);
+    auto owner = std::make_shared<int>(7);
+    sc.Bind(owner);
+
+    std::vector<FrameDeliveryState> fired;
+    bool wake = false;
+    sc.SetPacketLostCallback([&wake](std::shared_ptr<IPacket>) { wake = true; });
+    sc.SetApplicationProbeCallback([] {});
+    sc.SetHandshakeComplete();
+
+    auto pkt = frame_delivery::MakeTrackedPacket(1, frame_delivery::MakeTrackedFrame(&fired));
+    sc.OnPacketSend(common::MonotonicTimeMsec(), pkt, g2::kMss);
+    const uint64_t cwnd_before = sc.GetCcCongestionWindowForTest();
+    const uint64_t inflight_before = sc.GetCcBytesInFlightForTest();
+
+    // Let the real PTO run: initial RTT 250ms -> PTO ~750ms.
+    for (int i = 0; i < 110 && fired.empty(); ++i) {
         timer->Advance(10);
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
-    EXPECT_FALSE(sc.GetLostPacket().empty())
-        << "per-packet retransmit timer must declare the handshake packet lost";}
+
+    ASSERT_FALSE(fired.empty()) << "PTO expiry must notify the oldest in-flight packet's frames";
+    EXPECT_EQ(fired[0], FrameDeliveryState::kProbe);
+    for (auto st : fired) {
+        EXPECT_NE(st, FrameDeliveryState::kLost) << "a PTO is not a loss event";
+    }
+    EXPECT_TRUE(wake) << "the send loop must be woken so the re-queued data leaves";
+    EXPECT_EQ(sc.GetCcCongestionWindowForTest(), cwnd_before) << "PTO must not shrink the congestion window";
+    EXPECT_EQ(sc.GetCcBytesInFlightForTest(), inflight_before) << "the probed packet stays in flight";
+    EXPECT_EQ(sc.GetUnackedPacketCountForTest(PacketNumberSpace::kApplicationNumberSpace), 1u)
+        << "the probed packet stays tracked: it may still be acknowledged";
+}
+
+// ==================== P0-C6: ack-eliciting send flag (RFC 9000 §10.1) ====
+
+// "An endpoint is said to be idle if it has not received and processed any
+// packets and it has not sent any ack-eliciting packets for longer than the
+// idle timeout." SendControl records whether an ack-eliciting packet left
+// since the last consume; the connection layer maps a set flag into an idle
+// timer restart at the end of each send round.
+TEST(SendControlTest, AckElicitingSendFlagSetAndConsumed) {
+    auto timer = std::make_shared<common::TestTimerScheduler>();
+    SendControl sc(timer);
+
+    EXPECT_FALSE(sc.ConsumeAckElicitingSendFlag()) << "nothing sent yet";
+
+    auto pkt = MakePacket(1, FrameTypeBit::kStreamBit);
+    std::vector<StreamDataInfo> data = {StreamDataInfo(0, 0, 10, false)};
+    sc.OnPacketSend(0, pkt, 1200, data);
+
+    EXPECT_TRUE(sc.ConsumeAckElicitingSendFlag()) << "an ack-eliciting send must set the flag";
+    EXPECT_FALSE(sc.ConsumeAckElicitingSendFlag()) << "consuming clears it";
+}
+
+TEST(SendControlTest, AckOnlyPacketDoesNotSetSendFlag) {
+    auto timer = std::make_shared<common::TestTimerScheduler>();
+    SendControl sc(timer);
+
+    // Pure ACK send: proves nothing about the reverse path liveness — must
+    // NOT restart the peer's idle evaluation, so the flag stays clear.
+    auto pkt = MakePacket(2, FrameTypeBit::kAckBit);
+    sc.OnPacketSend(0, pkt, 100, {});
+
+    EXPECT_FALSE(sc.ConsumeAckElicitingSendFlag());
+}
 
 }  // namespace
 }  // namespace quic

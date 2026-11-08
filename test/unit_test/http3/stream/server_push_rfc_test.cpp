@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 
 #include "http3/http/response.h"
+#include "http3/qpack/qpack_decoder.h"
 #include "http3/qpack/qpack_encoder.h"
 #include "http3/stream/push_receiver_stream.h"
 #include "http3/stream/push_sender_stream.h"
@@ -27,6 +28,7 @@ class ServerPushRFCTest: public testing::Test {
 protected:
     void SetUp() override {
         qpack_encoder_ = std::make_shared<QpackEncoder>();
+        qpack_decoder_ = std::make_shared<QpackDecoder>();
 
         mock_send_stream_ = std::make_shared<quic::MockQuicStream>();
         mock_recv_stream_ = std::make_shared<quic::MockQuicStream>();
@@ -56,7 +58,7 @@ protected:
 
         // Create the actual push receiver stream
         receiver_stream_ = std::make_shared<PushReceiverStream>(
-            qpack_encoder_, stream, [this](uint64_t /*stream_id*/, uint32_t error) { error_code_ = error; },
+            qpack_decoder_, stream, [this](uint64_t /*stream_id*/, uint32_t error) { error_code_ = error; },
             [this](std::shared_ptr<IResponse> response, uint32_t error) {
                 push_response_received_ = response;
                 error_code_ = error;
@@ -69,6 +71,7 @@ protected:
     }
 
     std::shared_ptr<QpackEncoder> qpack_encoder_;
+    std::shared_ptr<QpackDecoder> qpack_decoder_;
     std::shared_ptr<quic::MockQuicStream> mock_send_stream_;
     std::shared_ptr<quic::MockQuicStream> mock_recv_stream_;
     std::shared_ptr<UnidentifiedStream> unidentified_stream_;

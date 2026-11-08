@@ -22,12 +22,230 @@ CryptoStream::CryptoStream(std::weak_ptr<common::IEventLoop> loop,
         out_order_bytes_[i] = 0;
         send_offset_[i] = 0;
         acked_offset_[i] = 0;
+        emitted_offset_[i] = 0;
         read_buffers_[i] =
             std::make_shared<common::MultiBlockBuffer>(GlobalResource::Instance().GetThreadLocalBlockPool());
     }
 }
 
-CryptoStream::~CryptoStream() {}
+CryptoStream::~CryptoStream() {
+    // The scheduler holds a raw pointer to this owner; never leave it dangling.
+    if (auto sched = retransmit_scheduler_.lock()) {
+        sched->RemoveOwner(this);
+    }
+}
+
+void CryptoStream::SetRetransmitScheduler(std::weak_ptr<RetransmitScheduler> scheduler) {
+    retransmit_scheduler_ = std::move(scheduler);
+}
+
+void CryptoStream::DisarmSlot(uint8_t level) {
+    if (auto sched = retransmit_scheduler_.lock()) {
+        sched->Remove(this, level);
+    }
+}
+
+namespace {
+
+// Disjoint [start, end) interval set with merge-on-insert; just enough for the
+// "which parts of this range are not covered yet" question the sent-log asks.
+class IntervalSet {
+public:
+    void Add(uint64_t start, uint64_t end) {
+        if (end <= start) {
+            return;
+        }
+        auto it = m_.upper_bound(start);
+        if (it != m_.begin()) {
+            auto prev = std::prev(it);
+            if (prev->second >= start) {
+                start = prev->first;
+                end = std::max(end, prev->second);
+                it = m_.erase(prev);
+            }
+        }
+        while (it != m_.end() && it->first <= end) {
+            end = std::max(end, it->second);
+            it = m_.erase(it);
+        }
+        m_.emplace(start, end);
+    }
+
+    std::vector<std::pair<uint64_t, uint64_t>> Gaps(uint64_t start, uint64_t end) const {
+        std::vector<std::pair<uint64_t, uint64_t>> gaps;
+        uint64_t cur = start;
+        auto it = m_.upper_bound(start);
+        if (it != m_.begin()) {
+            auto prev = std::prev(it);
+            if (prev->second > cur) {
+                cur = prev->second;
+            }
+        }
+        for (; it != m_.end() && it->first < end && cur < end; ++it) {
+            if (it->first > cur) {
+                gaps.emplace_back(cur, it->first);
+            }
+            cur = std::max(cur, it->second);
+        }
+        if (cur < end) {
+            gaps.emplace_back(cur, end);
+        }
+        return gaps;
+    }
+
+private:
+    std::map<uint64_t, uint64_t> m_;
+};
+
+}  // namespace
+
+void CryptoStream::LogSent(uint8_t level, uint64_t start, uint64_t end, uint64_t now_ms) {
+    if (end <= start) {
+        return;
+    }
+    auto& log = sent_log_[level];
+    log.push_back(SentRange{start, end, now_ms});
+    if (log.size() > kMaxSentLogEntries) {
+        log.pop_front();
+    }
+}
+
+std::vector<CryptoStream::SentRange> CryptoStream::LiveRanges(uint8_t level) const {
+    // Walk newest -> oldest. Bytes a newer entry already covers were re-sent
+    // since, so the older entry's timestamp no longer describes them; bytes the
+    // peer acknowledged are not outstanding at all.
+    IntervalSet covered;
+    covered.Add(0, acked_offset_[level]);
+    for (const auto& ar : acked_ranges_[level]) {
+        covered.Add(ar.first, ar.second);
+    }
+    std::vector<SentRange> live;
+    const auto& log = sent_log_[level];
+    for (auto it = log.rbegin(); it != log.rend(); ++it) {
+        for (const auto& gap : covered.Gaps(it->start, it->end)) {
+            live.push_back(SentRange{gap.first, gap.second, it->sent_ms});
+        }
+        covered.Add(it->start, it->end);
+    }
+    return live;
+}
+
+void CryptoStream::RefreshSlotDeadline(uint8_t level) {
+    auto sched = retransmit_scheduler_.lock();
+    if (!sched || !sched->IsArmed(this, level)) {
+        return;
+    }
+    const auto live = LiveRanges(level);
+    if (live.empty()) {
+        return;
+    }
+    uint64_t oldest = UINT64_MAX;
+    for (const auto& r : live) {
+        oldest = std::min(oldest, r.sent_ms);
+    }
+    const uint64_t deadline = oldest + sched->IntervalMs();
+    // Never pull the deadline into the past: an overdue one means bytes are
+    // already queued for a probe that has not gone out yet (cwnd / budget), and
+    // the scheduler's own post-fire restart is the right cadence for that.
+    if (deadline > sched->Now()) {
+        sched->Update(this, level, deadline);
+    }
+}
+
+void CryptoStream::OnRetransmitDeadline(uint32_t slot, uint64_t now_ms) {
+    if (slot >= kNumEncryptionLevels) {
+        if (auto sched = retransmit_scheduler_.lock()) {
+            sched->Remove(this, slot);
+        }
+        return;
+    }
+    const uint8_t level = static_cast<uint8_t>(slot);
+
+    // Nothing the peer could still acknowledge at this level: drop the slot
+    // (the scheduler already restarted it before calling us).
+    const bool keys_gone = (level == kInitial && initial_consumed_by_peer_) ||
+                           (level == kHandshake && handshake_confirmed_);
+    if (keys_gone || acked_offset_[level] >= emitted_offset_[level]) {
+        DisarmSlot(level);
+        return;
+    }
+
+    auto sched = retransmit_scheduler_.lock();
+    const uint64_t pto = sched ? sched->IntervalMs() : 0;
+    const auto live = LiveRanges(level);
+
+    if (live.empty()) {
+        // No timing information (sent-log capped away or never recorded): fall
+        // back to the whole outstanding window. The gap algorithm in
+        // OnFrameDelivery still skips ACKed and already-queued bytes.
+        const uint64_t window = emitted_offset_[level] - acked_offset_[level];
+        OnFrameDelivery(level, acked_offset_[level],
+            static_cast<uint32_t>(std::min<uint64_t>(window, UINT32_MAX)), FrameDeliveryState::kProbe);
+        return;
+    }
+
+    // Probe only bytes whose LAST transmission is at least one base PTO old.
+    // Younger bytes have not had a fair chance to be acknowledged; re-sending
+    // them is redundant and, under the 8.1 budget, steals credit from bytes
+    // that really are lost. kProbe, not kLost: this is the arithmetic-cadence
+    // fallback (lesson L1), never a loss event.
+    uint64_t next_due = UINT64_MAX;
+    size_t probed = 0;
+    for (const auto& r : live) {
+        if (r.sent_ms + pto <= now_ms) {
+            ++probed;
+            OnFrameDelivery(level, r.start, static_cast<uint32_t>(std::min<uint64_t>(r.end - r.start, UINT32_MAX)),
+                FrameDeliveryState::kProbe);
+        } else {
+            next_due = std::min(next_due, r.sent_ms + pto);
+        }
+    }
+    LOG_DEBUG("CryptoStream::OnRetransmitDeadline: level=%d live_ranges=%zu probed=%zu acked_prefix=%llu emitted=%llu",
+        level, live.size(), probed, (unsigned long long)acked_offset_[level],
+        (unsigned long long)emitted_offset_[level]);
+
+    // The scheduler restarted this slot at now + PTO before calling us. If a
+    // younger range falls due sooner than that (or nothing was old enough
+    // because the PTO grew since the deadline was set), follow it.
+    if (sched && next_due != UINT64_MAX && (probed == 0 || next_due < now_ms + pto)) {
+        sched->Update(this, level, next_due);
+    }
+}
+
+void CryptoStream::RecordAcked(uint8_t level, uint64_t start, uint64_t end) {
+    if (end <= start) {
+        return;
+    }
+    auto& m = acked_ranges_[level];
+    uint64_t new_start = start;
+    uint64_t new_end = end;
+    // Merge-insert (same shape as SendStream::OnDataAcked): collapse every
+    // neighbour the new interval touches in one pass.
+    auto it = m.upper_bound(new_start);
+    if (it != m.begin()) {
+        auto prev = std::prev(it);
+        if (prev->second >= new_start) {
+            new_start = prev->first;
+            if (prev->second > new_end) new_end = prev->second;
+            it = prev;
+        }
+    }
+    while (it != m.end() && it->first <= new_end) {
+        if (it->second > new_end) new_end = it->second;
+        it = m.erase(it);
+    }
+    m.emplace(new_start, new_end);
+
+    // Advance the contiguous prefix over whatever is now anchored to it, then
+    // forget ranges the prefix subsumes (keeps the map bounded by the window).
+    auto first = m.begin();
+    if (first->first <= acked_offset_[level] && first->second > acked_offset_[level]) {
+        acked_offset_[level] = first->second;
+    }
+    while (!m.empty() && m.begin()->second <= acked_offset_[level]) {
+        m.erase(m.begin());
+    }
+}
 
 IStream::TrySendResult CryptoStream::TrySendData(IFrameVisitor* visitor, EncryptionLevel level) {
     if (level >= kNumEncryptionLevels) {
@@ -156,6 +374,20 @@ IStream::TrySendResult CryptoStream::TrySendData(IFrameVisitor* visitor, Encrypt
         outgoing.pop_front();
     }
 
+    // P0-C10 / X3: track the outstanding window and (for the handshake
+    // levels) arm the slow-path slot. Arm is idempotent and keeps an earlier
+    // deadline, so a busy sender never pushes the retransmit of its oldest
+    // outstanding bytes out.
+    emitted_offset_[level] = std::max<uint64_t>(emitted_offset_[level], frame_offset + sent_len);
+    const bool level_usable = (level == kInitial && !initial_consumed_by_peer_) ||
+                              (level == kHandshake && !handshake_confirmed_);
+    if (level_usable) {
+        if (auto sched = retransmit_scheduler_.lock()) {
+            LogSent(level, frame_offset, frame_offset + sent_len, sched->Now());
+            sched->Arm(this, level);
+        }
+    }
+
     // Check if we still have data for this level
     if (!outgoing.empty()) {
         ToSend();
@@ -196,7 +428,11 @@ void CryptoStream::ResetForRetry() {
     outgoing_[level].clear();
     retained_[level].clear();
     acked_offset_[level] = 0;
+    acked_ranges_[level].clear();
+    emitted_offset_[level] = 0;
     send_offset_[level] = 0;
+    DisarmSlot(level);
+    sent_log_[level].clear();
 }
 
 void CryptoStream::Close() {
@@ -465,6 +701,9 @@ void CryptoStream::MarkInitialConsumedByPeer() {
     // gone); keeping the segments would only re-queue them on every PTO.
     outgoing_[kInitial].clear();
     retained_[kInitial].clear();
+    acked_ranges_[kInitial].clear();
+    DisarmSlot(kInitial);
+    sent_log_[kInitial].clear();
     LOG_INFO("CryptoStream::MarkInitialConsumedByPeer: dropping Initial send state, peer already consumed the flight");
 }
 
@@ -493,6 +732,9 @@ void CryptoStream::MarkHandshakeConfirmed() {
     // bytes get exactly one final transmission attempt; their loss is then
     // final, which the peer's dropped keys make correct.
     retained_[kHandshake].clear();
+    acked_ranges_[kHandshake].clear();
+    DisarmSlot(kHandshake);
+    sent_log_[kHandshake].clear();
     LOG_INFO("CryptoStream::MarkHandshakeConfirmed: dropping Handshake retransmit state, handshake confirmed "
              "(outgoing kept: %zu segments)",
         outgoing_[kHandshake].size());
@@ -514,9 +756,25 @@ void CryptoStream::OnFrameDelivery(uint8_t level, uint64_t offset, uint32_t leng
         // (and its retained chunk was pruned): the lost CRYPTO bytes were
         // never retransmitted and the peer's handshake timed out
         // (amplificationlimit interop, 8/14 clients failing).
-        const uint64_t seg_end = offset + length;
-        if (offset <= acked_offset_[level] && seg_end > acked_offset_[level]) {
-            acked_offset_[level] = seg_end;
+        //
+        // The ACKed range itself is still remembered (acked_ranges_) so a
+        // later requeue of the surrounding window skips it; only the PREFIX
+        // advances over contiguous coverage (RecordAcked).
+        RecordAcked(level, offset, offset + length);
+        // Everything emitted at this level is acknowledged: nothing left for
+        // the slow-path slot to retransmit.
+        if (acked_offset_[level] >= emitted_offset_[level]) {
+            DisarmSlot(level);
+            sent_log_[level].clear();
+        } else {
+            // Drop log entries the prefix has swallowed, then let the deadline
+            // follow the OLDEST still-unacknowledged bytes: after a partial ACK
+            // the first send's time no longer describes what is outstanding.
+            auto& log = sent_log_[level];
+            while (!log.empty() && log.front().end <= acked_offset_[level]) {
+                log.pop_front();
+            }
+            RefreshSlotDeadline(level);
         }
         // A late ACK (the packet was already declared lost and its range
         // re-queued) retires the re-queued segment so we stop re-sending.
@@ -535,6 +793,13 @@ void CryptoStream::OnFrameDelivery(uint8_t level, uint64_t offset, uint32_t leng
         return;
     }
 
+    // P0-C10: kLost and kProbe share the re-queue path below. kProbe (PTO
+    // probe / retransmit-scheduler cadence) is NOT a loss event — the
+    // congestion reaction is SendControl's business, and kProbe never reaches
+    // here from OnPacketLost — but the owner's action is identical: put the
+    // still-unacknowledged bytes back on the wire. The gap algorithm makes
+    // repeated probes idempotent (already-queued ranges yield no gaps).
+    //
     // kLost, but already covered by the acked prefix: superseded by a late
     // ACK (notifications can arrive out of order — OnPacketAck fires kAcked
     // on packets that were already declared lost). Ignore.
@@ -577,6 +842,14 @@ void CryptoStream::OnFrameDelivery(uint8_t level, uint64_t offset, uint32_t leng
         for (const auto& qseg : outgoing_[level]) {
             if (qseg.end_offset > qseg.offset) {
                 queued.emplace_back(qseg.offset, qseg.end_offset);
+            }
+        }
+        // Ranges already ACKed beyond the contiguous prefix are just as
+        // covered as queued ones (overlaps between the two sources are fine —
+        // the subtraction below advances `cur` monotonically).
+        for (const auto& acked : acked_ranges_[level]) {
+            if (acked.second > offset && acked.first < offset + length) {
+                queued.emplace_back(acked.first, acked.second);
             }
         }
         std::sort(queued.begin(), queued.end());

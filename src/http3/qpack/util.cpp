@@ -111,8 +111,9 @@ bool QpackReadStringBody(const std::shared_ptr<common::IBuffer> buf, uint64_t le
     std::vector<uint8_t> tmp;
     tmp.resize(static_cast<size_t>(len));
     if (buf->Read(tmp.data(), static_cast<uint32_t>(len)) != static_cast<uint32_t>(len)) return false;
-    out = HuffmanEncoder::Instance().Decode(tmp);
-    return true;
+    // P1-H5f: a malformed Huffman bitstream is a decode failure, not an
+    // empty string.
+    return HuffmanEncoder::Instance().Decode(tmp, out);
 }
 
 bool QpackEncodeStringLiteralWithPrefix(const std::string& s, std::shared_ptr<common::IBuffer> buf,

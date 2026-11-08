@@ -84,6 +84,51 @@ bool RttCalculator::UpdateRtt(uint64_t send_time, uint64_t now, uint64_t ack_del
     return true;
 }
 
+// P1-P4: microsecond mirror of UpdateRtt (RFC 9002 §5.3, identical EWMA).
+// Consumed by congestion control via Get*Us(); the ms domain above keeps
+// feeding PTO / loss detection unchanged.
+bool RttCalculator::UpdateRttUs(uint64_t send_time_us, uint64_t now_us, uint64_t ack_delay_us) {
+    uint64_t latest_rtt_us = (now_us > send_time_us) ? now_us - send_time_us : 0;
+    if (latest_rtt_us == 0) {
+        latest_rtt_us = 1;  // loopback: sub-tick sample still counts as 1us
+    }
+
+    if (last_update_time_us_.load(std::memory_order_relaxed) == 0) {
+        min_rtt_us_.store(latest_rtt_us, std::memory_order_relaxed);
+        smoothed_rtt_us_.store(latest_rtt_us, std::memory_order_relaxed);
+        rtt_var_us_.store(latest_rtt_us >> 1, std::memory_order_relaxed);
+        first_rtt_sample_time_us_.store(now_us, std::memory_order_relaxed);
+    } else {
+        uint64_t cur_min = min_rtt_us_.load(std::memory_order_relaxed);
+        uint64_t min_rtt = std::min(cur_min, latest_rtt_us);
+        min_rtt_us_.store(min_rtt, std::memory_order_relaxed);
+
+        // Same adjusted_rtt rule as the ms domain: subtract the (already
+        // max_ack_delay-clamped) peer ack delay only when it cannot drag the
+        // sample below the observed minimum.
+        uint64_t adjusted_rtt = latest_rtt_us;
+        if (latest_rtt_us >= (min_rtt + ack_delay_us)) {
+            adjusted_rtt -= ack_delay_us;
+        }
+
+        uint64_t srtt = smoothed_rtt_us_.load(std::memory_order_relaxed);
+        smoothed_rtt_us_.store(srtt - (srtt >> 3) + (adjusted_rtt >> 3), std::memory_order_relaxed);
+
+        uint64_t srtt2 = smoothed_rtt_us_.load(std::memory_order_relaxed);
+        uint64_t rttvar_sample = srtt2 > adjusted_rtt ? srtt2 - adjusted_rtt : adjusted_rtt - srtt2;
+
+        uint64_t rv = rtt_var_us_.load(std::memory_order_relaxed);
+        rtt_var_us_.store(rv - (rv >> 2) + (rttvar_sample >> 2), std::memory_order_relaxed);
+
+        if (smoothed_rtt_us_.load(std::memory_order_relaxed) == 0) {
+            smoothed_rtt_us_.store(1, std::memory_order_relaxed);  // EWMA rounding guard
+        }
+    }
+    latest_rtt_us_.store(latest_rtt_us, std::memory_order_relaxed);
+    last_update_time_us_.store(now_us, std::memory_order_relaxed);
+    return true;
+}
+
 void RttCalculator::Reset() {
     latest_rtt_.store(0, std::memory_order_relaxed);
     // Seed SRTT from the process-level override; in production this returns
@@ -97,6 +142,14 @@ void RttCalculator::Reset() {
 
     last_update_time_.store(0, std::memory_order_relaxed);
     first_rtt_sample_time_.store(0, std::memory_order_relaxed);
+
+    // P1-P4: reset the us-domain mirror alongside the ms domain.
+    latest_rtt_us_.store(0, std::memory_order_relaxed);
+    rtt_var_us_.store(0, std::memory_order_relaxed);
+    min_rtt_us_.store(std::numeric_limits<uint64_t>::max(), std::memory_order_relaxed);
+    smoothed_rtt_us_.store(0, std::memory_order_relaxed);
+    last_update_time_us_.store(0, std::memory_order_relaxed);
+    first_rtt_sample_time_us_.store(0, std::memory_order_relaxed);
 }
 
 uint32_t RttCalculator::GetPTOInterval(uint32_t max_ack_delay) {

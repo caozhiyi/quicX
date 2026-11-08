@@ -21,7 +21,10 @@ static void BM_Qpack_Huffman_Decode(benchmark::State& state) {
     const std::string s(static_cast<size_t>(state.range(0)), 'a');
     auto out = enc.Encode(s);
     for (auto _ : state) {
-        auto dec = enc.Decode(out);
+        // H5f: Decode is bool + out-param since the failure-propagation fix.
+        std::string dec;
+        bool ok = enc.Decode(out, dec);
+        benchmark::DoNotOptimize(ok);
         benchmark::DoNotOptimize(dec);
     }
 }

@@ -68,6 +68,11 @@ public:
     virtual bool IsTerminating() const { return is_terminating_; }
     void SetTerminating(bool val) { is_terminating_ = val; }
 
+    // ---- P1-H1 dispatch-test observation points ----
+    uint32_t GetLastResetErrorCode() const { return last_reset_error_code_; }
+    uint32_t GetResetCount() const { return reset_count_; }
+    bool IsClosed() const { return closed_; }
+
 private:
     void* user_data_;
     std::shared_ptr<void> context_;
@@ -98,6 +103,11 @@ private:
 
     // State
     bool is_terminating_ = false;
+
+    // P1-H1 observation: CONNECTION_CLOSE code seen by the transport mock.
+    uint32_t last_reset_error_code_ = 0;
+    uint32_t reset_count_ = 0;
+    bool closed_ = false;
 };
 
 }  // namespace quicx

@@ -6,8 +6,12 @@
 #include <quicx/common/if_buffer_write.h>
 #include <quicx/quic/if_quic_send_stream.h>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "common/buffer/multi_block_buffer.h"
+#include "common/buffer/shared_buffer_span.h"
+#include "quic/frame/stream_frame.h"
 
 #include "quic/stream/if_stream.h"
 #include "quic/stream/state_machine_send.h"
@@ -64,16 +68,53 @@ public:
     // Getter for testing
     std::shared_ptr<StreamStateMachineSend> GetSendStateMachine() const { return send_machine_; }
 
+    // P0-C10 / D2: frame-level loss (kLost) and probe (kProbe) notification
+    // for a STREAM frame this stream emitted. Re-queues the sub-ranges of
+    // [offset, offset + data.length) that are neither ACKed nor already queued
+    // (the CryptoStream "uncovered gaps" algorithm), carrying the FIN bit
+    // forward when the lost frame had it. `data` is the lost frame's own
+    // zero-copy span, so no retained copy of the send buffer is needed.
+    void OnFrameLost(uint64_t offset, const common::SharedBufferSpan& data, bool fin);
+
+    // True while lost/probed STREAM bytes (or a lost FIN) await re-emission.
+    bool HasPendingRetransmit() const { return !retx_queue_.empty(); }
+    size_t GetPendingRetransmitSegments() const { return retx_queue_.size(); }
+
 protected:
     void OnMaxStreamDataFrame(std::shared_ptr<IFrame> frame);
     void OnStopSendingFrame(std::shared_ptr<IFrame> frame);
     void CheckAllDataAcked();
+
+    // Attach the delivery handler that routes kLost/kProbe of `frame` to
+    // OnFrameLost. kAcked is deliberately ignored here: ACKs reach
+    // OnDataAcked through the StreamDataInfo path (precise byte ranges).
+    void AttachLossHandler(const std::shared_ptr<StreamFrame>& frame);
+
+    // Emit queued retransmissions into the current packet. Bypasses the
+    // peer-flow-control and send-state gates (the bytes were already admitted
+    // once) and never calls visitor->AddStreamDataSize (connection-level
+    // flow control must not be charged twice for the same bytes).
+    TrySendResult DrainRetransmit(IFrameVisitor* visitor);
+
+    // Sub-ranges of [start, end) not covered by acked_ranges_ or retx_queue_.
+    std::vector<std::pair<uint64_t, uint64_t>> UncoveredGaps(uint64_t start, uint64_t end) const;
 
 protected:
     bool to_fin_;                // whether to send fin
     uint64_t send_data_offset_;  // the offset of data that has been sent
     uint64_t acked_offset_;      // contiguous ACKed prefix length: [0, acked_offset_) fully covered
     bool fin_sent_;              // whether FIN has been sent (and ACKed if observed via callback)
+    bool fin_acked_;             // whether a STREAM frame carrying FIN was acknowledged
+
+    // Lost/probed STREAM ranges waiting for re-emission, keyed by start
+    // offset, pairwise disjoint. `data` begins exactly at the key; a segment
+    // with end == key is a FIN-only retransmission.
+    struct RetxSegment {
+        uint64_t end;
+        common::SharedBufferSpan data;
+        bool fin;
+    };
+    std::map<uint64_t, RetxSegment> retx_queue_;
     uint64_t peer_data_limit_;   // the data limit that peer limit
     uint64_t blocked_at_limit_;  // the limit at which we sent STREAM_DATA_BLOCKED (to avoid duplicate)
     std::shared_ptr<common::MultiBlockBuffer> send_buffer_;

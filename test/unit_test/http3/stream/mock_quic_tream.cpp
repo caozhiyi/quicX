@@ -14,8 +14,10 @@ uint64_t MockQuicStream::GetStreamID() {
     return stream_id_;
 }
 
-void MockQuicStream::Reset(uint32_t /*error*/) {
-    // No-op for mock
+void MockQuicStream::Reset(uint32_t error) {
+    // P1-H1 dispatch tests observe RESET_STREAM / STOP_SENDING codes here.
+    last_reset_error_ = error;
+    reset_count_++;
 }
 
 void MockQuicStream::SetStreamReadCallBack(stream_read_callback cb) {

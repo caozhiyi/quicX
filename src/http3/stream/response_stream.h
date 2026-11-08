@@ -26,8 +26,16 @@ class IHttpProcessor {
 public:
     virtual RouteConfig MatchRoute(
         HttpMethod method, const std::string& path, std::shared_ptr<IRequest> request = nullptr) = 0;
-    virtual void BeforeHandlerProcess(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response) = 0;
+    // P1-H8: before-middlewares can short-circuit the pipeline. Returns false
+    // when a middleware did so — the route handler and after-middlewares must
+    // be skipped and the middleware-produced response flushed by the stream.
+    virtual bool BeforeHandlerProcess(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response) = 0;
     virtual void AfterHandlerProcess(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response) = 0;
+    // P1-H6g: per-server-instance request body cap (bytes). ResponseStream
+    // pulls it at construction; the previous process-wide static made two
+    // Server objects with different configs silently share one limit.
+    // Default matches Http3ServerConfig::max_request_body_size_.
+    virtual uint64_t GetMaxRequestBodySize() const { return 16 * 1024 * 1024; }
 };
 
 /**
@@ -39,7 +47,7 @@ public:
 class ResponseStream: public ReqRespBaseStream {
 public:
     ResponseStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
-        const std::shared_ptr<QpackEncoder>& qpack_decoder,
+        const std::shared_ptr<QpackDecoder>& qpack_decoder,
         const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
         const std::shared_ptr<IQuicBidirectionStream>& stream, std::weak_ptr<IHttpProcessor> http_processor,
         const std::function<void(std::shared_ptr<IResponse>, std::shared_ptr<ResponseStream>)> push_handler,
@@ -47,16 +55,15 @@ public:
         const std::function<bool()>& settings_received_cb);
     virtual ~ResponseStream();
 
-    void SendPushPromise(const HttpFields& headers, int32_t push_id);
+    // P1-H6f: RFC 9114 §4.6 — MAX_PUSH_ID is a full varint on the wire;
+    // a 32-bit parameter truncates push ids at 2^31. Callers pass the
+    // server-allocated push id as uint64_t.
+    void SendPushPromise(const HttpFields& headers, uint64_t push_id);
     bool SendResponse(std::shared_ptr<IResponse> response);
 
     // ResponseStream should signal completion after sending response body
     // because the server's job is done after sending the response
     bool ShouldSignalCompletionAfterSend() const override { return true; }
-
-    // Set the per-process request body limit (bytes). Wired from
-    // Http3ServerConfig::max_request_body_size_ by Server::Init.
-    static void SetMaxRequestBodySize(uint64_t size) { max_request_body_size_ = size; }
 
 private:
     virtual void HandleHeaders() override;
@@ -73,13 +80,31 @@ private:
     void SendPayloadTooLarge();
 
 private:
-    // Per-process upper bound (bytes) for request bodies buffered in complete
-    // mode; defends against unbounded buffering when no handler consumes the
-    // body (e.g. unmatched routes). Configurable via
-    // Http3ServerConfig::max_request_body_size_ / SetMaxRequestBodySize().
-    static uint64_t max_request_body_size_;
+    // P1-H6g: per-instance upper bound (bytes) for request bodies buffered in
+    // complete mode; defends against unbounded buffering when no handler
+    // consumes the body (e.g. unmatched routes). Pulled from the owning
+    // server (IHttpProcessor::GetMaxRequestBodySize) at construction.
+    uint64_t max_request_body_size_ = 16 * 1024 * 1024;
+
+    // P1-H6d (RFC 9114 §4.1 / RFC 9110 §6.5): message phase for field
+    // sections. The FIRST field section builds the request and routes; any
+    // LATER field section on the same stream is trailers — appended to the
+    // request, never re-routed, and pseudo-headers in it are a protocol
+    // error (RFC 9114 §4.3: pseudo-header fields only appear in the first
+    // section).
+    bool saw_initial_field_section_ = false;
+    // P1-H6d (RFC 9114 §4.1): set when the trailers section arrived. The
+    // trailing field section MUST be the final frame of the message — any
+    // DATA frame after it is malformed and errors the stream.
+    bool saw_trailers_ = false;
 
     uint64_t body_length_ = 0;
+    // P1-H6c: true when the request declared a content-length (any value).
+    // Distinguishes "no body declared, none arrived" (legal) from
+    // "content-length: 0 but DATA arrived" and "content-length: N but the
+    // stream FINed short" (both H3_MESSAGE_ERROR, RFC 9110 §8.6 smuggling /
+    // truncation vectors).
+    bool has_content_length_ = false;
     uint32_t received_body_length_;
     bool is_response_sent_;
     RouteConfig route_config_;

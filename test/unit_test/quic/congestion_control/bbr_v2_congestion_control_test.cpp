@@ -34,7 +34,7 @@ TEST(BBRv2CongestionControlTest, InflightHiAdaptsOnLoss) {
     cc.Configure(cfg);
 
     // Set SRTT and ack to feed bandwidth
-    cc.OnRoundTripSample(100000, 0);
+    cc.OnRoundTripSample(100000, 100000, 100000, 0);
     cc.OnPacketAcked(AckEvent{1, 2000, 200, 0, false});
     uint64_t hi_before = cc.GetCongestionWindow();
 
@@ -67,7 +67,7 @@ TEST(BBRv2CongestionControlTest, ProbeRttAndProbeBwCycle) {
     cc.Configure(cfg);
 
     // Set RTT and send enough data for bandwidth sampling
-    cc.OnRoundTripSample(100000, 0);  // 100ms
+    cc.OnRoundTripSample(100000, 100000, 100000, 0);  // 100ms
 
     // Send ACKs over sufficient time for bandwidth sampling
     uint64_t base_time = 100000;
@@ -88,7 +88,7 @@ TEST(BBRv2CongestionControlTest, ProbeBwFullEightSegmentCycle) {
     cc.Configure(cfg);
 
     // Set RTT and send enough data for bandwidth sampling
-    cc.OnRoundTripSample(100000ull, 0ull);  // 100ms
+    cc.OnRoundTripSample(100000ull, 100000ull, 100000ull, 0ull);  // 100ms
 
     // Send ACKs over sufficient time for bandwidth sampling
     uint64_t base_time = 100000;

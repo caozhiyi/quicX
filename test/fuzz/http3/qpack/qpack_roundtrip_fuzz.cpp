@@ -1,7 +1,7 @@
 // Fuzz target for the QPACK encode -> decode round trip (#9, code review
 // round 2).
 //
-// Two independent QpackEncoder instances play the real connection roles
+// A QpackEncoder and a QpackDecoder play the real connection roles
 // (see IConnection: one encodes outbound headers, one decodes the peer's
 // header blocks). The fuzzer drives:
 //   * the negotiated dynamic-table capacity (including 0 = disabled),
@@ -29,6 +29,7 @@
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
 
+#include "http3/qpack/qpack_decoder.h"
 #include "http3/qpack/qpack_encoder.h"
 
 namespace {
@@ -80,7 +81,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     size -= 4;
 
     quicx::http3::QpackEncoder enc;
-    quicx::http3::QpackEncoder dec;
+    quicx::http3::QpackDecoder dec;
 
     enc.SetLocalMaxTableCapacity(cap);
     enc.SetPeerMaxTableCapacity(cap);  // fuzz plays both SETTINGS sides
@@ -90,7 +91,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
 
     // Bridge: encoder instructions -> decoder table, insert-count delta back.
     quicx::http3::QpackEncoder* enc_p = &enc;
-    quicx::http3::QpackEncoder* dec_p = &dec;
+    quicx::http3::QpackDecoder* dec_p = &dec;
     enc.SetInstructionSender([enc_p, dec_p](const FieldList& inserts) {
         // Build the instruction bytes with a scratch encoder the way the
         // production QpackEncoderSenderStream does, then feed them to the

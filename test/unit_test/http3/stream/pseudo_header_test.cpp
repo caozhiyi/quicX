@@ -243,5 +243,113 @@ TEST_F(PseudoHeaderTest, ResponseMultipleHeadersEncodeDecodeCombined) {
     EXPECT_EQ(*FindValue(headers, "vary"), "Accept");
 }
 
+// ---------------------------------------------------------------------------
+// P1-H6a (RFC 9114 §4.3, h3spec-style): a malformed request field section
+// MUST be rejected (H3_MESSAGE_ERROR at the caller) instead of silently
+// producing a request with missing parts.
+// ---------------------------------------------------------------------------
+
+TEST_F(PseudoHeaderTest, MissingMethodPseudoHeaderRejected) {
+    request_->SetHeaders({{":path", "/"}, {":scheme", "https"}, {":authority", "a.com"}});
+    EXPECT_FALSE(PseudoHeader::Instance().DecodeRequest(request_));
+}
+
+TEST_F(PseudoHeaderTest, DuplicatedPathPseudoHeaderRejected) {
+    request_->SetHeaders({{":method", "GET"}, {":scheme", "https"}, {":path", "/"}, {":path", "/x"}});
+    EXPECT_FALSE(PseudoHeader::Instance().DecodeRequest(request_));
+}
+
+TEST_F(PseudoHeaderTest, PseudoHeaderAfterRegularFieldRejected) {
+    request_->SetHeaders({{"content-type", "text/plain"}, {":method", "GET"}, {":scheme", "https"}, {":path", "/"}});
+    EXPECT_FALSE(PseudoHeader::Instance().DecodeRequest(request_));
+}
+
+TEST_F(PseudoHeaderTest, UnknownPseudoHeaderRejected) {
+    request_->SetHeaders({{":method", "GET"}, {":scheme", "https"}, {":path", "/"}, {":foo", "bar"}});
+    EXPECT_FALSE(PseudoHeader::Instance().DecodeRequest(request_));
+}
+
+TEST_F(PseudoHeaderTest, UppercaseRegularFieldNameRejected) {
+    request_->SetHeaders({{":method", "GET"}, {":scheme", "https"}, {":path", "/"}, {"Content-Type", "text/plain"}});
+    EXPECT_FALSE(PseudoHeader::Instance().DecodeRequest(request_));
+}
+
+TEST_F(PseudoHeaderTest, ConnectionSpecificFieldRejected) {
+    request_->SetHeaders({{":method", "GET"}, {":scheme", "https"}, {":path", "/"}, {"connection", "close"}});
+    EXPECT_FALSE(PseudoHeader::Instance().DecodeRequest(request_));
+}
+
+TEST_F(PseudoHeaderTest, WellFormedRequestStillDecodes) {
+    request_->SetHeaders({{":method", "GET"}, {":scheme", "https"}, {":path", "/a"}, {":authority", "a.com"},
+        {"content-type", "text/plain"}});
+    EXPECT_TRUE(PseudoHeader::Instance().DecodeRequest(request_));
+    EXPECT_EQ(request_->GetMethod(), HttpMethod::kGet);
+    EXPECT_EQ(request_->GetPath(), "/a");
+}
+
+// ---------------------------------------------------------------------------
+// RFC 9114 4.4 CONNECT: :method + :authority only; :scheme / :path forbidden.
+// ---------------------------------------------------------------------------
+
+TEST_F(PseudoHeaderTest, ConnectWithAuthorityOnlyIsAccepted) {
+    request_->SetHeaders({{":method", "CONNECT"}, {":authority", "example.com:443"}, {"user-agent", "t"}});
+    ASSERT_TRUE(PseudoHeader::Instance().DecodeRequest(request_));
+    EXPECT_EQ(request_->GetMethod(), HttpMethod::kConnect);
+    EXPECT_EQ(request_->GetAuthority(), "example.com:443");
+}
+
+TEST_F(PseudoHeaderTest, ConnectWithSchemeOrPathIsRejected) {
+    request_->SetHeaders({{":method", "CONNECT"}, {":scheme", "https"}, {":authority", "a.com:443"}});
+    EXPECT_FALSE(PseudoHeader::Instance().DecodeRequest(request_));
+    request_->SetHeaders({{":method", "CONNECT"}, {":authority", "a.com:443"}, {":path", "/"}});
+    EXPECT_FALSE(PseudoHeader::Instance().DecodeRequest(request_));
+}
+
+TEST_F(PseudoHeaderTest, ConnectWithoutOrWithEmptyAuthorityIsRejected) {
+    request_->SetHeaders({{":method", "CONNECT"}});
+    EXPECT_FALSE(PseudoHeader::Instance().DecodeRequest(request_));
+    request_->SetHeaders({{":method", "CONNECT"}, {":authority", ""}});
+    EXPECT_FALSE(PseudoHeader::Instance().DecodeRequest(request_));
+}
+
+TEST_F(PseudoHeaderTest, ExtendedConnectProtocolPseudoHeaderStaysRejected) {
+    // RFC 9220 needs SETTINGS_ENABLE_CONNECT_PROTOCOL, which is not offered.
+    request_->SetHeaders({{":method", "CONNECT"}, {":protocol", "websocket"}, {":scheme", "https"},
+        {":path", "/"}, {":authority", "a.com"}});
+    EXPECT_FALSE(PseudoHeader::Instance().DecodeRequest(request_));
+}
+
+TEST_F(PseudoHeaderTest, EncodeConnectOmitsSchemeAndPath) {
+    request_->SetMethod(HttpMethod::kConnect);
+    request_->SetAuthority("example.com:443");
+    request_->SetPath("/ignored");
+    request_->SetScheme("https");
+    PseudoHeader::Instance().EncodeRequest(request_);
+    bool has_scheme = false, has_path = false, has_authority = false;
+    for (const auto& f : request_->GetHeaders()) {
+        has_scheme |= (f.first == ":scheme");
+        has_path |= (f.first == ":path");
+        has_authority |= (f.first == ":authority");
+    }
+    EXPECT_FALSE(has_scheme);
+    EXPECT_FALSE(has_path);
+    EXPECT_TRUE(has_authority);
+    // And a conforming peer (us) accepts what we produced.
+    EXPECT_TRUE(PseudoHeader::Instance().DecodeRequest(request_));
+}
+
+TEST_F(PseudoHeaderTest, EncodeNonConnectStillCarriesAllFourPseudoHeaders) {
+    request_->SetMethod(HttpMethod::kGet);
+    request_->SetAuthority("a.com");
+    request_->SetPath("/x");
+    request_->SetScheme("https");
+    PseudoHeader::Instance().EncodeRequest(request_);
+    int pseudo = 0;
+    for (const auto& f : request_->GetHeaders()) {
+        if (!f.first.empty() && f.first[0] == ':') ++pseudo;
+    }
+    EXPECT_EQ(pseudo, 4);
+}
+
 }  // namespace http3
 }  // namespace quicx

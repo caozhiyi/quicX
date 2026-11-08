@@ -12,7 +12,7 @@ bool RouterNodeRoot::Match(
     // check match done
     if (path_offset < 0 || static_cast<size_t>(path_offset) >= path.length()) {
         // match done, current node is the last node
-        if (type_ == RouterNodeType::RNT_STATIC_PATH) {
+        if (HasRouteHandler()) {  // P1-H8: see router_node_static_path.cpp
             result.config = config_;
             result.is_match = true;
             return true;

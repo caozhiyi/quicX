@@ -28,7 +28,7 @@ IConnection::IConnection(const std::string& unique_id, const Http3Settings& sett
     cleanup_timer_id_(0),
     is_destroying_(std::make_shared<std::atomic<bool>>(false)) {
     qpack_encoder_ = std::make_shared<QpackEncoder>();
-    qpack_decoder_ = std::make_shared<QpackEncoder>();
+    qpack_decoder_ = std::make_shared<QpackDecoder>();
     blocked_registry_ = std::make_shared<QpackBlockedRegistry>();
 
     // NOTE: SetStreamStateCallBack is wired in Init() (not here) because
@@ -103,6 +103,7 @@ void IConnection::SetupControlAndQpackStreams() {
     auto encoder_sender = std::make_shared<QpackEncoderSenderStream>(
         std::dynamic_pointer_cast<IQuicSendStream>(qpack_enc_stream), MakeErrorHandler());
     streams_[encoder_sender->GetStreamID()] = encoder_sender;
+    qpack_encoder_sender_ = encoder_sender;  // retained for P1-H4a Set Capacity
 
     // Use weak_ptr to avoid circular reference (encoder lambda -> shared_ptr -> connection -> encoder)
     std::weak_ptr<QpackEncoderSenderStream> weak_enc = encoder_sender;
@@ -333,6 +334,21 @@ void IConnection::HandleSettings(const std::unordered_map<uint64_t, uint64_t>& s
         LOG_DEBUG("HandleSettings: peer qpack_max_table_capacity=%u, encoder cap set to %u", peer_cap,
             qpack_encoder_->GetMaxTableCapacity());
     }
+
+    // P1-H4a (RFC 9204 §4.3.1): once the peer's SETTINGS are known, the
+    // encoder MUST send Set Dynamic Table Capacity before inserting entries
+    // — the peer's decoder table starts at 0, so without this instruction
+    // every referenced insert would be undecodable on the other side. Send
+    // min(local, peer) (what GetMaxTableCapacity() now computes) whenever
+    // the negotiated capacity is non-zero. SETTINGS arrives exactly once
+    // (duplicate SETTINGS is a connection error, see the control stream), so
+    // this cannot double-send.
+    uint64_t negotiated_cap = qpack_encoder_->GetMaxTableCapacity();
+    if (negotiated_cap > 0 && qpack_encoder_sender_) {
+        LOG_INFO("HandleSettings: sending Set Dynamic Table Capacity=%llu on QPACK encoder stream",
+            (unsigned long long)negotiated_cap);
+        qpack_encoder_sender_->SendSetCapacity(negotiated_cap);
+    }
 }
 
 std::function<void(uint64_t, uint32_t)> IConnection::MakeErrorHandler() {
@@ -346,8 +362,82 @@ std::function<void(uint64_t, uint32_t)> IConnection::MakeErrorHandler() {
         // terminal release (error_code 0 on FIN). Drop the unidentified
         // bookkeeping before dispatching.
         self->ReleaseUnidentifiedStream(stream_id);
-        self->HandleError(stream_id, error_code);
+        self->DispatchH3Error(stream_id, error_code);
     };
+}
+
+void IConnection::DispatchH3Error(uint64_t stream_id, uint32_t error_code) {
+    // Normal completion (error 0, e.g. UnidentifiedStream FIN release): no
+    // on-wire signalling, straight to the per-role cleanup path.
+    if (error_code == 0) {
+        HandleError(stream_id, 0);
+        return;
+    }
+
+    // Classify by stream kind: errors raised on critical streams are
+    // connection errors regardless of the code (RFC 9114 §6.2.1/§6.2.3).
+    bool critical_stream = false;
+    auto it = streams_.find(stream_id);
+    if (it != streams_.end() && it->second) {
+        switch (it->second->GetType()) {
+            case StreamType::kControl:
+            case StreamType::kQpackEncoder:
+            case StreamType::kQpackDecoder:
+            case StreamType::kUnidentified:
+                critical_stream = true;
+                break;
+            default:
+                break;
+        }
+    }
+
+    // What goes on the wire. A code that is not one of ours (a QUIC transport
+    // code, or the value the peer chose in its own RESET_STREAM / STOP_SENDING)
+    // used to fall into GetErrorScope's default and be echoed straight back as
+    // our RESET_STREAM / STOP_SENDING / CONNECTION_CLOSE: a peer-controlled
+    // 32-bit value reflected to the peer. Replace it with a fixed code that
+    // says what actually happened -- a dead critical stream is
+    // H3_CLOSED_CRITICAL_STREAM (RFC 9114 6.2.1), an aborted request is
+    // H3_REQUEST_CANCELLED. The ORIGINAL code still reaches the local cleanup /
+    // user notification below, where it is useful for diagnosis and harmless.
+    uint32_t wire_code = error_code;
+    if (!IsKnownHttp3ErrorCode(error_code)) {
+        wire_code = critical_stream ? static_cast<uint32_t>(Http3ErrorCode::kClosedCriticalStream)
+                                    : static_cast<uint32_t>(Http3ErrorCode::kRequestCancelled);
+        LOG_WARN("IConnection: non-HTTP/3 error code 0x%x on stream %llu, sending 0x%x on the wire instead", error_code,
+            (unsigned long long)stream_id, wire_code);
+    }
+
+    const Http3ErrorScope scope = GetErrorScope(static_cast<Http3ErrorCode>(wire_code));
+
+    if (critical_stream || scope == Http3ErrorScope::kConnection) {
+        // Connection-level: QUIC CONNECTION_CLOSE carrying the H3 code so the
+        // peer actually observes the failure. Local stream cleanup happens
+        // first (HandleError erases the wrapper) so the connection teardown
+        // never races a half-registered stream.
+        LOG_ERROR("IConnection: connection-level H3 error 0x%x on stream %llu (critical=%d), closing connection",
+            error_code, (unsigned long long)stream_id, critical_stream ? 1 : 0);
+        HandleError(stream_id, error_code);
+        Close(wire_code);
+        return;
+    }
+
+    // Request-stream scope (kRequestStream, or kContextual on a bidi stream):
+    // reset the transport so the peer sees RESET_STREAM + STOP_SENDING with
+    // the H3 code instead of waiting forever for a response that never
+    // comes. Then run the ordinary local cleanup / user notification.
+    LOG_ERROR("IConnection: stream-level H3 error 0x%x on stream %llu, resetting stream transport",
+        error_code, (unsigned long long)stream_id);
+    if (it != streams_.end() && it->second) {
+        it->second->ResetTransport(wire_code);
+    }
+    // P1-H5c (RFC 9204 §4.4.2): the abandoned stream may still have
+    // unacknowledged header blocks at the peer's encoder — cancel them so
+    // the peer stops tracking acknowledgments for a dead stream.
+    if (qpack_decoder_) {
+        qpack_decoder_->CancelStreamFeedback(stream_id);
+    }
+    HandleError(stream_id, error_code);
 }
 
 std::function<void(const std::unordered_map<uint64_t, uint64_t>&)> IConnection::MakeSettingsHandler() {
@@ -393,10 +483,39 @@ bool IConnection::HandleStreamCommon(const std::shared_ptr<IQuicStream>& stream,
     // RecvStream forever, the local decoder dynamic table would never be
     // populated, header-block decode would stay blocked, and the connection
     // would hang -> http3 interop failure.
-    if (stream->GetDirection() == StreamDirection::kBidi && streams_.size() >= max_concurrent_streams_) {
-        LOG_ERROR("IConnection::HandleStream: max concurrent streams reached");
-        Close(Http3ErrorCode::kStreamCreationError);
-        return true;
+    //
+    // P1-H2g (RFC 9114 §5.1.1): the concurrent-open limit applies to REQUEST
+    // STREAMS only — the old check counted every entry in streams_
+    // (control / QPACK / unidentified wrappers included) and closed the WHOLE
+    // connection on overflow, killing perfectly legal traffic. Request
+    // streams are the bidi ReqResp wrappers; exceeding the limit now resets
+    // just the offending stream (H3_REQUEST_REJECTED, RFC 9114 §8.1) and
+    // leaves the connection healthy. (Hard transport enforcement of
+    // MAX_STREAMS remains the QUIC layer's job, RFC 9000 §19.6.)
+    if (stream->GetDirection() == StreamDirection::kBidi) {
+        uint64_t request_streams = 0;
+        for (const auto& entry : streams_) {
+            if (entry.second && (entry.second->GetType() == StreamType::kReqResp ||
+                    entry.second->GetType() == StreamType::kPush)) {
+                request_streams++;
+            }
+        }
+        if (request_streams >= max_concurrent_streams_) {
+            LOG_ERROR("IConnection::HandleStream: max concurrent REQUEST streams reached (%llu >= %llu), "
+                      "resetting new stream %llu with H3_REQUEST_REJECTED",
+                (unsigned long long)request_streams, (unsigned long long)max_concurrent_streams_,
+                (unsigned long long)stream->GetStreamID());
+            auto bidi = std::dynamic_pointer_cast<IQuicBidirectionStream>(stream);
+            if (bidi) {
+                bidi->Reset(static_cast<uint32_t>(Http3ErrorCode::kRequestRejected));
+            } else {
+                auto recv = std::dynamic_pointer_cast<IQuicRecvStream>(stream);
+                if (recv) {
+                    recv->Reset(static_cast<uint32_t>(Http3ErrorCode::kRequestRejected));
+                }
+            }
+            return true;  // handled (rejected): caller must not register it
+        }
     }
     return false;
 }
@@ -447,7 +566,7 @@ void IConnection::ReleaseUnidentifiedStream(uint64_t stream_id) {
 
 void IConnection::OnStreamTypeIdentified(
     uint64_t stream_type, std::shared_ptr<IQuicRecvStream> stream, std::shared_ptr<IBufferRead> remaining_data) {
-    LOG_DEBUG("IConnection: stream type %llu identified for stream %llu", stream_type, stream->GetStreamID());
+    LOG_DEBUG("IConnection: stream type %llu identified for stream %llu", stream_type, (unsigned long long)stream->GetStreamID());
 
     // Remove the temporary UnidentifiedStream
     if (unidentified_stream_count_ > 0) {
@@ -455,12 +574,55 @@ void IConnection::OnStreamTypeIdentified(
     }
     streams_.erase(stream->GetStreamID());
 
+    // P1-H2b (RFC 9114 §6.2.1/§6.2.3): the control stream and each QPACK
+    // stream may only be opened ONCE per direction. A second arrival is a
+    // protocol violation — H3_STREAM_CREATION_ERROR, a connection error.
+    switch (stream_type) {
+        case static_cast<uint64_t>(StreamType::kControl):
+            if (control_stream_received_) {
+                LOG_ERROR("IConnection: duplicate control stream (type %llu), H3_STREAM_CREATION_ERROR", stream_type);
+                Close(static_cast<uint32_t>(Http3ErrorCode::kStreamCreationError));
+                return;
+            }
+            control_stream_received_ = true;
+            break;
+        case static_cast<uint64_t>(StreamType::kQpackEncoder):
+            if (qpack_encoder_stream_received_) {
+                LOG_ERROR("IConnection: duplicate QPACK encoder stream, H3_STREAM_CREATION_ERROR");
+                Close(static_cast<uint32_t>(Http3ErrorCode::kStreamCreationError));
+                return;
+            }
+            qpack_encoder_stream_received_ = true;
+            break;
+        case static_cast<uint64_t>(StreamType::kQpackDecoder):
+            if (qpack_decoder_stream_received_) {
+                LOG_ERROR("IConnection: duplicate QPACK decoder stream, H3_STREAM_CREATION_ERROR");
+                Close(static_cast<uint32_t>(Http3ErrorCode::kStreamCreationError));
+                return;
+            }
+            qpack_decoder_stream_received_ = true;
+            break;
+        default:
+            break;
+    }
+
     auto typed_stream = CreateTypedStream(stream_type, stream);
     if (typed_stream) {
         streams_[stream->GetStreamID()] = typed_stream;
 
         // Feed remaining data to the new stream if any
         typed_stream->OnData(remaining_data, false, 0);
+    } else {
+        // P1-H2f (RFC 9114 §6.2.3): an unknown unidirectional stream type
+        // MUST be ignored — but "ignored" means we stop reading it and tell
+        // the peer to stop sending. STOP_SENDING carries the H3 error code
+        // (RecvStream::Reset on the peer-opened half emits exactly that
+        // frame) so the peer observes the rejection instead of pumping
+        // bytes at a reader that will never drain them (amplification
+        // budget burn). ~22 bytes, well inside any remaining budget.
+        LOG_WARN("IConnection: unknown stream type %llu on stream %llu — STOP_SENDING + discard",
+            (unsigned long long)stream_type, (unsigned long long)stream->GetStreamID());
+        stream->Reset(static_cast<uint32_t>(Http3ErrorCode::kStreamCreationError));
     }
 }
 

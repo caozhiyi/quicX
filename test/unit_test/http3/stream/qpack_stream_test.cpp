@@ -9,6 +9,7 @@
 #include "http3/frame/qpack_encoder_frames.h"
 #include "http3/http/error.h"
 #include "http3/qpack/blocked_registry.h"
+#include "http3/qpack/qpack_decoder.h"
 #include "http3/stream/qpack_decoder_receiver_stream.h"
 #include "http3/stream/qpack_decoder_sender_stream.h"
 #include "http3/stream/qpack_encoder_receiver_stream.h"
@@ -36,6 +37,7 @@ protected:
         encoder_registry_ = std::make_shared<QpackBlockedRegistry>();
         decoder_registry_ = std::make_shared<QpackBlockedRegistry>();
         qpack_encoder_ = std::make_shared<QpackEncoder>();
+        qpack_decoder_ = std::make_shared<QpackDecoder>();
 
         auto encoder_error_cb = [this](
                                     uint64_t /*stream_id*/, uint32_t error_code) { encoder_error_code_ = error_code; };
@@ -44,7 +46,7 @@ protected:
 
         encoder_sender_ = std::make_shared<QpackEncoderSenderStream>(encoder_send_stream_, encoder_error_cb);
         encoder_receiver_ = std::make_shared<QpackEncoderReceiverStream>(
-            encoder_recv_stream_, qpack_encoder_, encoder_registry_, encoder_error_cb);
+            encoder_recv_stream_, qpack_decoder_, encoder_registry_, encoder_error_cb);
 
         decoder_sender_ = std::make_shared<QpackDecoderSenderStream>(decoder_send_stream_, decoder_error_cb);
         decoder_receiver_ = std::make_shared<QpackDecoderReceiverStream>(
@@ -73,6 +75,7 @@ protected:
     std::shared_ptr<QpackBlockedRegistry> encoder_registry_;
     std::shared_ptr<QpackBlockedRegistry> decoder_registry_;
     std::shared_ptr<QpackEncoder> qpack_encoder_;
+    std::shared_ptr<QpackDecoder> qpack_decoder_;
 
     std::shared_ptr<QpackEncoderSenderStream> encoder_sender_;
     std::shared_ptr<QpackEncoderReceiverStream> encoder_receiver_;
@@ -116,9 +119,11 @@ TEST_F(QpackStreamTest, DecoderSenderReceiverRoundTrip) {
 
     EXPECT_TRUE(decoder_sender_->SendSectionAck(header_block_id));
 
+    // A Section Acknowledgment is feedback for OUR encoder, not for our
+    // decoder's blocked sections (RFC 9204 4.4.1): the registry is untouched.
     EXPECT_EQ(decoder_error_code_, 0u);
-    EXPECT_EQ(decoder_ack_count_, 1u);
-    EXPECT_EQ(decoder_registry_->GetBlockedCount(), 0u);
+    EXPECT_EQ(decoder_ack_count_, 0u);
+    EXPECT_EQ(decoder_registry_->GetBlockedCount(), 1u);
 
     // RFC 9204 §4.4.3: Insert Count Increment is purely advisory state for
     // our encoder.  When received on the *decoder receiver* stream it MUST
@@ -130,7 +135,7 @@ TEST_F(QpackStreamTest, DecoderSenderReceiverRoundTrip) {
     EXPECT_TRUE(decoder_sender_->SendInsertCountIncrement(4));
     EXPECT_EQ(decoder_error_code_, 0u);
     EXPECT_EQ(decoder_notify_count_, 0u);
-    EXPECT_EQ(decoder_registry_->GetBlockedCount(), 1u);
+    EXPECT_EQ(decoder_registry_->GetBlockedCount(), 2u);
 }
 
 }  // namespace

@@ -67,8 +67,7 @@ void BBRv1CongestionControl::Configure(const CcConfigV2& cfg) {
     probe_rtt_done_stamp_valid_ = false;
     probe_rtt_done_stamp_us_ = 0;
 
-    bw_sample_start_us_ = 0;
-    bw_sample_bytes_acc_ = 0;
+    rate_sampler_.Reset();
 
     pacer_.reset(new NormalPacer());
 }
@@ -94,11 +93,21 @@ void BBRv1CongestionControl::OnPacketSent(const SentPacketEvent& ev) {
     if (end_of_round_pn_ == 0 || ev.pn > end_of_round_pn_) {
         end_of_round_pn_ = ev.pn;
     }
+    // P1-CC1: app-limited bookkeeping — even after this packet less than
+    // half the window is in flight: the rate measured from here on reflects
+    // the app's supply, not the path.
+    if (bytes_in_flight_ < cwnd_bytes_ / 2) {
+        rate_sampler_.SetAppLimited();
+    } else {
+        rate_sampler_.ClearAppLimited();
+    }
+    rate_sampler_.OnPacketSent(ev.pn, ev.bytes, ev.sent_time);
     if (pacer_) pacer_->OnPacketSent(ev.sent_time, static_cast<size_t>(ev.bytes));  // us: matches the pacer contract
 }
 
 void BBRv1CongestionControl::OnPacketAcked(const AckEvent& ev) {
     bytes_in_flight_ = (bytes_in_flight_ > ev.bytes_acked) ? bytes_in_flight_ - ev.bytes_acked : 0;
+    last_ack_time_us_ = ev.ack_time;
 
     // ECN-CE: reduce pacing gain slightly and cap cwnd to BDP to react to congestion
     if (ev.ecn_ce) {
@@ -110,30 +119,25 @@ void BBRv1CongestionControl::OnPacketAcked(const AckEvent& ev) {
         return;
     }
 
-    // Update min_rtt timestamp when min_rtt is updated (from OnRoundTripSample)
-    // This must be done after RTT sample is taken
-    if (min_rtt_stamp_us_ == 0 || srtt_us_ <= min_rtt_us_) {
-        min_rtt_stamp_us_ = ev.ack_time;
+    // P1-CC2: full-bandwidth accounting once per ROUND (packet-number
+    // delimited), not on every ACK.
+    if (ev.pn >= round_end_pn_) {
+        round_end_pn_ = end_of_round_pn_;
+        CheckFullBandwidthReached(ev.ack_time);
     }
 
-    // Aggregate bandwidth samples over at least one SRTT to avoid underestimation
-    if (srtt_us_ > 0) {
-        if (bw_sample_start_us_ == 0) {
-            bw_sample_start_us_ = ev.ack_time;
-            bw_sample_bytes_acc_ = ev.bytes_acked;
-        } else {
-            bw_sample_bytes_acc_ += ev.bytes_acked;
-            uint64_t elapsed = ev.ack_time - bw_sample_start_us_;
-            if (elapsed >= srtt_us_) {
-                uint64_t bytes_per_sec = MulDiv(bw_sample_bytes_acc_, 1000000ull, elapsed);
-                UpdateMaxBandwidth(bytes_per_sec, ev.ack_time);
-                bw_sample_start_us_ = ev.ack_time;
-                bw_sample_bytes_acc_ = 0;
-            }
-        }
+    // P1-CC1: per-packet delivery-rate sample (BBR draft §4.5.2) — every
+    // ACK updates the bandwidth estimate immediately, instead of waiting a
+    // full SRTT to accumulate one coarse aggregate sample. App-limited
+    // samples are only trusted when they beat the current maximum (they
+    // measure the app's supply, not the path's capacity).
+    DeliveryRateSampler::RateSample rs;
+    rate_sampler_.OnPacketAcked(ev.pn, ev.bytes_acked, ev.ack_time, rs);
+    if (rs.valid && rs.delivery_rate_bps > 0 && (!rs.is_app_limited || rs.delivery_rate_bps > max_bw_bps_)) {
+        UpdateMaxBandwidth(rs.delivery_rate_bps, ev.ack_time);
     }
 
-    CheckFullBandwidthReached(ev.ack_time);
+    CheckDrainComplete(ev.ack_time);
     MaybeEnterOrExitProbeRtt(ev.ack_time);
 
     // Update cwnd toward target but do not reduce cwnd on ACK
@@ -153,6 +157,7 @@ void BBRv1CongestionControl::OnPacketAcked(const AckEvent& ev) {
 
 void BBRv1CongestionControl::OnPacketLost(const LossEvent& ev) {
     bytes_in_flight_ = (bytes_in_flight_ > ev.bytes_lost) ? bytes_in_flight_ - ev.bytes_lost : 0;
+    rate_sampler_.OnPacketLost(ev.pn);  // P1-CC1: drop the snapshot; lost bytes never became delivered
     // BBR-Draft-02 §4.1.2: STARTUP exits to DRAIN on any of {bandwidth
     // plateau (handled in CheckFullBandwidthReached), high in-flight, or
     // packet loss}. We use the loss signal as the secondary trigger so
@@ -174,31 +179,34 @@ void BBRv1CongestionControl::OnPacketLost(const LossEvent& ev) {
     UpdatePacingRate();
 }
 
-void BBRv1CongestionControl::OnRoundTripSample(uint64_t latest_rtt, uint64_t ack_delay) {
-    (void)ack_delay;
-    // Guarantee a minimum RTT of 1us to prevent division by zero and
-    // to ensure bandwidth sampling progresses on loopback paths where
-    // send_time_ms == ack_time_ms (millisecond clock granularity).
-    if (latest_rtt == 0) latest_rtt = 1;
-    if (srtt_us_ == 0) srtt_us_ = latest_rtt;
-    srtt_us_ = (7 * srtt_us_ + latest_rtt) / 8;
-    if (srtt_us_ == 0) srtt_us_ = 1;  // guard against EWMA rounding to zero
-    // Note: min_rtt timestamp is updated in OnPacketAcked where ack_time is available
-    if (min_rtt_us_ == 0 || latest_rtt < min_rtt_us_) {
-        min_rtt_us_ = latest_rtt;
+void BBRv1CongestionControl::OnRoundTripSample(
+    uint64_t latest_rtt_us, uint64_t min_rtt_us, uint64_t smoothed_rtt_us, uint64_t ack_delay_us) {
+    (void)ack_delay_us;
+    if (latest_rtt_us == 0) latest_rtt_us = 1;  // loopback: sub-tick sample
+    // P1-P4: host RttCalculator already ran the RFC 9002 5.3 EWMA - take its
+    // outputs instead of smoothing a second time (the old double EWMA made
+    // SRTT lag one extra RTT behind real RTT changes).
+    srtt_us_ = std::max<uint64_t>(smoothed_rtt_us, 1);
+    uint64_t min_candidate = (min_rtt_us > 0) ? min_rtt_us : latest_rtt_us;
+    if (min_rtt_us_ == 0 || min_candidate < min_rtt_us_) {
+        min_rtt_us_ = min_candidate;
+        // P1-CC2: the RTprop timestamp moves ONLY on a new minimum. The old
+        // condition (refresh while `srtt_us_ <= min_rtt_us_`) refreshed it on
+        // nearly every EWMA down-crossing, so the 10s expiry that gates
+        // ProbeRTT never fired and min_rtt could silently go stale.
+        if (last_ack_time_us_ > 0) {
+            min_rtt_stamp_us_ = last_ack_time_us_;
+        }
     }
 }
 
 ICongestionControl::SendState BBRv1CongestionControl::CanSend(uint64_t now, uint64_t& can_send_bytes) const {
     (void)now;
-    uint64_t target = BdpBytes(static_cast<uint64_t>(cwnd_gain_ * 1000), 1000);
-    // Ensure target is at least cwnd_bytes_ to prevent BDP underestimation
-    // from throttling the sender when the real bottleneck is elsewhere.
-    // On low-RTT paths (loopback, LAN), BDP × gain can be much smaller than
-    // the actual achievable window; using cwnd_bytes_ as a floor keeps the
-    // sender making progress at the rate that bandwidth sampling measured.
-    target = std::max<uint64_t>(target, cwnd_bytes_);
-    uint64_t left = (target > bytes_in_flight_) ? (target - bytes_in_flight_) : 0;
+    // P1-CC2: the in-flight cap is cwnd_bytes_ itself — the value OnPacketAcked
+    // derives from BDP × cwnd_gain. The old `max(BDP×gain, cwnd)` floor made
+    // every explicit cwnd reduction a no-op: ProbeRTT's 4×MSS window (and the
+    // ECN-CE BDP cap) never actually limited sending.
+    uint64_t left = (cwnd_bytes_ > bytes_in_flight_) ? (cwnd_bytes_ - bytes_in_flight_) : 0;
     can_send_bytes = left;
     if (left == 0) {
         return SendState::kBlockedByCwnd;
@@ -324,11 +332,13 @@ void BBRv1CongestionControl::CheckFullBandwidthReached(uint64_t now_us) {
     if (max_bw_bps_ == 0) return;
     // BBR-Draft-02 §4.1.1.2 "Estimating when Startup has filled the pipe":
     // declare the pipe full once delivery rate has stopped growing — i.e.
-    // three rounds in a row where the new max-bandwidth sample is not at
+    // three ROUNDS in a row where the new max-bandwidth sample is not at
     // least 25% above the previous full_bw estimate. This is BBR's
     // analogue of CUBIC's slow-start exit (RFC 9438 §4.6 ssthresh hit) /
     // Reno's first loss (RFC 9002 §7.3.1), but signal-driven instead of
     // event-driven so it works on lossless paths too.
+    // P1-CC2: this runs once per round (see OnPacketAcked) — the old
+    // per-ACK counting treated every sample as a round boundary.
     if (full_bw_bps_ == 0 || max_bw_bps_ > full_bw_bps_ * 125 / 100) {
         full_bw_bps_ = max_bw_bps_;
         full_bw_cnt_ = 0;
@@ -347,6 +357,9 @@ void BBRv1CongestionControl::CheckFullBandwidthReached(uint64_t now_us) {
             SetCwndGain(2.0);
         }
     }
+}
+
+void BBRv1CongestionControl::CheckDrainComplete(uint64_t now_us) {
     if (mode_ == Mode::kDrain) {
         // Drain until in-flight <= BDP
         uint64_t bdp = BdpBytes(1000, 1000);

@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <limits>
 
 #include "quic/config.h"
 
@@ -30,6 +31,25 @@ public:
     ~RttCalculator();
 
     bool UpdateRtt(uint64_t send_time, uint64_t now, uint64_t ack_delay);
+
+    // ---- P1-P4 microsecond domain (consumed by congestion control) ----
+    //
+    // The millisecond domain above feeds PTO / loss detection and stays
+    // byte-compatible with the pre-existing behavior. The us domain below
+    // receives the SAME samples at full steady_clock resolution, so CC
+    // algorithms observe sub-millisecond RTT changes (crosstraffic bursts,
+    // loopback) instead of quantized millisecond steps. Both domains run the
+    // identical RFC 9002 §5.3 EWMA independently.
+    bool UpdateRttUs(uint64_t send_time_us, uint64_t now_us, uint64_t ack_delay_us);
+
+    // Us-domain observers. GetMinRttUs() returns 0 until the first sample.
+    uint64_t GetLatestRttUs() const { return latest_rtt_us_.load(std::memory_order_relaxed); }
+    uint64_t GetRttVarUs() const { return rtt_var_us_.load(std::memory_order_relaxed); }
+    uint64_t GetSmoothedRttUs() const { return smoothed_rtt_us_.load(std::memory_order_relaxed); }
+    uint64_t GetMinRttUs() const {
+        uint64_t v = min_rtt_us_.load(std::memory_order_relaxed);
+        return v == std::numeric_limits<uint64_t>::max() ? 0 : v;  // 0 = no sample yet (CC-friendly)
+    }
 
     void Reset();
 
@@ -78,6 +98,14 @@ private:
 
     std::atomic<uint64_t> last_update_time_{0};
     std::atomic<uint64_t> first_rtt_sample_time_{0};
+
+    // P1-P4 us-domain mirror of the four EWMA states above.
+    std::atomic<uint64_t> latest_rtt_us_{0};
+    std::atomic<uint64_t> rtt_var_us_{0};
+    std::atomic<uint64_t> min_rtt_us_{std::numeric_limits<uint64_t>::max()};
+    std::atomic<uint64_t> smoothed_rtt_us_{0};
+    std::atomic<uint64_t> last_update_time_us_{0};
+    std::atomic<uint64_t> first_rtt_sample_time_us_{0};
 
     // RFC 9002: PTO backoff state
     std::atomic<uint32_t> pto_count_{0};              // Current backoff exponent

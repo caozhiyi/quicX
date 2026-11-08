@@ -12,8 +12,11 @@
 
 #include "quic/connection/if_connection.h"
 
+#include "http3/http/error.h"
 #include "http3/qpack/blocked_registry.h"
+#include "http3/qpack/qpack_decoder.h"
 #include "http3/qpack/qpack_encoder.h"
+#include "http3/stream/qpack_encoder_sender_stream.h"
 #include "http3/stream/control_client_sender_stream.h"
 #include "http3/stream/if_recv_stream.h"
 #include "http3/stream/if_stream.h"
@@ -89,6 +92,19 @@ public:
      * @param error_code The error code
      */
     virtual void Close(uint32_t error_code);
+
+    // RFC 9114 §8 error dispatch (P1-H1). All stream-raised error_handler_
+    // callbacks funnel through MakeErrorHandler into here. Classification:
+    //  - error on a CRITICAL stream (control / QPACK / unidentified) or a
+    //    kConnection-scope code: close the connection with the H3 code
+    //    (QUIC CONNECTION_CLOSE carrying the application error).
+    //  - kRequestStream / kContextual code on a request (bidirectional)
+    //    stream: ResetTransport(code) — RESET_STREAM + STOP_SENDING so the
+    //    PEER observes the failure — then the local cleanup path.
+    //  - error 0: normal completion, straight to HandleError.
+    // HandleError (virtual, per-role cleanup + user notification) still runs
+    // in every case; this layer only adds the missing on-wire signalling.
+    void DispatchH3Error(uint64_t stream_id, uint32_t error_code);
 
     /**
      * @brief Initiate a graceful shutdown (RFC 9114 §5.2).
@@ -352,6 +368,14 @@ protected:
     static constexpr uint64_t kMaxUnidentifiedStreams = 4096;
     uint64_t unidentified_stream_count_ = 0;
 
+    // P1-H2b (RFC 9114 §6.2.1/§6.2.3): the control stream and each QPACK
+    // stream may be opened at most once per direction by the peer. A repeat
+    // is H3_STREAM_CREATION_ERROR (connection close, see
+    // OnStreamTypeIdentified).
+    bool control_stream_received_ = false;
+    bool qpack_encoder_stream_received_ = false;
+    bool qpack_decoder_stream_received_ = false;
+
     // Removes the UnidentifiedStream wrapper for stream_id (if any) and
     // decrements the pending count. Called on terminal release paths.
     void ReleaseUnidentifiedStream(uint64_t stream_id);
@@ -366,6 +390,10 @@ protected:
     Http3Settings pending_settings_;
 
     // RFC 9204: Two independent QPACK contexts are required per connection.
+    // QPACK encoder sender stream (P1-H4a): retained so HandleSettings can
+    // emit Set Dynamic Table Capacity after learning the peer's cap.
+    std::shared_ptr<QpackEncoderSenderStream> qpack_encoder_sender_;
+
     // qpack_encoder_ holds the local encoder dynamic table: used when encoding
     // outgoing headers (Encode) and receives Section Ack / Insert Count Increment
     // feedback from the peer's decoder.
@@ -375,7 +403,7 @@ protected:
     // peer's encoder instructions (Insert With Name Ref, Insert Without Name Ref,
     // Duplicate, Set Capacity) received on the QPACK encoder receiver stream,
     // and used when decoding incoming HEADERS blocks (Decode).
-    std::shared_ptr<QpackEncoder> qpack_decoder_;
+    std::shared_ptr<QpackDecoder> qpack_decoder_;
 
     // Held weakly on purpose: the QUIC connection owns this IConnection via
     // IQuicConnection::SetContext, so a strong back-reference would form a

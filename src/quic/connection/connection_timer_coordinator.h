@@ -1,6 +1,7 @@
 #ifndef QUIC_CONNECTION_TIMER_COORDINATOR_H
 #define QUIC_CONNECTION_TIMER_COORDINATOR_H
 
+#include <algorithm>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -22,6 +23,20 @@ namespace quic {
 class SendManager;
 class TransportParam;
 class ConnectionStateMachine;
+
+// P0-C6 (RFC 9000 §10.1): effective idle timeout after negotiation.
+// `negotiated_ms` is the min of the advertised max_idle_timeout values
+// (merged by TransportParam::Merge); 0 means the timeout is disabled and
+// stays disabled. Otherwise floor at 3x PTO: an idle window shorter than
+// 3 PTOs would drop the connection before a lost flight could possibly be
+// retransmitted and answered, closing live connections on lossy/high-RTT
+// paths.
+inline uint32_t EffectiveIdleTimeoutMs(uint32_t negotiated_ms, uint32_t pto_ms) {
+    if (negotiated_ms == 0) {
+        return 0;
+    }
+    return std::max(negotiated_ms, pto_ms * 3);
+}
 
 /**
  * @brief Timer coordinator for connection-related timers

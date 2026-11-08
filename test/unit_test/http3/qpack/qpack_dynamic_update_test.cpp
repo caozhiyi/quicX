@@ -7,6 +7,7 @@
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
 
+#include "http3/qpack/qpack_decoder.h"
 #include "http3/qpack/qpack_encoder.h"
 #include "http3/qpack/util.h"
 
@@ -28,8 +29,9 @@ class QpackDynamicUpdateTest: public ::testing::Test {
 protected:
     void SetUp() override {
         // fresh instances for each test
-        decoder_ = std::make_unique<QpackEncoder>();
+        decoder_ = std::make_unique<QpackDecoder>();
         tx_ = std::make_unique<QpackEncoder>();
+        wire_ = std::make_unique<QpackEncoder>();  // writes header prefixes (encoder side)
     }
 
     // Helper to make a buffer with given capacity
@@ -39,8 +41,9 @@ protected:
         return std::make_shared<common::SingleBlockBuffer>(chunk);
     }
 
-    std::unique_ptr<QpackEncoder> decoder_;
+    std::unique_ptr<QpackDecoder> decoder_;
     std::unique_ptr<QpackEncoder> tx_;
+    std::unique_ptr<QpackEncoder> wire_;  // header-prefix writer (default cap, as before)
 };
 
 // Insert Without Name Reference, then decode a header block that indexes the dynamic table entry
@@ -57,7 +60,7 @@ TEST_F(QpackDynamicUpdateTest, InsertWithoutNameRef_ThenDecodeIndexedHeader) {
     // Build a header block that references the newest dynamic entry (absolute index 0)
     // For one inserted entry: RIC=1, BASE=1 → relative index for newest = 0
     auto hdr = MakeBuffer();
-    decoder_->WriteHeaderPrefix(hdr, /*required_insert_count*/ 1, /*base*/ 1);
+    wire_->WriteHeaderPrefix(hdr, /*required_insert_count*/ 1, /*base*/ 1);
     // Indexed Header Field — dynamic: first byte 10xxxxxx with 6-bit prefix, value = relative index
     ASSERT_TRUE(QpackEncodePrefixedInteger(hdr, 6, 0x80, /*relative_index*/ 0));
 
@@ -79,7 +82,7 @@ TEST_F(QpackDynamicUpdateTest, InsertWithStaticNameRef_ThenDecodeIndexedHeader) 
 
     // Generate header block referencing newest dynamic entry
     auto hdr = MakeBuffer();
-    decoder_->WriteHeaderPrefix(hdr, 1, 1);
+    wire_->WriteHeaderPrefix(hdr, 1, 1);
     ASSERT_TRUE(QpackEncodePrefixedInteger(hdr, 6, 0x80, 0));
 
     std::vector<std::pair<std::string, std::string>> headers;
@@ -107,7 +110,7 @@ TEST_F(QpackDynamicUpdateTest, DuplicateInstruction_CreatesSecondEntry) {
     // Now there should be two entries; build a header block that references both entries
     // With two inserts: RIC=2, BASE=2. Newest relative=0, next relative=1.
     auto hdr = MakeBuffer();
-    decoder_->WriteHeaderPrefix(hdr, 2, 2);
+    wire_->WriteHeaderPrefix(hdr, 2, 2);
     ASSERT_TRUE(QpackEncodePrefixedInteger(hdr, 6, 0x80, 0));  // newest
     ASSERT_TRUE(QpackEncodePrefixedInteger(hdr, 6, 0x80, 1));  // older duplicate
 
@@ -128,7 +131,7 @@ TEST_F(QpackDynamicUpdateTest, DecodeBlocked_WhenRICExceedsTable) {
 
     // Build a header block requiring 2 inserts while only 1 is available
     auto hdr = MakeBuffer();
-    decoder_->WriteHeaderPrefix(hdr, /*required_insert_count*/ 2, /*base*/ 2);
+    wire_->WriteHeaderPrefix(hdr, /*required_insert_count*/ 2, /*base*/ 2);
     // Even without any fields, decode should fail due to blocked state
     std::vector<std::pair<std::string, std::string>> headers;
     EXPECT_FALSE(decoder_->Decode(hdr, headers));

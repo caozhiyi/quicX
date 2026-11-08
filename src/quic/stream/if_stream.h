@@ -47,6 +47,17 @@ protected:
     void ToClose();
     void ToSend();
 
+    // P0-C10 / INV1: give a stream-level control frame an owner. With the
+    // whole-packet retransmission channel retired, a frame that leaves in a
+    // lost packet is only ever re-sent if SOMEONE re-queues it. These frames
+    // (RESET_STREAM, STOP_SENDING, MAX_STREAM_DATA, STREAM_DATA_BLOCKED) are
+    // written straight into the packet by the stream's own TrySendData, so
+    // the stream is the natural owner: on kLost/kProbe the SAME frame object
+    // goes back into frames_list_ (idempotent state, safe to repeat) and the
+    // stream is re-activated. `should_resend` lets a caller veto a resend that
+    // has become pointless (e.g. a window update superseded by a larger one).
+    void TrackControlFrame(const std::shared_ptr<IFrame>& frame, std::function<bool()> should_resend = nullptr);
+
 protected:
     void* user_data_ = nullptr;
 

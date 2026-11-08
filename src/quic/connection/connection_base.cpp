@@ -659,8 +659,15 @@ void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket
     // buffered.
     ReplayPending1RttPackets();
 
-    // reset idle timeout timer task
-    timer_coordinator_->ResetIdleTimer();
+    // P0-C6 (RFC 9000 §10.1): only packets that were successfully PROCESSED
+    // restart the idle timer. If every packet in this datagram failed
+    // authentication (or was dropped), treating it as activity would let an
+    // attacker keep an abandoned connection alive forever with garbage
+    // datagrams. ReplayPending1RttPackets() re-enters OnPackets for the
+    // buffered packets and restarts the timer itself if those decrypt.
+    if (any_packet_processed) {
+        timer_coordinator_->ResetIdleTimer();
+    }
 }
 
 bool BaseConnection::CheckStatelessReset(const std::vector<std::shared_ptr<IPacket>>& packets) {
@@ -1027,12 +1034,10 @@ bool BaseConnection::OnNormalPacket(
         LOG_ERROR("decode packet after decrypt failed.");
         // A 1-RTT packet we cannot decrypt means the peer already holds 1-RTT
         // write keys, i.e. it considers the handshake confirmed and has sent
-        // its Finished (RFC 9000 §4.1.2). Record that: TrySendRetransmit()
-        // uses it to stop re-sending Initial the peer already consumed, and the
-        // PTO path then probes at Handshake level instead, which elicits an ACK
-        // exposing the missing Finished.
+        // its Finished (RFC 9000 §4.1.2). The PTO path then probes at
+        // Handshake level instead of Initial, which elicits an ACK exposing the
+        // missing Finished.
         if (packet->GetCryptoLevel() == kApplication) {
-            peer_sent_undecryptable_1rtt_ = true;
             // Tell SendControl to skip Initial packets during PTO so the
             // probe targets Handshake level, eliciting an ACK that surfaces
             // the missing Finished.
@@ -1332,7 +1337,24 @@ void BaseConnection::OnIdleTimeout() {
     // Metrics: Idle timeout
     Metrics::CounterInc(common::MetricsStd::IdleTimeoutTotal);
 
-    InnerConnectionClose(QuicErrorCode::kNoError, 0, "idle timeout.");
+    // P0-C6 (RFC 9000 §10.1): an idle-timeout expiry closes the connection
+    // SILENTLY — discard state without sending a CONNECTION_CLOSE. By
+    // definition of the idle timer, the peer has processed no packets from
+    // us and sent no ack-eliciting packets for the whole negotiated window:
+    // it is gone (or stuck) too, so there is nobody to notify, and a close
+    // frame could not be amplified anyway. Contrast with Close(), which is
+    // the active-close path and does announce itself. An already closing/
+    // draining connection keeps its own (stronger) teardown semantics.
+    if (state_machine_.IsTerminating()) {
+        return;
+    }
+    LOG_INFO("idle timeout expired, discarding connection state silently");
+    // ResetAllStreams only mutates local stream state + drains pending
+    // stream-request callbacks (no frames are emitted: the state flips to
+    // Closed first and the send path is already rejected for terminating
+    // connections).
+    stream_manager_->ResetAllStreams(static_cast<uint64_t>(QuicErrorCode::kNoError));
+    state_machine_.OnSilentClose();
 }
 
 void BaseConnection::OnClosingTimeout() {
@@ -1369,16 +1391,23 @@ void BaseConnection::OnFrameReady(std::shared_ptr<IFrame> frame) {
     // Frame-owner loss response (IFrame::SetDeliveryHandler): the flow-control
     // MAX_* frames are pure value frames whose only RFC 9000 fallback is the
     // peer's BLOCKED probe — one extra round trip, and dead air if that probe
-    // is lost too. Attach the generic requeue here, at the single enqueue
-    // entry point, so every producer stays oblivious. (NCI/RETIRE carry their
-    // own fresh-state handlers; CRYPTO/STREAM recovery is owned by their
-    // streams; RecvStream's visitor-direct MAX_STREAM_DATA frames bypass
-    // this entry but have the STREAM_DATA_BLOCKED self-heal path.)
+    // is lost too. The informational *_BLOCKED frames are the mirror image:
+    // their producers de-duplicate per limit value (a lost one is never
+    // minted again), so without a handler a lost STREAMS_BLOCKED leaves the
+    // peer unaware that we are stuck. Attach the generic requeue here, at the
+    // single enqueue entry point, so every producer stays oblivious.
+    // (NCI/RETIRE carry their own fresh-state handlers; CRYPTO/STREAM
+    // recovery is owned by their streams; stream-level control frames that
+    // bypass this entry — RESET_STREAM, STOP_SENDING, MAX_STREAM_DATA,
+    // STREAM_DATA_BLOCKED — are tracked by IStream::TrackControlFrame.)
     switch (frame->GetType()) {
         case FrameType::kMaxData:
         case FrameType::kMaxStreamData:
         case FrameType::kMaxStreamsBidirectional:
         case FrameType::kMaxStreamsUnidirectional:
+        case FrameType::kDataBlocked:
+        case FrameType::kStreamsBlockedBidirectional:
+        case FrameType::kStreamsBlockedUnidirectional:
             send_manager_.AttachRequeueOnLoss(frame);
             break;
         default:
@@ -2004,374 +2033,6 @@ void BaseConnection::OnStateToClosed() {
 
 // ==================== New High-Level Send Interfaces Implementation ====================
 
-bool BaseConnection::TrySendRetransmit() {
-    // RFC 9000 §13.3: Retransmit lost packets first.
-    // QUIC does not retransmit lost packets directly. Instead, the lost packet
-    // (which still holds its original payload/frames) is re-encoded with a new
-    // packet number and re-encrypted, then sent as a brand-new packet.
-    auto& send_control = send_manager_.GetSendControl();
-    auto& lost_packets = send_control.GetLostPacket();
-
-    // RFC 9001 4.9.1/4.9.2 terminal gate: after handshake confirmation the
-    // peer has dropped (or is dropping) its Initial/Handshake keys, so a
-    // re-sent Initial/Handshake packet can never be decrypted, let alone
-    // ACKed. Entries can still land here from windows where the space
-    // discard had not run yet (e.g. declared lost before confirmation, the
-    // retransmit attempt happens after). Re-sending them re-enters the
-    // unacked table and re-arms loss detection — the self-sustaining
-    // ~200pps probe storm of the crosstraffic interop failure. Drain such
-    // entries instead of re-sending them.
-    while (!lost_packets.empty()) {
-        auto& stale_pkt = lost_packets.front().packet;
-        if (stale_pkt && send_control.IsHandshakeComplete() &&
-            (stale_pkt->GetCryptoLevel() == kInitial || stale_pkt->GetCryptoLevel() == kHandshake)) {
-            LOG_INFO(
-                "BaseConnection::TrySendRetransmit: handshake confirmed, dropping stale %s-level retransmission "
-                "pn=%llu",
-                stale_pkt->GetCryptoLevel() == kInitial ? "Initial" : "Handshake",
-                (unsigned long long)stale_pkt->GetPacketNumber());
-            lost_packets.pop_front();
-            continue;
-        }
-        break;
-    }
-    if (lost_packets.empty()) {
-        return false;
-    }
-
-    auto lost_entry = lost_packets.front();
-    lost_packets.pop_front();
-    auto lost_pkt = lost_entry.packet;
-
-    // Determine encryption level and get cryptographer
-    auto crypto_level = lost_pkt->GetCryptoLevel();
-
-    // Peer already sent 1-RTT => it considers the handshake confirmed, which
-    // means it has received every handshake byte we sent, Initial included
-    // (RFC 9000 §4.1.2). Re-sending Initial now is pure waste: the peer will
-    // not learn anything new from it.
-    //
-    // Interop handshakecorruption (30% bit flips) hit exactly this: the peer's
-    // Finished was lost, so our TLS never completed and we had no 1-RTT read
-    // key, while the peer had moved on and was sending 1-RTT application data.
-    // We spent ~18 s retransmitting Initial the peer had already consumed, then
-    // timed out with "downloaded: 0 bytes".
-    //
-    // Skipping it lets the PTO path fall through to a probe at Handshake level
-    // (RFC 9002 §6.2.4 permits probing in Initial/Handshake before the handshake
-    // is confirmed), which elicits an ACK and surfaces the missing Finished.
-    //
-    // EXCEPTION — Initial packets carrying CRYPTO (our ServerHello) MUST still
-    // be retransmitted. The §4.1.2 inference above is broken for 0-RTT: a PSK
-    // client holds early-traffic keys WITHOUT having received any of our
-    // flight, so an undecryptable 1-RTT packet does NOT imply it consumed our
-    // Initial. Observed (2026-09-02, picoquic handshakeloss 30% loss): resumed
-    // connections sent 0-RTT right after the ClientHello, the ServerHello was
-    // lost, and this skip suppressed its retransmission forever — the client
-    // never saw a ServerHello and the connection stalled to the 300 s timeout.
-    if (peer_sent_undecryptable_1rtt_ && crypto_level == kInitial &&
-        !(lost_pkt->GetFrameTypeBit() & FrameTypeBit::kCryptoBit)) {
-        LOG_INFO("BaseConnection::TrySendRetransmit: skipping Initial retransmission, peer already sent 1-RTT");
-        return !lost_packets.empty();  // try next lost packet
-    }
-
-    // Frame-level delivery owns pure-CRYPTO handshake packets now: the lost
-    // CRYPTO frames were re-queued as segments by their delivery handlers
-    // (CryptoStream::OnFrameDelivery) and the normal send path re-emits them
-    // sized to the current budget. Re-encoding the whole packet here as well
-    // would double-send the same bytes — the peer dedupes by CRYPTO offset,
-    // but we would pay the bytes twice out of cwnd, and under a starved
-    // §8.1 budget the full-size copy is refused at the emitter anyway (the
-    // deadlock this whole path used to be). Skipped packets are dropped, not
-    // re-queued. Mixed 1-RTT packets that also carry STREAM data are NOT
-    // skipped: their re-encode is still the STREAM recovery path.
-    //
-    // EXCEPTION (longrtt regression, 2026-10-27): PTO-probe entries
-    // (lost_entry.pto_probe) must NOT be dropped. OnLossDetectionTimeout
-    // deliberately fires no frame kLost (PTO is not a loss event), so the
-    // frame-level re-queue never happened — dropping here discards the only
-    // copy of the probe payload and the PTO cycle degrades to a PING (the
-    // "Expected at least 2 ClientHellos. Got: 1" client-mode longrtt wipe:
-    // at 750ms one-way delay the initial PTO fires before the server flight
-    // returns, and the ClientHello was never retransmitted).
-    if (!lost_entry.pto_probe && crypto_level != kApplication &&
-        (lost_pkt->GetFrameTypeBit() &
-            ~(FrameTypeBit::kCryptoBit | FrameTypeBit::kAckBit | FrameTypeBit::kAckEcnBit |
-                FrameTypeBit::kPaddingBit)) == 0) {
-        LOG_INFO("BaseConnection::TrySendRetransmit: dropping pure-CRYPTO retransmission, "
-                 "frame-level path owns the recovery");
-        return !lost_packets.empty();  // try next lost packet
-    }
-
-    auto cryptographer = connection_crypto_.GetCryptographer(crypto_level);
-    if (!cryptographer) {
-        LOG_WARN(
-            "BaseConnection::TrySendRetransmit: no cryptographer for lost packet level=%d, dropping", crypto_level);
-        return !lost_packets.empty();  // try next lost packet
-    }
-
-    // Check congestion window before retransmitting
-    uint32_t max_bytes = send_manager_.GetAvailableWindow();
-    if (max_bytes == 0) {
-        // Put the packet back for later retransmission
-        lost_packets.push_front(lost_entry);
-        send_manager_.SetCwndLimited();
-        return false;
-    }
-
-    // RFC 9000 §8.1 build-time budget check, mirroring ComputeSendPolicy: a
-    // retransmission is re-encoded at its ORIGINAL size (Initial ones are
-    // even padded UP to the §14.1 floor below), so when the
-    // anti-amplification budget cannot cover it the emitter would just
-    // refuse the finished datagram. That is the handshakecorruption
-    // deadlock: the only data left lives in this retransmit queue, the
-    // fresh-data path has nothing smaller to offer, and the peer — which
-    // already discarded its Initial keys — stays silent because nothing we
-    // build ever reaches it.
-    //
-    // Instead of churning build+refuse cycles every PTO, put the packet back
-    // and emit an RFC 9002 §6.2.4 PTO probe (a single PING) at the lost
-    // packet's encryption level. The probe is ack-eliciting and tiny, so it
-    // fits whatever budget remains; the peer's immediate ACK in the
-    // Initial/Handshake spaces (RFC 9000 §13.2) recharges this budget by 3x
-    // the ACK datagram's size each round, until the full retransmission
-    // finally fits. Budget below kMinAmpUsableBytes cannot even carry the
-    // probe; then we simply wait for fresh peer bytes like before.
-    const uint64_t amp_remaining = send_manager_.GetAmpBudgetRemaining();
-    if (amp_remaining < UINT64_MAX) {
-        // Measure the real retransmission size with a probe encode (the same
-        // trick PadInitialToDatagramFloor uses below; Encode has no side
-        // effects on the packet object). Measured BEFORE the renumbering
-        // below, so the packet-number length may differ by a few bytes from
-        // the final retransmission — covered by the reserve added on top.
-        // A fixed MTU bound was tried first and was too pessimistic: with
-        // need=1472 while the actual flight was ~1069 B, probe/ACK traffic
-        // only ever restocked the budget to ~1100 before loss on the probe
-        // path (30% corruption) rebalanced it, and the retransmission never
-        // became "affordable" again.
-        uint32_t need = static_cast<uint32_t>(kMaxV4PacketSize);
-        {
-            auto probe_chunk =
-                std::make_shared<common::BufferChunk>(quic::GlobalResource::Instance().GetThreadLocalBlockPool());
-            if (probe_chunk && probe_chunk->Valid()) {
-                auto probe_buffer = std::make_shared<common::SingleBlockBuffer>(probe_chunk);
-                if (lost_pkt->Encode(probe_buffer)) {
-                    need = probe_buffer->GetDataLength() + kAmpOverheadReserve;
-                }
-            }
-        }
-        if (crypto_level == kInitial) {
-            // Standalone Initial retransmissions are padded up to the §14.1
-            // floor after this check (PadInitialToDatagramFloor below).
-            need = std::max<uint32_t>(need, kMinInitialPacketSize);
-        }
-        if (amp_remaining < need) {
-            // Rotate to the BACK of the queue, not the front. The head of the
-            // lost queue is the oldest packet — the Initial one — and with the
-            // §14.1 floor it is also the largest. Re-inserting at the front
-            // made every round re-examine the same oversized packet while the
-            // smaller Handshake retransmission behind it, which the budget
-            // DID cover, starved (quinn handshakecorruption: budget cycling
-            // 1225→526 on Initial probes while a 1069 B Handshake
-            // retransmission waited forever behind a 1264 B Initial need).
-            lost_packets.push_back(lost_entry);
-            if (amp_remaining >= kMinAmpUsableBytes) {
-                LOG_INFO(
-                    "BaseConnection::TrySendRetransmit: 8.1 budget (%llu) below retransmission need (%u); "
-                    "emitting PTO probe at level=%d instead",
-                    (unsigned long long)amp_remaining, need, crypto_level);
-                SendImmediateProbe(std::make_shared<PingFrame>(), static_cast<EncryptionLevel>(crypto_level));
-                // A peer that already received part of our Handshake flight
-                // has discarded its Initial keys (RFC 9000 §4.9.1) and can
-                // neither decrypt nor ACK an Initial probe; a peer that
-                // received none of it cannot decrypt a Handshake probe. We
-                // cannot tell which state the peer is in, so when the lost
-                // packet is Initial, cover both with a second probe.
-                if (crypto_level == kInitial && connection_crypto_.GetCryptographer(kHandshake) &&
-                    amp_remaining >= 2 * kMinAmpUsableBytes) {
-                    SendImmediateProbe(std::make_shared<PingFrame>(), kHandshake);
-                }
-            }
-            return false;
-        }
-    }
-
-    // Assign new packet number
-    auto ns = CryptoLevel2PacketNumberSpace(crypto_level);
-    uint64_t new_pn = send_manager_.GetPacketNumber().NextPacketNumber(ns);
-    // [DIAG-RTX] Capture the *original* PN before we overwrite it, so the
-    // first-send log line can be correlated with this retransmission.
-    uint64_t orig_pn = lost_pkt->GetPacketNumber();
-
-    // Drop the unacked entry keyed by the ORIGINAL packet number -- before the
-    // object is renumbered, while the stale key is still derivable from it.
-    // Once SetPacketNumber() runs, that entry becomes unreachable by lookup
-    // (its key no longer matches the object's PN) yet survives in the table,
-    // and OnLossDetectionTimeout() -- which only inspects begin() -- would then keep
-    // landing on it and stop finding anything to retransmit after the first
-    // PTO. See SendControl::RemoveStaleUnackedEntry().
-    send_control.RemoveStaleUnackedEntry(ns, orig_pn, lost_pkt);
-
-    lost_pkt->SetPacketNumber(new_pn);
-    lost_pkt->GetHeader()->SetPacketNumberLength(PacketNumber::GetPacketNumberLength(new_pn));
-    lost_pkt->SetCryptographer(cryptographer);
-
-    // RFC 9000 §5.1: a retransmission is a brand-new packet on the wire and has
-    // to carry the destination connection ID that is current at (re)send time.
-    // The reused IPacket still holds the DCID it was first encoded with; if the
-    // peer retired that CID in the meantime (NEW_CONNECTION_ID /
-    // RETIRE_CONNECTION_ID) it drops the packet as unknown-CID, the packet is
-    // never ACKed, and loss detection re-declares it forever.
-    //
-    // Observed on handshakeloss (30% drop, msquic server): a 32-byte HTTP/3 GET
-    // whose first send was dropped was retransmitted ~408 times over ~30 s, not
-    // one of them ever ACKed, while freshly built packets on the very same
-    // connection were ACKed normally -- because only the retransmit path skips
-    // PacketBuilder::SetConnectionIDs(). The retransmission loop then became
-    // self-sustaining: every 1-RTT ACK from the peer reset pto_count, so PTO
-    // stayed at its ~70 ms base value instead of backing off.
-    //
-    // Mirrors what PacketBuilder::SetConnectionIDs() does for newly built
-    // packets. Only the DCID is refreshed: the SCID is carried by long-header
-    // packets only, and for the 1-RTT space (where this was seen) the DCID is
-    // the sole field the peer routes on.
-    if (cid_coordinator_) {
-        auto remote_cid_mgr = cid_coordinator_->GetRemoteConnectionIDManager();
-        if (remote_cid_mgr) {
-            auto remote_cid = remote_cid_mgr->GetCurrentID();
-            lost_pkt->GetHeader()->SetDestinationConnectionId(remote_cid.GetID(), remote_cid.GetLength());
-        }
-    }
-
-    // RFC 9001 §6.5: A retransmitted packet MUST be re-encoded with the *current*
-    // key phase and *current* cryptographer. Without this synchronization the
-    // retransmission could ship plaintext ciphered under the new key while the
-    // header advertises the old Key Phase bit (or vice versa), causing the
-    // peer's AEAD verification to fail and the packet to be silently dropped.
-    // Observed in cross-implementation interop with quic-go/quiche under the
-    // ns-3 simulated network: client triggers Key Update at PN ~50, but quicX
-    // server keeps replaying lost packets with stale Key Phase bits, peer
-    // drops every retransmission, loss detector keeps firing, PN explodes
-    // (>130k) and the connection eventually idle-times-out.
-    if (lost_pkt->GetHeader()->GetHeaderType() == PacketHeaderType::kShortHeader) {
-        lost_pkt->GetHeader()->GetShortHeaderFlag().SetKeyPhase(connection_crypto_.GetCurrentKeyPhase());
-    }
-
-    // Re-encode with new packet number and fresh encryption
-    auto chunk = std::make_shared<common::BufferChunk>(quic::GlobalResource::Instance().GetThreadLocalBlockPool());
-    if (!chunk || !chunk->Valid()) {
-        LOG_ERROR("BaseConnection::TrySendRetransmit: failed to allocate buffer for retransmission");
-        return false;
-    }
-    auto buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
-
-    // RFC 9000 §14.1 (+ picoquic interop): a *standalone* retransmitted
-    // Initial packet must still form a >=1200 B datagram. The original send
-    // may have been coalesced (Initial ~242 B + Handshake ~1027 B in one
-    // 1269 B datagram), so the Initial packet object itself is far below the
-    // floor — and peers that enforce §14.1 on server Initial datagrams
-    // (picoquic) silently drop a 242 B retransmission. Observed 2026-09-02,
-    // handshakeloss (30% loss) PSK-resumed connections: the ServerHello was
-    // retransmitted 13 times at 242 B, the client dropped every one and the
-    // handshake stalled to the 300 s timeout.
-    if (crypto_level == kInitial) {
-        PadInitialToDatagramFloor(lost_pkt);
-    }
-
-    if (!lost_pkt->Encode(buffer)) {
-        LOG_ERROR("BaseConnection::TrySendRetransmit: failed to re-encode lost packet pn=%llu", new_pn);
-        return false;
-    }
-
-    uint32_t encoded_size = buffer->GetDataLength();
-
-    // qlog draft-03: open a fresh datagram before OnPacketSend so the
-    // retransmitted packet's packet_sent event carries its datagram_id.
-    auto scope = emitter_->Open();
-
-    // Record this retransmission in SendControl carrying the original
-    // stream_data, otherwise an ACK on the new PN would not flow back to
-    // SendStream::OnDataAcked and the byte-range bookkeeping would be
-    // permanently missing the bytes that the retransmit just delivered.
-    send_control.OnPacketSend(common::MonotonicTimeMsec(), lost_pkt, encoded_size, lost_entry.stream_data);
-
-    // The stream_data byte ranges this retransmission carries. Building the
-    // summary string is unconditional work, so it stays behind the diagnostic
-    // gate; without it, a loss storm pays a heap allocation and several
-    // std::to_string calls per retransmitted packet, on top of a synchronous
-    // INFO-level log line. (The same lesson is recorded on OnConnectionActive,
-    // where INFO-level logging on a per-send path stalled the worker thread on
-    // disk IO for seconds at a time.)
-    if (crypto_level == kInitial) {
-        // Standalone retransmission of an Initial packet: the datagram it forms
-        // still has to reach the §14.1 floor. The in-packet padding above gets
-        // it close; the emitter measures and tops it up if it fell short (it did
-        // for a long while — see the note in DatagramEmitter::Emit).
-        emitter_->MarkDatagramCarriesInitial();
-    }
-
-    return scope.Commit(buffer);
-}
-
-void BaseConnection::PadInitialToDatagramFloor(const std::shared_ptr<IPacket>& lost_pkt) {
-    auto init_pkt = std::dynamic_pointer_cast<InitPacket>(lost_pkt);
-    if (!init_pkt) {
-        return;
-    }
-
-    // InitPacket::Encode() re-encrypts the cached payload_ span, it does NOT
-    // re-encode frames_list_ — so padding must be baked into the payload
-    // itself. PADDING frames are just 0x00 bytes at the tail of the
-    // (plaintext) payload: build a new span = old payload + zeros.
-
-    // Probe-encode to measure the exact standalone datagram size.
-    auto probe_chunk = std::make_shared<common::BufferChunk>(quic::GlobalResource::Instance().GetThreadLocalBlockPool());
-    if (!probe_chunk || !probe_chunk->Valid()) {
-        return;
-    }
-    auto probe_buffer = std::make_shared<common::SingleBlockBuffer>(probe_chunk);
-    if (!init_pkt->Encode(probe_buffer)) {
-        return;
-    }
-
-    // probe_size is the size of the FULL on-wire packet — long header +
-    // encrypted payload + AEAD tag — because it comes out of
-    // InitPacket::Encode(). So pad straight up to the floor; there is no
-    // separate envelope left to account for.
-    //
-    // The first version of this subtracted a 20 B envelope first (copied from
-    // PacketBuilder, where the buffer holds plaintext frames and the envelope
-    // really is still to come), which put every retransmitted Initial at
-    // exactly 1180 B: 20 B short of the RFC 9000 §14.1 floor. picoquic
-    // discards those as "Server initial too short" — 38 of them in one
-    // handshakecorruption run — which is what left its client retransmitting
-    // on a 2.1 → 4.2 → 8.3 → 16.7 s backoff while the server believed it was
-    // replying.
-    uint32_t probe_size = probe_buffer->GetDataLength();
-    if (probe_size >= kMinInitialPacketSize) {
-        return;
-    }
-
-    uint32_t pad = kMinInitialPacketSize - probe_size;
-    auto payload = init_pkt->GetPayload();
-    uint32_t payload_len = payload.GetLength();
-    if (!payload.Valid() || payload_len + pad >= probe_chunk->GetLength()) {
-        return;
-    }
-
-    auto new_chunk = std::make_shared<common::BufferChunk>(quic::GlobalResource::Instance().GetThreadLocalBlockPool());
-    if (!new_chunk || !new_chunk->Valid()) {
-        return;
-    }
-
-    std::memcpy(new_chunk->GetData(), payload.GetStart(), payload_len);
-    std::memset(new_chunk->GetData() + payload_len, 0, pad);
-    init_pkt->SetPayload(common::SharedBufferSpan(new_chunk, new_chunk->GetData(), payload_len + pad));
-    LOG_DEBUG(
-        "BaseConnection::PadInitialToDatagramFloor: padded Initial retransmission to datagram floor (probe=%u, pad=%u)",
-        probe_size, pad);
-}
-
 int BaseConnection::TrySendBurst(int budget) {
     Metrics::CounterInc(common::MetricsStd::DiagTrySendIters);
     // Tie the lifetime guards of our timer controllers to this connection (see
@@ -2387,17 +2048,12 @@ int BaseConnection::TrySendBurst(int budget) {
         return 0;
     }
     int sent = 0;
-    // Retransmit path keeps its own per-call cadence (loss queue churn,
-    // separate cryptographer per lost packet). We loop one-packet at a
-    // time here so RFC 9001 §6.5 key-phase handling stays unchanged.
-    while (sent < budget && send_manager_.GetSendControl().NeedReSend()) {
-        if (!TrySendRetransmit()) {
-            // No more retransmits to issue right now; fall through to the
-            // fresh-data burst below.
-            break;
-        }
-        ++sent;
-    }
+    // P0-C10: there is no separate retransmit queue any more. Lost / probed
+    // data is re-queued at frame level by its owner (CryptoStream, SendStream,
+    // value-frame handlers) and leaves through the same build path as fresh
+    // data, so it automatically picks up the current DCID, key phase,
+    // cryptographer, congestion window and RFC 9000 8.1 budget (the retired
+    // whole-packet path had to patch each of those up by hand).
     if (sent < budget) {
         // RFC 9000 §12.2 Initial+Handshake coalescing.
         //
@@ -2433,11 +2089,10 @@ int BaseConnection::TrySendBurst(int budget) {
     }
 
     // RFC 9002 §6.2.4 completion: a fired PTO MUST still put at least one
-    // ack-eliciting packet on the wire. The retransmit loop above can consume
-    // lost entries as pure-CRYPTO drops (frame-level recovery owns the bytes)
-    // and when those CRYPTO offsets were already acked via a later packet's
-    // delivery, the fresh-data path has nothing either — the round ends with
-    // sent==0 and the connection goes silent. The peer (amplification-limited
+    // ack-eliciting packet on the wire. When the probed packet's CRYPTO
+    // offsets were already acked via a later packet's delivery, the kProbe
+    // re-queue has nothing to send and neither has the fresh-data path: the
+    // round ends with sent==0 and the connection goes silent. The peer (amplification-limited
     // under RFC 9000 §8.1 until it hears from us again) stays silent too, and
     // both sides wait each other out to the idle timeout. Observed as the
     // L1×xquic 1/50 failure: CH retransmitted, 3rd copy ACKed, pn 1/2 zombies
@@ -2453,6 +2108,16 @@ int BaseConnection::TrySendBurst(int budget) {
     }
     if (sent > 0) {
         Metrics::HistogramObserve(common::MetricsStd::DiagTrySendBurstPkts, static_cast<uint64_t>(sent));
+
+        // P0-C6 (RFC 9000 §10.1): "An endpoint is said to be idle if it has
+        // not received and processed any packets and it has not sent any
+        // ack-eliciting packets for longer than the idle timeout." Sending
+        // ack-eliciting data therefore restarts the idle timer — it proves
+        // this side still has traffic outstanding and will elicit an ACK.
+        // Pure ACK/PADDING sends never set the flag (see ConsumeAckElicitingSendFlag).
+        if (send_manager_.GetSendControl().ConsumeAckElicitingSendFlag()) {
+            timer_coordinator_->ResetIdleTimer();
+        }
     }
     return sent;
 }
@@ -2664,7 +2329,11 @@ SendPolicy BaseConnection::ComputeSendPolicy(
     if (blocked_frame) {
         // DATA_BLOCKED (near-limit) or BLOCKED (at-limit): queue it so the
         // peer learns we are window-blocked. Both flow-control branches in
-        // the pre-refactor code did exactly this; unified here.
+        // the pre-refactor code did exactly this; unified here. Bypasses
+        // OnFrameReady (no wake: we are already inside the send path), so the
+        // loss response is attached here: SendFlowController de-duplicates
+        // DATA_BLOCKED per limit value and would never mint a lost one again.
+        send_manager_.AttachRequeueOnLoss(blocked_frame);
         send_manager_.EnqueueFrame(blocked_frame);
     }
 
@@ -2690,6 +2359,35 @@ std::vector<std::shared_ptr<IFrame>> BaseConnection::GatherBurstFrames(
         }
     }
     return frames;
+}
+
+void BaseConnection::RequeueUnsentFrames(const std::vector<std::shared_ptr<IFrame>>& frames) {
+    // P0-C10 / INV1: GetPendingFrames hands frames out by REMOVING them from
+    // the queue, and a frame only gets a loss owner-of-last-resort once it is
+    // inside a tracked packet. If the build fails before that point (no
+    // buffer, encode error, "no data") the frame would simply vanish. The
+    // retired whole-packet channel never covered this window either, but it
+    // was rarely reachable; the rule now is that nothing is dropped silently.
+    // Only frames that are NOT best-effort are returned: ACK is regenerated
+    // from receive state, PADDING is synthetic, and a PING probe is re-minted
+    // by the next PTO. Everything else (MAX_*, *_BLOCKED, NCI/RETIRE, PATH_*,
+    // HANDSHAKE_DONE, CONNECTION_CLOSE ...) goes back to the FRONT in order so
+    // generation order is preserved (P0-S4 FIFO).
+    for (auto it = frames.rbegin(); it != frames.rend(); ++it) {
+        const auto& frame = *it;
+        if (!frame) {
+            continue;
+        }
+        switch (frame->GetType()) {
+            case FrameType::kAck:
+            case FrameType::kAckEcn:
+            case FrameType::kPadding:
+            case FrameType::kPing:
+                continue;
+            default:
+                send_manager_.RequeueFront(frame);
+        }
+    }
 }
 
 bool BaseConnection::EmitOnePacket(PacketBuilder::DataPacketContext& tmpl, const SendPolicy& policy,
@@ -2724,6 +2422,7 @@ bool BaseConnection::EmitOnePacket(PacketBuilder::DataPacketContext& tmpl, const
     auto chunk = std::make_shared<common::BufferChunk>(quic::GlobalResource::Instance().GetThreadLocalBlockPool());
     if (!chunk || !chunk->Valid()) {
         LOG_ERROR("BaseConnection::TrySendBurst: failed to allocate buffer chunk");
+        RequeueUnsentFrames(build_ctx.frames);
         return false;
     }
     auto buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
@@ -2759,6 +2458,7 @@ bool BaseConnection::EmitOnePacket(PacketBuilder::DataPacketContext& tmpl, const
                 policy.max_bytes, build_ctx.min_size, build_ctx.max_stream_data_size, build_ctx.frames.size(),
                 policy.include_stream_data ? 1 : 0);
             Metrics::CounterInc(common::MetricsStd::DiagTrySendNoData);
+            RequeueUnsentFrames(build_ctx.frames);
             return false;
         }
         LOG_ERROR("BaseConnection::TrySendBurst: failed to build packet: %s "
@@ -2769,6 +2469,7 @@ bool BaseConnection::EmitOnePacket(PacketBuilder::DataPacketContext& tmpl, const
             send_manager_.SetFlowControlBlocked();
         }
         Metrics::CounterInc(common::MetricsStd::DiagTrySendBuildFail);
+        RequeueUnsentFrames(build_ctx.frames);
         return false;
     }
 

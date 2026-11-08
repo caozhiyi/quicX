@@ -24,7 +24,7 @@ namespace http3 {
 class RequestStream: public ReqRespBaseStream {
 public:
     RequestStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
-        const std::shared_ptr<QpackEncoder>& qpack_decoder,
+        const std::shared_ptr<QpackDecoder>& qpack_decoder,
         const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
         const std::shared_ptr<IQuicBidirectionStream>& stream, std::shared_ptr<IAsyncClientHandler> async_handler,
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
@@ -32,7 +32,7 @@ public:
             push_promise_handler);
 
     RequestStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
-        const std::shared_ptr<QpackEncoder>& qpack_decoder,
+        const std::shared_ptr<QpackDecoder>& qpack_decoder,
         const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
         const std::shared_ptr<IQuicBidirectionStream>& stream, http_response_handler response_handler,
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
@@ -44,6 +44,13 @@ public:
     // Send request/response
     bool SendRequest(std::shared_ptr<IRequest> request);
 
+    // P1-H6e: per-stream cap on the response body this client will buffer
+    // (complete mode accumulates the whole body; a rogue server streaming
+    // forever would otherwise exhaust memory). 0 disables. Wire from
+    // Http3ClientConfig via ClientConnection when creating the request
+    // stream.
+    void SetMaxResponseBodySize(uint64_t size) { max_response_body_size_ = size; }
+
 private:
     virtual void HandleHeaders() override;
     virtual void HandleData(const std::shared_ptr<common::IBuffer>& data, bool is_last) override;
@@ -54,6 +61,10 @@ private:
 private:
     uint32_t body_length_;
     uint32_t received_body_length_;
+    // P1-H6e: response body cap (bytes); see SetMaxResponseBodySize.
+    // Default 64 MiB — generous for legitimate payloads, bounded enough to
+    // stop an unbounded-stream attack.
+    uint64_t max_response_body_size_ = 64ull * 1024 * 1024;
     // Idempotence guard for response_handler_: the handler fires exactly once
     // per request. A retransmitted data+FIN packet re-delivers the FIN
     // (RecvStream normalizes duplicate FIN-only frames through by design,

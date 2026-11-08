@@ -8,6 +8,7 @@
 
 #include "http3/frame/frame_decoder.h"
 #include "http3/frame/if_frame.h"
+#include "http3/qpack/qpack_decoder.h"
 #include "http3/qpack/qpack_encoder.h"
 #include "http3/stream/if_recv_stream.h"
 
@@ -23,6 +24,7 @@ class ControlReceiverStream: public IRecvStream {
 public:
     ControlReceiverStream(const std::shared_ptr<IQuicRecvStream>& stream,
         const std::shared_ptr<QpackEncoder>& qpack_encoder,
+        const std::shared_ptr<QpackDecoder>& qpack_decoder,
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
         const std::function<void(uint64_t id)>& goaway_handler,
         const std::function<void(const std::unordered_map<uint64_t, uint64_t>& settings)>& settings_handler);
@@ -37,6 +39,7 @@ protected:
 
 protected:
     std::shared_ptr<QpackEncoder> qpack_encoder_;
+    std::shared_ptr<QpackDecoder> qpack_decoder_;
     std::function<void(uint64_t id)> goaway_handler_;
     std::function<void(const std::unordered_map<uint64_t, uint64_t>& settings)> settings_handler_;
     std::function<void(std::shared_ptr<IBufferRead>)> qpack_instr_handler_;

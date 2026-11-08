@@ -290,11 +290,17 @@ std::shared_ptr<IRecvStream> ClientConnection::CreateTypedStream(
         case static_cast<uint64_t>(StreamType::kControl):  // Control Stream (RFC 9114 Section 6.2.1)
             LOG_DEBUG("ClientConnection: creating Control Stream for stream %llu", stream->GetStreamID());
             return std::make_shared<ControlReceiverStream>(
-                stream, qpack_decoder_, MakeErrorHandler(), MakeGoawayHandler(), MakeSettingsHandler());
+                stream, qpack_encoder_, qpack_decoder_, MakeErrorHandler(), MakeGoawayHandler(), MakeSettingsHandler());
 
         case static_cast<uint64_t>(StreamType::kPush):  // Push Stream (RFC 9114 Section 4.6)
             LOG_DEBUG("ClientConnection: creating Push Stream for stream %llu", stream->GetStreamID());
-            return std::make_shared<PushReceiverStream>(qpack_decoder_, stream, MakeErrorHandler(), push_handler_);
+            return std::make_shared<PushReceiverStream>(qpack_decoder_, stream, MakeErrorHandler(), push_handler_,
+                [weak_self = WeakSelfAs<ClientConnection>()](uint64_t push_id) {
+                    // P1-H6f: validate against this connection's MAX_PUSH_ID
+                    // window and consumption set (RFC 9114 §4.6).
+                    auto self = weak_self.lock();
+                    return self ? self->TryConsumePushStreamId(push_id) : false;
+                });
 
         default:
             // QPACK receiver streams + unknown types are role-agnostic.
@@ -334,6 +340,14 @@ void ClientConnection::HandleError(uint64_t stream_id, uint32_t error_code) {
     Metrics::GaugeDec(common::MetricsStd::Http3RequestsActive);
     Metrics::CounterInc(common::MetricsStd::Http3RequestsFailed);
 
+    // P1-H7b: the failed request stream must leave streams_ like a completed
+    // one — the old path only notified the user and left the wrapper (plus
+    // its callbacks into this connection) registered forever, so a workload
+    // of failing requests grew the map unboundedly. Deferred removal (same
+    // as the success path) because the stream object may still be on the
+    // call stack; DispatchH3Error has already signalled the peer.
+    ScheduleStreamRemoval(stream_id);
+
     // something wrong, notify error handler
     if (error_handler_) {
         error_handler_(unique_id_, error_code);
@@ -344,6 +358,10 @@ void ClientConnection::HandlePushPromise(HttpFields& headers, uint64_t push_id) 
     // Metrics: Push promise received
     Metrics::CounterInc(common::MetricsStd::Http3PushPromisesRx);
 
+    // P1-H6f: remember the promise so push-stream validation can (soft-)
+    // correlate streams to promises.
+    promised_push_ids_.insert(push_id);
+
     if (!push_promise_handler_) {
         return;
     }
@@ -351,6 +369,28 @@ void ClientConnection::HandlePushPromise(HttpFields& headers, uint64_t push_id) 
     if (!do_recv) {
         CancelPush(push_id);
     }
+}
+
+bool ClientConnection::TryConsumePushStreamId(uint64_t push_id) {
+    // RFC 9114 §4.6 MUSTs: push id above the advertised MAX_PUSH_ID, and a
+    // push id already used by an earlier push stream, are both H3_ID_ERROR.
+    if (push_id > advertised_max_push_id_) {
+        LOG_ERROR("ClientConnection: push id %llu exceeds advertised MAX_PUSH_ID %llu", (unsigned long long)push_id,
+            (unsigned long long)advertised_max_push_id_);
+        return false;
+    }
+    if (!consumed_push_ids_.insert(push_id).second) {
+        LOG_ERROR("ClientConnection: duplicate push id %llu on a second push stream", (unsigned long long)push_id);
+        return false;
+    }
+    if (promised_push_ids_.find(push_id) == promised_push_ids_.end()) {
+        // Soft signal only: a PUSH_PROMISE may be reordered behind its push
+        // stream (different streams, no ordering guarantee), so absence is
+        // not an error per RFC — just a diagnostic.
+        LOG_DEBUG("ClientConnection: push stream for id %llu arrived before its PUSH_PROMISE (reordering?)",
+            (unsigned long long)push_id);
+    }
+    return true;
 }
 
 }  // namespace http3

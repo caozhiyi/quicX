@@ -54,7 +54,7 @@ bool PushSenderStream::SendPushResponse(uint64_t push_id, std::shared_ptr<IRespo
     // Encode headers using qpack
     auto headers_buffer =
         std::make_shared<common::MultiBlockBuffer>(quic::GlobalResource::Instance().GetThreadLocalBlockPool());
-    if (!qpack_encoder_->Encode(response->GetHeaders(), headers_buffer)) {
+    if (!qpack_encoder_->Encode(response->GetHeaders(), headers_buffer, GetStreamID())) {
         LOG_ERROR("qpack encode error");
         return false;
     }

@@ -31,6 +31,11 @@ ServerConnection::ServerConnection(std::shared_ptr<TLSCtx> ctx, std::shared_ptr<
 
     connection_crypto_.SetCryptoStream(crypto_stream);
 
+    // P0-C10 / X3: hand the CRYPTO stream the connection's slow-path
+    // retransmit scheduler. Without this the handshake-flight arithmetic
+    // cadence (the per-packet timer's replacement) silently never runs.
+    crypto_stream->SetRetransmitScheduler(send_manager_.GetSendControl().GetRetransmitScheduler());
+
     // Set HANDSHAKE_DONE frame handler callback (returns bool)
     frame_processor_->SetHandshakeDoneCallback([this](auto a) { return HandleHandshakeDoneFrame(a); });
 
@@ -199,7 +204,12 @@ void ServerConnection::SendHandshakeDoneFrame() {
             // A stale copy of an already-acknowledged frame was declared lost.
             return;
         }
-        LOG_INFO("Server: HANDSHAKE_DONE lost - re-queueing a fresh copy");
+        // kLost AND kProbe both re-queue: a PTO probe SHOULD carry
+        // retransmittable data (RFC 9002 6.2.4) and HANDSHAKE_DONE is the
+        // cheapest idempotent one -- the client confirms the handshake on it,
+        // and a lost copy is otherwise only recovered by the next ACK round.
+        LOG_INFO("Server: HANDSHAKE_DONE %s - re-queueing a fresh copy",
+            state == FrameDeliveryState::kProbe ? "probed" : "lost");
         self->SendHandshakeDoneFrame();
     });
     OnFrameReady(frame);

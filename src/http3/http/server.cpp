@@ -42,10 +42,10 @@ bool Server::Init(const Http3ServerConfig& config) {
     // Store config for later use
     config_ = config;
 
-    // Propagate the request body cap to all ResponseStreams created by this
-    // server (static: one HTTP/3 server config per process is the supported
-    // deployment model).
-    ResponseStream::SetMaxRequestBodySize(config.max_request_body_size_);
+    // P1-H6g: the request body cap is now pulled per-ResponseStream via
+    // IHttpProcessor::GetMaxRequestBodySize() (see Server's override), so
+    // two Server instances with different configs keep their own limits.
+    // The old process-wide static (SetMaxRequestBodySize) is gone.
 
     // Basic validation (though QuicServer might handle it)
     if ((config.quic_config_.cert_pem_ == nullptr || config.quic_config_.key_pem_ == nullptr) &&
@@ -99,12 +99,10 @@ void Server::AddHandler(HttpMethod method, const std::string& path, std::shared_
     router_->AddRoute(method, path, config);
 }
 
-void Server::AddMiddleware(HttpMethod /*method*/, MiddlewarePosition mp, const http_handler& handler) {
-    if (mp == MiddlewarePosition::kBefore) {
-        before_middlewares_.push_back(handler);
-    } else {
-        after_middlewares_.push_back(handler);
-    }
+void Server::AddMiddleware(HttpMethod method, MiddlewarePosition mp, const middleware_handler& handler) {
+    // P1-H8: middleware is now method-filtered and can short-circuit; the
+    // legacy http_handler overload is wrapped by the IServer default impl.
+    middlewares_.Add(method, mp, handler);
 }
 
 void Server::OnConnection(
@@ -168,16 +166,20 @@ RouteConfig Server::MatchRoute(HttpMethod method, const std::string& path, std::
     return result.config;
 }
 
-void Server::BeforeHandlerProcess(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response) {
-    for (auto& middleware : before_middlewares_) {
-        middleware(request, response);
-    }
+bool Server::BeforeHandlerProcess(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response) {
+    // P1-H8: run only the middlewares whose method filter matches the request
+    // (kAny matches all implemented methods). A middleware returning false
+    // short-circuits: the caller must skip the route handler and after-
+    // middlewares and flush the response written by the middleware.
+    HttpMethod method = request ? request->GetMethod() : HttpMethod::kUnknown;
+    return middlewares_.RunBefore(method, request, response);
 }
 
 void Server::AfterHandlerProcess(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response) {
-    for (auto& middleware : after_middlewares_) {
-        middleware(request, response);
-    }
+    // P1-H8: same method filtering as the before-pipeline. Short-circuit
+    // return values are ignored: nothing is left to skip at the tail.
+    HttpMethod method = request ? request->GetMethod() : HttpMethod::kUnknown;
+    middlewares_.RunAfter(method, request, response);
 }
 
 void Server::OnNotFound(std::shared_ptr<IRequest> /*request*/, std::shared_ptr<IResponse> response) {

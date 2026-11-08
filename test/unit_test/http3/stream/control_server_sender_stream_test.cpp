@@ -3,6 +3,8 @@
 #include <gtest/gtest.h>
 
 #include "http3/connection/type.h"
+#include "http3/qpack/qpack_decoder.h"
+#include "http3/qpack/qpack_encoder.h"
 #include "http3/stream/control_receiver_stream.h"
 #include "http3/stream/control_sender_stream.h"
 #include "http3/stream/type.h"
@@ -34,6 +36,7 @@ public:
 
         // Create the actual control receiver stream
         receiver_stream_ = std::make_shared<ControlReceiverStream>(stream, std::make_shared<QpackEncoder>(),
+            std::make_shared<QpackDecoder>(),
             std::bind(&MockClientConnection::ErrorHandle, this, std::placeholders::_1, std::placeholders::_2),
             std::bind(&MockClientConnection::GoAwayHandler, this, std::placeholders::_1),
             std::bind(&MockClientConnection::SettingHandler, this, std::placeholders::_1));

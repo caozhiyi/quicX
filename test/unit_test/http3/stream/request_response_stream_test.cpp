@@ -9,6 +9,7 @@
 #include "http3/http/error.h"
 #include "http3/http/request.h"
 #include "http3/qpack/blocked_registry.h"
+#include "http3/qpack/qpack_decoder.h"
 #include "http3/qpack/qpack_encoder.h"
 #include "http3/stream/request_stream.h"
 #include "http3/stream/response_stream.h"
@@ -22,7 +23,8 @@ namespace {
 class MockClientConnection {
 public:
     MockClientConnection(
-        const std::shared_ptr<QpackEncoder>& qpack_encoder, std::shared_ptr<IQuicBidirectionStream> stream):
+        const std::shared_ptr<QpackEncoder>& qpack_encoder, const std::shared_ptr<QpackDecoder>& qpack_decoder,
+        std::shared_ptr<IQuicBidirectionStream> stream):
         error_code_(0) {
         blocked_registry_ = std::make_shared<QpackBlockedRegistry>();
         auto response_handler =
@@ -31,8 +33,8 @@ public:
             std::bind(&MockClientConnection::ErrorHandle, this, std::placeholders::_1, std::placeholders::_2);
         auto push_promise_handler = std::bind(&MockClientConnection::PushPromiseHandler, this, std::placeholders::_1);
 
-        // In self-loop tests, use the same encoder for both encode and decode
-        request_stream_ = std::make_shared<RequestStream>(qpack_encoder, qpack_encoder, blocked_registry_, stream,
+        // In self-loop tests, wire the encoder for outbound and the decoder for inbound
+        request_stream_ = std::make_shared<RequestStream>(qpack_encoder, qpack_decoder, blocked_registry_, stream,
             response_handler, error_handler, push_promise_handler);
         request_stream_->Init();  // CRITICAL: Initialize callbacks
     }
@@ -66,7 +68,8 @@ private:
 class MockServerConnection {
 public:
     MockServerConnection(
-        const std::shared_ptr<QpackEncoder>& qpack_encoder, std::shared_ptr<IQuicBidirectionStream> stream):
+        const std::shared_ptr<QpackEncoder>& qpack_encoder, const std::shared_ptr<QpackDecoder>& qpack_decoder,
+        std::shared_ptr<IQuicBidirectionStream> stream):
         error_code_(0),
         http_handler_(nullptr) {
         // Create a mock http processor
@@ -78,7 +81,7 @@ public:
                 HttpMethod method, const std::string& path, std::shared_ptr<IRequest> /*request*/ = nullptr) override {
                 return server_->MatchHandler(method, path);
             }
-            void BeforeHandlerProcess(std::shared_ptr<IRequest> /*req*/, std::shared_ptr<IResponse> /*resp*/) override {}
+            bool BeforeHandlerProcess(std::shared_ptr<IRequest> /*req*/, std::shared_ptr<IResponse> /*resp*/) override { return true; }
             void AfterHandlerProcess(std::shared_ptr<IRequest> /*req*/, std::shared_ptr<IResponse> /*resp*/) override {}
 
         private:
@@ -90,7 +93,7 @@ public:
         auto push_handler = [](std::shared_ptr<IResponse>, std::shared_ptr<ResponseStream>) {};
 
         blocked_registry_ = std::make_shared<QpackBlockedRegistry>();
-        response_stream_ = std::make_shared<ResponseStream>(qpack_encoder, qpack_encoder, blocked_registry_, stream,
+        response_stream_ = std::make_shared<ResponseStream>(qpack_encoder, qpack_decoder, blocked_registry_, stream,
             processor, push_handler,
             std::bind(&MockServerConnection::ErrorHandle, this, std::placeholders::_1, std::placeholders::_2),
             []() { return true; });  // Mock: always return true for settings_received
@@ -128,6 +131,7 @@ class RequestResponseStreamTest: public testing::Test {
 protected:
     void SetUp() override {
         qpack_encoder_ = std::make_shared<QpackEncoder>();
+        qpack_decoder_ = std::make_shared<QpackDecoder>();
 
         mock_stream_1_ = std::make_shared<quic::MockQuicStream>();
         mock_stream_2_ = std::make_shared<quic::MockQuicStream>();
@@ -135,11 +139,12 @@ protected:
         mock_stream_2_->SetPeer(mock_stream_1_);
         mock_stream_1_->SetPeer(mock_stream_2_);
 
-        client_connection_ = std::make_shared<MockClientConnection>(qpack_encoder_, mock_stream_1_);
-        server_connection_ = std::make_shared<MockServerConnection>(qpack_encoder_, mock_stream_2_);
+        client_connection_ = std::make_shared<MockClientConnection>(qpack_encoder_, qpack_decoder_, mock_stream_1_);
+        server_connection_ = std::make_shared<MockServerConnection>(qpack_encoder_, qpack_decoder_, mock_stream_2_);
     }
 
     std::shared_ptr<QpackEncoder> qpack_encoder_;
+    std::shared_ptr<QpackDecoder> qpack_decoder_;
     std::shared_ptr<quic::MockQuicStream> mock_stream_1_;
     std::shared_ptr<quic::MockQuicStream> mock_stream_2_;
     std::shared_ptr<MockClientConnection> client_connection_;
@@ -462,6 +467,35 @@ TEST_F(RequestResponseStreamTest, RejectsOversizedDeclaredContentLength) {
     // instead of switching into unbounded complete-buffering mode.
     EXPECT_EQ(server_connection_->GetErrorCode(),
         static_cast<uint32_t>(Http3ErrorCode::kMessageError));
+}
+
+// P1-H1 (h3spec-style): a stream-scoped H3 error MUST reach the peer.
+// ReqRespBaseStream::ResetTransport forwards the H3 error code to the
+// underlying bidirectional stream; on the wire that is RESET_STREAM (our
+// send half) + STOP_SENDING (the peer's send half). Before P1-H1 the error
+// stopped at the local user callback and the peer waited forever.
+TEST(RequestResponseStream, ResetTransportSignalsPeerWithH3Code) {
+    auto qpack_encoder = std::make_shared<QpackEncoder>();
+    auto qpack_decoder = std::make_shared<QpackDecoder>();
+    auto stream = std::make_shared<quic::MockQuicStream>(0);
+
+    auto blocked_registry = std::make_shared<QpackBlockedRegistry>();
+    auto request_stream = std::make_shared<RequestStream>(qpack_encoder, qpack_decoder, blocked_registry, stream,
+        [](std::shared_ptr<IResponse>, uint32_t) {},
+        [](uint64_t, uint32_t) {},
+        [](HttpFields&, uint64_t) {});
+    request_stream->Init();
+
+    request_stream->ResetTransport(static_cast<uint32_t>(Http3ErrorCode::kMessageError));
+
+    EXPECT_EQ(stream->GetResetCount(), 1u);
+    EXPECT_EQ(stream->GetLastResetError(), static_cast<uint32_t>(Http3ErrorCode::kMessageError));
+
+    // Idempotence is the transport state machine's job; the wrapper must
+    // not filter, so a second dispatch still forwards.
+    request_stream->ResetTransport(static_cast<uint32_t>(Http3ErrorCode::kRequestCancelled));
+    EXPECT_EQ(stream->GetResetCount(), 2u);
+    EXPECT_EQ(stream->GetLastResetError(), static_cast<uint32_t>(Http3ErrorCode::kRequestCancelled));
 }
 
 }  // namespace

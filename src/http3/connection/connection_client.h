@@ -8,6 +8,7 @@
 #include <quicx/http3/type.h>
 #include <quicx/quic/if_quic_connection.h>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "http3/connection/if_connection.h"
 
@@ -78,6 +79,12 @@ private:
     void HandleStream(std::shared_ptr<IQuicStream> stream, uint32_t error) override;
     // handle push promise
     void HandlePushPromise(HttpFields& headers, uint64_t push_id);
+    // P1-H6f (RFC 9114 §4.6): validate + consume a push stream's id. Returns
+    // false (→ H3_ID_ERROR on the stream) when the id exceeds the advertised
+    // MAX_PUSH_ID or was already consumed by another push stream. A missing
+    // PUSH_PROMISE is tolerated (reordering is legal), logged via
+    // promised_push_ids_ only.
+    bool TryConsumePushStreamId(uint64_t push_id);
     // handle error
     void HandleError(uint64_t stream_id, uint32_t error_code) override;
 
@@ -98,6 +105,15 @@ private:
     // enabled. Configurable via Http3ClientConfig::max_push_id_ (code-review
     // P3g); 100 was the previous hardcoded default.
     uint64_t max_push_id_ = 100;
+
+    // P1-H6f (RFC 9114 §4.6): push-id bookkeeping for stream validation.
+    // |push_id_validator| wiring (TryConsumePushStreamId) enforces: push id
+    // ≤ advertised MAX_PUSH_ID, and no push id consumed by two push streams.
+    // |promised_push_ids_| tracks PUSH_PROMISEs seen on request streams
+    // (soft signal only — a promise may be reordered behind its push
+    // stream, so absence is not an error).
+    std::unordered_set<uint64_t> promised_push_ids_;
+    std::unordered_set<uint64_t> consumed_push_ids_;
 };
 
 }  // namespace http3

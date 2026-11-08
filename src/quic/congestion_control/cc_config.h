@@ -21,20 +21,34 @@ static constexpr double kCubicC = 0.4;
 // Multiplicative decrease factor (window scaling on loss).
 static constexpr double kBetaCubic = 0.7;
 
-// HyStart: low cwnd threshold (in packets) below which HyStart exit checks
-// are skipped (window too small for the signals to be meaningful).
+// HyStart++ (RFC 9406): low cwnd threshold (in packets) below which the
+// exit checks are skipped (window too small for the signals to be
+// meaningful).
 static constexpr double kHyStartLowWindow = 16.0;
 
-// HyStart: min RTT samples needed before the exit checks are trusted.
+// HyStart++ (RFC 9406 §4.3): min RTT samples per round before the
+// delay-increase check is trusted (N_RTT_SAMPLE).
 static constexpr uint32_t kHyStartMinSamples = 8;
 
-// HyStart: RTT increase threshold (4ms) above the round-trip min that
-// indicates a queue is starting to build.
-static constexpr uint32_t kHyStartRttThreshUs = 4000;
+// HyStart++ (RFC 9406 §4.3): RttThresh = clamp(lastRoundMinRTT / 8,
+// [MIN_RTT_THRESH, MAX_RTT_THRESH]) — the per-round min-RTT growth that
+// indicates a queue is starting to build (MIN_RTT_DIVISOR = 8).
+static constexpr uint32_t kHyStartRttThreshUs = 4000;   // MIN_RTT_THRESH
+static constexpr uint32_t kHyStartMaxRttThreshUs = 16000;  // MAX_RTT_THRESH
+static constexpr uint32_t kHyStartRttDivisor = 8;       // MIN_RTT_DIVISOR
 
-// HyStart: ACK train threshold (2ms); inter-ACK delay above this suggests
-// upstream queuing on the reverse path.
-static constexpr uint32_t kHyStartAckDeltaUs = 2000;
+// HyStart++ CSS (Conservative Slow Start): cwnd grows at 1/4 rate for at
+// most 5 rounds after the delay-increase signal, reverting to slow start
+// if the RTT inflation turns out to be transient (RFC 9406 §4.2).
+static constexpr uint32_t kCssRounds = 5;            // CSS_ROUNDS
+static constexpr uint32_t kCssGrowthDivisor = 4;     // CSS_GROWTH_DIVISOR
+
+// NOTE (P1-CC4): RFC 9406 deliberately dropped the original HyStart
+// "Inter-Packet Arrival" (ACK train) signal — "In practice, the
+// Inter-Packet Arrival algorithm does not perform well and is not able to
+// detect congestion early, primarily due to ACK compression" (§4.1). The
+// old kHyStartAckDeltaUs constant and its (inverted) comparison were
+// removed with it.
 
 // ============================================================================
 // BBR

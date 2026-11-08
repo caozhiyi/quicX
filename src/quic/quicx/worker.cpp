@@ -130,8 +130,8 @@ void Worker::ProcessSend() {
         // loop) is kept so that whatever a single burst cannot decide
         // for itself gets a chance to be re-evaluated *between* bursts:
         //   - encryption-level switch (burst is sticky on one level)
-        //   - retransmit ↔ new-data flip (NeedReSend() is checked once
-        //     per TrySendBurst entry)
+        //   - frame-level re-queues (lost / probed data landing in the
+        //     owners' queues between bursts)
         //   - new pending frames / ACKs queued by a callback that fired
         //     while the burst was running
         // It is also the only path that can unwedge a burst that broke

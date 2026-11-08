@@ -126,6 +126,18 @@ void SendManager::EnqueueFrame(std::shared_ptr<IFrame> frame) {
     wait_frame_list_.emplace_back(frame);
 }
 
+void SendManager::RequeueFront(std::shared_ptr<IFrame> frame) {
+    if (!frame || IsFrameQueued(frame)) {
+        return;
+    }
+    if (wait_frame_list_.size() >= kMaxQueuedFrames) {
+        LOG_ERROR("SendManager: frame queue at cap %zu, cannot requeue frame (type:%u)", kMaxQueuedFrames,
+            static_cast<uint32_t>(frame->GetType()));
+        return;
+    }
+    wait_frame_list_.emplace_front(std::move(frame));
+}
+
 void SendManager::AttachRequeueOnLoss(const std::shared_ptr<IFrame>& frame) {
     // The handler lives ON the frame, so capturing the shared_ptr directly
     // would create a self-cycle (frame -> handler -> frame) and leak. A weak
@@ -134,19 +146,40 @@ void SendManager::AttachRequeueOnLoss(const std::shared_ptr<IFrame>& frame) {
     std::weak_ptr<IFrame> weak = frame;
     SendManager* mgr = this;
     frame->SetDeliveryHandler([weak, mgr](FrameDeliveryState state) {
-        if (state != FrameDeliveryState::kLost) {
+        // kLost: the packet was declared lost. kProbe (PTO): the packet is
+        // still outstanding but a probe SHOULD carry retransmittable data
+        // (RFC 9002 6.2.4) — value frames are idempotent, so a duplicate is
+        // harmless and the cheapest way to survive tail loss.
+        if (state == FrameDeliveryState::kAcked) {
             return;
         }
         auto f = weak.lock();
         if (!f) {
             return;
         }
+        // Already waiting to be sent (e.g. kProbe then kLost for the same
+        // frame): one queued copy is enough.
+        if (mgr->IsFrameQueued(f)) {
+            return;
+        }
+        // This object is about to leave in a NEW packet: give that copy its
+        // own kLost budget (see IFrame::RearmLossNotification).
+        f->RearmLossNotification();
         // EnqueueFrame (not the connection's queue+wake entry) matches the
         // ConnectionIDCoordinator precedent: kLost fires from inside
         // SendControl's loss detection, and the loss-recovery pass that
         // follows always drains the frame queue, so no extra wake-up.
         mgr->EnqueueFrame(f);
     });
+}
+
+bool SendManager::IsFrameQueued(const std::shared_ptr<IFrame>& frame) const {
+    for (const auto& f : wait_frame_list_) {
+        if (f == frame) {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool SendManager::HasPendingProbingFrame() const {

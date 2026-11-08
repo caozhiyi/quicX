@@ -47,6 +47,19 @@ public:
     virtual RouterNodeType GetNodeType() = 0;
 
     /**
+     * @brief Attach a route handler to this node (P1-H8)
+     *
+     * Handler presence is decoupled from the node type: a middle node can be
+     * upgraded with a handler when a shorter route registers under an
+     * existing prefix.
+     *
+     * @param config Route configuration (handler + mode)
+     * @return True if attached; false if this node already has a handler
+     *         (duplicate route registration — the existing one is kept).
+     */
+    virtual bool SetRouteHandler(const RouteConfig& config) = 0;
+
+    /**
      * @brief Add route with configuration
      * @param path Full URL path
      * @param path_offset Current offset in path

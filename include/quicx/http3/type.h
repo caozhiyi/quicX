@@ -234,6 +234,35 @@ typedef std::function<size_t(uint8_t* buffer, size_t buffer_size)> body_provider
 typedef std::function<void(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response)> http_handler;
 
 /**
+ * @brief Middleware handler callback with short-circuit support
+ *
+ * Unlike http_handler, a middleware handler returns a bool:
+ * - true: continue the pipeline (next middleware / route handler)
+ * - false: short-circuit. Remaining before-middlewares, the route handler and
+ *   after-middlewares are skipped. The middleware is expected to have already
+ *   written a response (e.g. a 401/403 status) — it is flushed by the stream.
+ *
+ * @param request The HTTP request object
+ * @param response The HTTP response object
+ * @return true to continue the pipeline, false to short-circuit
+ *
+ * @example
+ * @code
+ * server->AddMiddleware(HttpMethod::kAny, MiddlewarePosition::kBefore,
+ *     [](std::shared_ptr<IRequest> req, std::shared_ptr<IResponse> resp) -> bool {
+ *         std::string token;
+ *         if (!req->GetHeader("authorization", token)) {
+ *             resp->SetStatusCode(401);
+ *             resp->AppendBody("unauthorized");
+ *             return false;  // short-circuit: route handler is skipped
+ *         }
+ *         return true;
+ *     });
+ * @endcode
+ */
+typedef std::function<bool(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response)> middleware_handler;
+
+/**
  * @brief HTTP response handler callback for complete mode client response handling
  *
  * This handler is used for client-side response processing when the entire

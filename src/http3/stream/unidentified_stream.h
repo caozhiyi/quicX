@@ -40,7 +40,16 @@ public:
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
         const StreamTypeCallback& type_callback);
 
-    virtual ~UnidentifiedStream() {}
+    // P1-H7a: unregister the read callback before destruction — the
+    // underlying QUIC stream outlives this wrapper (the connection holds
+    // it), and a callback still capturing `this` would fire into a
+    // destroyed object. The in-OnData termination paths already unregister;
+    // this is the belt-and-braces fallback.
+    virtual ~UnidentifiedStream() {
+        if (stream_) {
+            stream_->SetStreamReadCallBack(nullptr);
+        }
+    }
 
 private:
     void OnData(std::shared_ptr<IBufferRead> data, bool is_last, uint32_t error) override;

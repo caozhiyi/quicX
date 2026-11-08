@@ -6,6 +6,7 @@
 #include <memory>
 
 #include "quic/congestion_control/cc_config.h"
+#include "quic/congestion_control/delivery_rate_sampler.h"
 #include "quic/congestion_control/if_congestion_control.h"
 #include "quic/congestion_control/if_pacer.h"
 
@@ -22,7 +23,8 @@ public:
     void OnPacketSent(const SentPacketEvent& ev) override;
     void OnPacketAcked(const AckEvent& ev) override;
     void OnPacketLost(const LossEvent& ev) override;
-    void OnRoundTripSample(uint64_t latest_rtt, uint64_t ack_delay = 0) override;
+    void OnRoundTripSample(
+        uint64_t latest_rtt_us, uint64_t min_rtt_us, uint64_t smoothed_rtt_us, uint64_t ack_delay_us) override;
 
     SendState CanSend(uint64_t now, uint64_t& can_send_bytes) const override;
 
@@ -64,7 +66,11 @@ private:
     void MaybeEnterOrExitProbeRtt(uint64_t now_us);
     void AdvanceProbeBwCycle(uint64_t now_us);
     void UpdateMaxBandwidth(uint64_t sample_bps, uint64_t now_us);
+    // P1-CC2: full-bandwidth accounting runs ONCE per round (packet-number
+    // delimited), not on every ACK — per-ACK counting mistook every sample
+    // for a round and could exit STARTUP on intra-round noise.
     void CheckFullBandwidthReached(uint64_t now_us);
+    void CheckDrainComplete(uint64_t now_us);
 
     uint64_t BdpBytes(uint64_t gain_num, uint64_t gain_den) const;  // BDP * gain
     void SetPacingGain(double gain);
@@ -91,7 +97,15 @@ private:
     // Full bandwidth detection
     uint64_t full_bw_bps_ = 0;
     int full_bw_cnt_ = 0;  // 3 rounds with <25% growth
+    // Highest sent PN (updated in OnPacketSent).
     uint64_t end_of_round_pn_ = 0;
+    // P1-CC2: the current round's boundary — an ACK at/after this PN closes
+    // the round (BBR draft §4.1.1: "round" = packets sent before the boundary).
+    uint64_t round_end_pn_ = 0;
+    // ACK arrival time (us) of the most recent OnPacketAcked — anchors the
+    // min_rtt timestamp when a new minimum is observed (OnRoundTripSample
+    // has no clock of its own).
+    uint64_t last_ack_time_us_ = 0;
 
     // Gains
     double pacing_gain_ = 2.885;  // STARTUP
@@ -104,9 +118,9 @@ private:
     bool probe_rtt_done_stamp_valid_ = false;
     uint64_t probe_rtt_done_stamp_us_ = 0;
 
-    // Aggregated bandwidth sampling (bytes over interval)
-    uint64_t bw_sample_start_us_ = 0;
-    uint64_t bw_sample_bytes_acc_ = 0;
+    // P1-CC1: per-packet delivery-rate sampler (replaced the old
+    // SRTT-window byte aggregation — every ACK is now a rate sample).
+    DeliveryRateSampler rate_sampler_;
 
     // Pacer
     std::unique_ptr<IPacer> pacer_;

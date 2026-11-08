@@ -34,20 +34,28 @@ TEST(BBRv1CongestionControlTest, BandwidthSampleUpdatesAndDrainAfterStable) {
     cc.Configure(cfg);
 
     // Provide SRTT 100ms
-    cc.OnRoundTripSample(100000, 0);
+    cc.OnRoundTripSample(100000, 100000, 100000, 0);
 
-    // Need to send ACKs over sufficient time for bandwidth sampling to work
-    // Bandwidth sampling requires at least one SRTT of elapsed time
-    uint64_t base_time = 10000;
-    for (int round = 0; round < 3; ++round) {
-        // Send multiple packets per round with proper timing
+    // P1-CC1: every ACK now carries a per-packet delivery-rate sample, so
+    // each round needs its packets actually SENT (the sampler snapshots at
+    // send time). Five rounds of a stable stream: 10 packets sent 1ms
+    // apart, each acknowledged one RTT after its send. The first boundary
+    // seeds the full-bw baseline; three more without 25% growth exit
+    // STARTUP.
+    uint64_t t = 1000000;
+    for (int round = 0; round < 5; ++round) {
         for (int i = 0; i < 10; ++i) {
             uint64_t pn = round * 10 + i + 1;
-            uint64_t time = base_time + round * 110000 + i * 10000;  // >SRTT between rounds
-            cc.OnPacketAcked(AckEvent{pn, 1000ull, time, 0ull, false});
+            cc.OnPacketSent(SentPacketEvent{pn, 1000, t + i * 1000, false});
         }
+        for (int i = 0; i < 10; ++i) {
+            uint64_t pn = round * 10 + i + 1;
+            uint64_t sent = t + i * 1000;
+            cc.OnPacketAcked(AckEvent{pn, 1000ull, sent + 100000, 0ull, false, sent});
+        }
+        t += 110000;  // next round starts after this one fully drains
     }
-    // After 3 rounds with stable bandwidth, should exit STARTUP
+    // After stable rounds with no bandwidth growth, should exit STARTUP
     EXPECT_FALSE(cc.InSlowStart());
 }
 
@@ -57,7 +65,7 @@ TEST(BBRv1CongestionControlTest, PacingRateAndCanSend) {
     cfg.mss_bytes = 1000;
     cfg.initial_cwnd_bytes = 10 * cfg.mss_bytes;  // 10000
     cc.Configure(cfg);
-    cc.OnRoundTripSample(100000, 0);  // 100ms
+    cc.OnRoundTripSample(100000, 100000, 100000, 0);  // 100ms
 
     // Bandwidth sampling needs at least SRTT elapsed time
     // Send multiple ACKs over >SRTT timespan for proper bandwidth estimation
@@ -90,7 +98,7 @@ TEST(BBRv1CongestionControlTest, ProbeRttTransitionTiming) {
     cc.Configure(cfg);
 
     // Seed RTT and bandwidth with proper timing
-    cc.OnRoundTripSample(100000ull, 0ull);  // 100ms
+    cc.OnRoundTripSample(100000ull, 100000ull, 100000ull, 0ull);  // 100ms
 
     // Send ACKs over sufficient time for bandwidth sampling
     uint64_t base_time = 100000;
@@ -111,7 +119,7 @@ TEST(BBRv1CongestionControlTest, ProbeBwGainCycleTiming) {
     cc.Configure(cfg);
 
     // Set RTT and send enough data for bandwidth sampling
-    cc.OnRoundTripSample(100000ull, 0ull);  // 100ms
+    cc.OnRoundTripSample(100000ull, 100000ull, 100000ull, 0ull);  // 100ms
 
     // Send ACKs over sufficient time for bandwidth sampling and state transitions
     uint64_t base_time = 100000;
@@ -132,7 +140,7 @@ TEST(BBRv1CongestionControlTest, ProbeBwFullEightSegmentCycle) {
     cc.Configure(cfg);
 
     // Set RTT and send enough data for bandwidth sampling
-    cc.OnRoundTripSample(100000ull, 0ull);  // 100ms
+    cc.OnRoundTripSample(100000ull, 100000ull, 100000ull, 0ull);  // 100ms
 
     // Send ACKs over sufficient time for bandwidth sampling
     uint64_t base_time = 100000;

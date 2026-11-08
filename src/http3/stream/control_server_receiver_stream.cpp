@@ -14,12 +14,13 @@ namespace http3 {
 
 ControlServerReceiverStream::ControlServerReceiverStream(const std::shared_ptr<IQuicRecvStream>& stream,
     const std::shared_ptr<QpackEncoder>& qpack_encoder,
+    const std::shared_ptr<QpackDecoder>& qpack_decoder,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
     const std::function<void(uint64_t id)>& goaway_handler,
     const std::function<void(const std::unordered_map<uint64_t, uint64_t>& settings)>& settings_handler,
     const std::function<void(uint64_t push_id)>& max_push_id_handler,
     const std::function<void(uint64_t id)>& cancel_handler):
-    ControlReceiverStream(stream, qpack_encoder, error_handler, goaway_handler, settings_handler),
+    ControlReceiverStream(stream, qpack_encoder, qpack_decoder, error_handler, goaway_handler, settings_handler),
     max_push_id_handler_(max_push_id_handler),
     cancel_handler_(cancel_handler) {}
 

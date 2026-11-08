@@ -496,7 +496,7 @@ PacketBuilder::BuildResult PacketBuilder::BuildDataPacket(const DataPacketContex
     // [DIAG-RTX] Snapshot payload bytes BEFORE first-send Encode.
     // Helps confirm whether the SharedBufferSpan held by `packet->payload_`
     // still points to the same plaintext bytes when this packet is later
-    // retransmitted (cf. TrySendRetransmit). Format:
+    // retransmitted (frame-level re-queue). Format:
     //   "first-send pn=<pn> level=<lvl> payload_len=<n> chunk=<ptr> head=<hex16>"
     //
     // Gated behind QUICX_DIAG_RTX because LOG_INFO + snprintf×16 on every

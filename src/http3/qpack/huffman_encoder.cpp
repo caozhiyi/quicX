@@ -58,12 +58,16 @@ std::vector<uint8_t> HuffmanEncoder::Encode(const std::string& input) {
     return output;
 }
 
-std::string HuffmanEncoder::Decode(const std::vector<uint8_t>& input) {
+bool HuffmanEncoder::Decode(const std::vector<uint8_t>& input, std::string& out) {
     std::string output;
     if (!huffman_table_.Decode(input, output)) {
-        return "";
+        // P1-H5f: propagate the failure instead of returning "" — an empty
+        // decoded value is legal, so the old sentinel silently turned
+        // corrupt bitstreams into empty header names/values.
+        return false;
     }
-    return output;
+    out = std::move(output);
+    return true;
 }
 
 void HuffmanEncoder::WriteBits(
