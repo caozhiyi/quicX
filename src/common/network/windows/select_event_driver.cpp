@@ -1,5 +1,8 @@
 #ifdef _WIN32
 
+#include <chrono>
+#include <thread>
+
 // Windows headers must be included in the correct order: winsock2.h before windows.h and mswsock.h
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -142,15 +145,48 @@ int SelectEventDriver::Wait(std::vector<Event>& events, int timeout_ms) {
         }
     }
 
-    // Prepare timeout
-    struct timeval timeout;
+    // Driver contract: returning 0 (timeout) guarantees the requested
+    // timeout has REALLY elapsed on the monotonic high-resolution clock.
+    // Windows select() only honours timeouts to the system-timer quantum
+    // (default 15.6 ms unless timeBeginPeriod(1) is active) and can report
+    // a timeout BEFORE the deadline — the event loop hands us the exact
+    // remaining time of the nearest timer, so an early return would make
+    // it miss that timer for a whole iteration. Re-arm select with the
+    // true remaining time until the deadline; sub-millisecond remainders
+    // are slept out precisely (Sleep never returns early on Windows).
+    // select() mutates the fd_sets it receives, so keep pristine copies
+    // for every re-arm round.
+    int result = 0;
     if (timeout_ms >= 0) {
-        timeout.tv_sec = timeout_ms / 1000;
-        timeout.tv_usec = (timeout_ms % 1000) * 1000;
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+        for (;;) {
+            auto remaining_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                deadline - std::chrono::steady_clock::now()).count();
+            if (remaining_us <= 0) {
+                break;  // deadline genuinely reached — report timeout
+            }
+            if (remaining_us < 1000) {
+                // A sub-millisecond timeval would make select() return
+                // immediately (busy spin); sleep the sliver instead.
+                std::this_thread::sleep_for(std::chrono::microseconds(remaining_us));
+                continue;
+            }
+            fd_set cur_readfds = readfds, cur_writefds = writefds, cur_exceptfds = exceptfds;
+            struct timeval tv;
+            tv.tv_sec = static_cast<long>(remaining_us / 1000000);
+            tv.tv_usec = static_cast<long>(remaining_us % 1000000);
+            result = select(maxfd + 1, &cur_readfds, &cur_writefds, &cur_exceptfds, &tv);
+            if (result != 0) {
+                readfds = cur_readfds;
+                writefds = cur_writefds;
+                exceptfds = cur_exceptfds;
+                break;  // events or error — surface them below
+            }
+            // Quantum-early timeout: loop and wait the true remainder.
+        }
+    } else {
+        result = select(maxfd + 1, &readfds, &writefds, &exceptfds, nullptr);
     }
-
-    // Call select
-    int result = select(maxfd + 1, &readfds, &writefds, &exceptfds, timeout_ms >= 0 ? &timeout : nullptr);
 
     if (result < 0) {
         LOG_ERROR("select failed: %d", WSAGetLastError());
@@ -158,7 +194,7 @@ int SelectEventDriver::Wait(std::vector<Event>& events, int timeout_ms) {
     }
 
     if (result == 0) {
-        // Timeout
+        // Timeout (guaranteed past the requested deadline)
         return 0;
     }
 
@@ -200,7 +236,9 @@ int SelectEventDriver::Wait(std::vector<Event>& events, int timeout_ms) {
 }
 
 void SelectEventDriver::Wakeup() {
-    if (wakeup_fd_[1] != 0) {
+    // Sockets are initialized to -1 (see constructor); "!= 0" would skip the
+    // write whenever the wakeup socket happened to get value 0.
+    if (wakeup_fd_[1] != -1) {
         char data = 1;
         send(static_cast<int>(wakeup_fd_[1]), &data, 1, 0);
     }
