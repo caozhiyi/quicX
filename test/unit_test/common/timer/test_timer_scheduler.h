@@ -56,8 +56,25 @@ public:
     // ---- test controls ----
 
     /// Move the clock forward and fire everything that becomes due.
+    ///
+    /// The FIRST Advance() freezes the clock: from then on Now() is purely
+    /// virtual (freeze-point + every Advance since) and never follows real
+    /// time again. While the clock follows real time (before the first
+    /// Advance), a slow build (TSan) can cross a millisecond boundary between
+    /// two Advance() calls, silently shifting every later virtual deadline by
+    /// that amount — e.g. CryptoSlowPathTest expected NextDeadlineMs() ==
+    /// t0 + 160 and got t0 + 161. Suites that assert exact virtual deadlines
+    /// should freeze the clock in SetUp() via Advance(0), before anything
+    /// arms or samples the clock.
     void Advance(uint64_t ms) {
-        now_ = Now() + ms;
+        if (!frozen_) {
+            // Sync once with real time at the freeze point, so timers armed
+            // BEFORE this moment (deadline = real + delay) still fire on the
+            // virtual clock.
+            now_ = Now();
+            frozen_ = true;
+        }
+        now_ += ms;
         core_->Run(now_);
     }
 
@@ -72,6 +89,14 @@ public:
     int32_t MinTime() { return core_->MinTime(Now()); }
 
     uint64_t Now() const {
+        if (frozen_) {
+            return now_;
+        }
+        // Follow real time until the first Advance(): tests that never
+        // Advance (real-sleep drivers, e.g. SendManagerRecheckTimerTest) keep
+        // seeing the production clock and RunDue() fires whatever real time
+        // has made due. Once frozen, Now() is exactly Advance-controlled.
+        //
         // Monotonic, matching the production EventLoop clock domain (see
         // EventLoop::Wait/AddTimer). Mixing wall clock here would compare
         // deadlines from different epochs inside TimerCore.
@@ -84,6 +109,7 @@ public:
 private:
     std::shared_ptr<TimerCore> core_ = std::make_shared<TimerCore>();
     uint64_t now_;
+    bool frozen_ = false;
     uint32_t arm_count_ = 0;
 };
 
