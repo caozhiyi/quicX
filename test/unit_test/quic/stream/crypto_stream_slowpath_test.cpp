@@ -52,6 +52,11 @@ protected:
         loop_ = common::MakeEventLoop();
         ASSERT_TRUE(loop_->Init());
         timers_ = std::make_shared<common::TestTimerScheduler>();
+        // Freeze the clock before anything arms or samples it: this suite
+        // asserts exact virtual deadlines (e.g. NextDeadlineMs() == t0 + 160).
+        // Following real time (TSan-slow builds cross ms boundaries between
+        // SetUp and the first Advance) shifted them by 1 ms.
+        timers_->Advance(0);
         life_ = std::make_shared<int>(0);
         sched_ = std::make_shared<RetransmitScheduler>(
             timers_, [this] { return timers_->Now(); }, [] { return kBasePto; });
