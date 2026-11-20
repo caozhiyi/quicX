@@ -251,7 +251,7 @@
 **v1.0.0 概要**（24 场景 × 17 对端，通过率 90.60%）：
 
 - **`handshake` / `transfer` 场景**：与主流对端广泛通过（quinn、msquic、ngtcp2、neqo、lsquic、picoquic、quic-go、mvfst、aioquic 等）。
-- **`transfer`** 场景：与多数对端通过；少量对端的已知问题记录在 [`../../internal/quic_interop_sim_issues.md`](../../internal/quic_interop_sim_issues.md)。
+- **`transfer`** 场景：与多数对端通过；少量对端的已知问题记录在 [`../reports/interop_status.md`](../reports/interop_status.md)。
 - 进阶场景（`multiconnect` / `resumption` / `keyupdate` / `chacha20` / `retry` / `zerortt` / `http3` / `versionnegotiation` / `ecn` / `connectionmigration` 等，共 24 个）部分覆盖；逐对结果见互操作状态文档。
 
 ---

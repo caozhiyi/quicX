@@ -200,7 +200,7 @@ logs/
 
 - [`reports/interop_status.md`](../reports/interop_status.md) — 当前测试进度与连通性矩阵
 - [`guide/interop_overview.md`](./interop_overview.md) — 官方 interop-runner 框架原理
-- [`../../internal/quic_interop_sim_issues.md`](../../internal/quic_interop_sim_issues.md) — 各对端排障笔记
+- [`../reports/interop_status.md`](../reports/interop_status.md) — 各对端基线与根因分析
 - `docs/internal/improvement_plan.md` — 互操作改进计划
 - `test/interop/run_endpoint.sh` — quicX 容器内启动脚本（场景允许清单）
 - [quic-interop-runner](https://github.com/quic-interop/quic-interop-runner) — 官方 runner 仓库
