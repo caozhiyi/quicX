@@ -221,7 +221,7 @@ Triage flow:
 
 - [`reports/interop_status.md`](../reports/interop_status.md) — current connectivity matrix
 - [`guide/interop_overview.md`](./interop_overview.md) — official interop-runner internals
-- [`../../internal/quic_interop_sim_issues.md`](../../internal/quic_interop_sim_issues.md) — per-peer triage notes
+- [`../reports/interop_status.md`](../reports/interop_status.md) — per-peer baseline and root-cause analysis
 - `docs/internal/improvement_plan.md` — cross-cutting improvement plan (incl. interop)
 - `test/interop/run_endpoint.sh` — in-container QuicX startup script (scenario allow-list)
 - [quic-interop-runner](https://github.com/quic-interop/quic-interop-runner) — the official runner repository
