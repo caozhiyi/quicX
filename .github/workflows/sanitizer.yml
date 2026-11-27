@@ -62,7 +62,7 @@ jobs:
             -DCMAKE_EXE_LINKER_FLAGS="${{ matrix.flags }}" \
             -DCMAKE_SHARED_LINKER_FLAGS="${{ matrix.flags }}" \
             -DENABLE_TESTING=ON \
-            -DENABLE_INTERGRATION=ON \
+            -DENABLE_INTEGRATION=ON \
             -DENABLE_FUZZING=OFF
 
       - name: Build
