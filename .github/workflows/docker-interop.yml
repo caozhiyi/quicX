@@ -1,0 +1,82 @@
+name: Docker Interop Image
+
+# Build and publish the quic-interop Docker image whenever a release is
+# published. The image tag mirrors the release tag:
+#   release v1.0.2  ->  caozhiyi/quicx-interop:v1.0.2 (+ :latest if stable)
+#
+# Required repository secrets (Settings -> Secrets and variables -> Actions):
+#   DOCKERHUB_USERNAME  Docker Hub account name
+#   DOCKERHUB_TOKEN     Docker Hub access token with read/write scope
+
+on:
+  release:
+    types: [published]
+
+env:
+  IMAGE_NAME: caozhiyi/quicx-interop
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    if: github.repository == 'caozhiyi/quicX'
+    timeout-minutes: 60
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          # Build the exact commit the release tag points at, not the
+          # default branch HEAD at trigger time.
+          ref: ${{ github.event.release.tag_name }}
+          # third/boringssl and third/googletest are submodules.
+          submodules: recursive
+
+      - name: Determine image tags
+        id: tags
+        env:
+          TAG_NAME: ${{ github.event.release.tag_name }}
+          IS_PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          set -eu
+          # Only version-shaped tags may become image tags.
+          if ! printf '%s' "$TAG_NAME" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$'; then
+            echo "::error::Release tag '$TAG_NAME' is not a valid version tag (expected vX.Y.Z)."
+            exit 1
+          fi
+
+          # Soft consistency check: warn (not fail) if VERSION.txt was not bumped.
+          expected="$(printf '%s' "$TAG_NAME" | sed 's/^v//; s/-.*$//')"
+          if [ -f VERSION.txt ] && [ "$(cat VERSION.txt)" != "$expected" ]; then
+            echo "::warning file=VERSION.txt::Release tag is '$TAG_NAME' but VERSION.txt says '$(cat VERSION.txt)' - remember to bump it."
+          fi
+
+          tags="${IMAGE_NAME}:${TAG_NAME}"
+          if [ "$IS_PRERELEASE" != "true" ]; then
+            # Only stable releases move :latest.
+            tags="${tags},${IMAGE_NAME}:latest"
+          fi
+          printf 'tags=%s\n' "$tags" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: test/interop/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          build-args: |
+            GIT_COMMIT=${{ github.event.release.tag_name }}@${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

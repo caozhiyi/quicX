@@ -179,5 +179,5 @@ jobs:
           find . -name "*utest*" 2>/dev/null | head -20 || true
           echo ""
           echo "Trying CTest instead..."
-          ctest --output-on-failure -C ${{ matrix.build_type }} || ctest --output-on-failure || echo "CTest also failed or not available"
+          ctest --output-on-failure -C ${{ matrix.build_type }} --no-tests=error
         fi

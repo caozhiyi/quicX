@@ -82,7 +82,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Debug \
             -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
             -DENABLE_TESTING=OFF \
-            -DENABLE_INTERGRATION=OFF \
+            -DENABLE_INTEGRATION=OFF \
             -DBUILD_EXAMPLES=OFF
           # Build headers dependency only to avoid full compile
           cmake --build build-tidy --target quicx --parallel 4 || true

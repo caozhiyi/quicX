@@ -39,17 +39,19 @@ jobs:
       CC: ${{ matrix.cc }}
       CXX: ${{ matrix.cxx }}
       CMAKE_BUILD_PARALLEL_LEVEL: 4
-      # Build version label for this CI run.
-      QUICX_VERSION: "1.0.0"
 
     steps:
-      - name: Show version
-        run: echo "QuicX CI version: ${QUICX_VERSION}"
       - name: Checkout (with submodules)
         uses: actions/checkout@v4
         with:
           submodules: recursive
           fetch-depth: 1
+
+      - name: Show version
+        id: version
+        run: |
+          echo "QuicX CI version: $(cat VERSION.txt)"
+          echo "version=$(cat VERSION.txt)" >> $GITHUB_OUTPUT
 
       - name: Install dependencies
         run: |
@@ -94,7 +96,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: build-logs-${{ env.QUICX_VERSION }}-${{ matrix.compiler }}-${{ matrix.build_type }}
+          name: build-logs-v${{ steps.version.outputs.version }}-${{ matrix.compiler }}-${{ matrix.build_type }}
           path: |
             build/CMakeFiles/CMakeOutput.log
             build/CMakeFiles/CMakeError.log

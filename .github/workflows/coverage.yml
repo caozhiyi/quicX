@@ -50,7 +50,7 @@ jobs:
             -DCMAKE_EXE_LINKER_FLAGS="--coverage" \
             -DCMAKE_SHARED_LINKER_FLAGS="--coverage" \
             -DENABLE_TESTING=ON \
-            -DENABLE_INTERGRATION=ON
+            -DENABLE_INTEGRATION=ON
 
       - name: Build
         run: cmake --build build-cov --parallel 4
